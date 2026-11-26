@@ -40,7 +40,7 @@ function Dashboard() {
     </div>
     <div className="notice"><div className="notice-icon"><ShieldCheck size={19}/></div><div><b>Paper mode is active</b><span>All predictions are simulated. No real-money orders are being placed.</span></div><span className="live-dot"></span></div>
     <div className="stats-grid">
-      <StatCard title="Markets discovered" value="—" note="Waiting for Kalshi connection" icon={Radar}/>
+      <StatCard title="Markets discovered" value="—" note="Waiting for market data connection" icon={Radar}/>
       <StatCard title="Paper predictions" value="0" note="No predictions recorded yet" icon={BrainCircuit} tone="purple"/>
       <StatCard title="Verified win rate" value="—" note="Requires resolved predictions" icon={Target} tone="green"/>
       <StatCard title="Simulated P/L" value="$0.00" note="No simulated trades yet" icon={ChartNoAxesCombined} tone="blue"/>
@@ -57,7 +57,7 @@ function Dashboard() {
         <div className="panel-heading"><div><h2>System checks</h2><p>Integration status</p></div><span className="check-ring"><ShieldCheck size={17}/></span></div>
         {[
           ['Dashboard','Running locally','ok'],
-          ['Kalshi API','Not connected','wait'],
+          ['Market API','Not connected','wait'],
           ['Sports data','Not connected','wait'],
           ['TXT history','Ready for local files','ok'],
           ['Paper trader','Awaiting data feeds','wait'],
@@ -76,7 +76,7 @@ function Placeholder({ page }) {
   const item = nav.find(n => n.label === page);
   const Icon = item?.icon || Activity;
   const descriptions = {
-    'Live Market Scanner': 'Discover available Kalshi sports markets and team scoring thresholds.',
+    'Live Market Scanner': 'Discover available sports markets and team scoring thresholds.',
     'AI Predictions': 'Review paper predictions, probabilities, model reasoning and resolved outcomes.',
     'Betting Recommendations': 'Review qualified recommendations with market links for manual execution.',
     'Competition Stakes': 'Filter for games where teams have meaningful playoff or tournament incentives.',
@@ -96,19 +96,19 @@ export default function App() {
   const filtered = nav.filter(n => n.label.toLowerCase().includes(search.toLowerCase()));
   return <div className="app-shell">
     <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
-      <div className="brand"><div className="brand-mark"><Activity size={21}/></div><div><b>KALSHI<span>AI</span></b><small>SPORTS INTELLIGENCE</small></div><button className="mobile-close" onClick={() => setSidebarOpen(false)}><X size={18}/></button></div>
+      <div className="brand"><div className="brand-mark"><Activity size={21}/></div><div className="brand-text"><b>AngelicGTrader</b><small>SPORTS INTELLIGENCE</small></div><button className="mobile-close" onClick={() => setSidebarOpen(false)}><X size={18}/></button></div>
       <div className="sidebar-search"><Search size={15}/><input placeholder="Find a section..." value={search} onChange={e => setSearch(e.target.value)}/><kbd>/</kbd></div>
       <nav>{groups.map(group => {
         const items = filtered.filter(n => n.group === group);
         return items.length ? <div className="nav-group" key={group}><div className="nav-label">{group}</div>{items.map(item => { const Icon = item.icon; return <button key={item.label} className={`nav-item ${active === item.label ? 'active' : ''}`} onClick={() => {setActive(item.label);setSidebarOpen(false);}}><Icon size={17}/><span>{item.label}</span>{active === item.label && <span className="active-bar"/>}</button>; })}</div> : null;
       })}</nav>
-      <div className="sidebar-bottom"><div className="mode-card"><div className="mode-head"><span className="live-dot"></span><b>Paper trading mode</b></div><p>Simulation only. Real orders disabled.</p></div><div className="user-row"><div className="avatar">K</div><div><b>Local workspace</b><small>Development environment</small></div><Settings size={16}/></div></div>
+      <div className="sidebar-bottom"><div className="mode-card"><div className="mode-head"><span className="live-dot"></span><b>Paper trading mode</b></div><p>Simulation only. Real orders disabled.</p></div><div className="user-row"><div className="avatar">A</div><div><b>Local workspace</b><small>Development environment</small></div><Settings size={16}/></div></div>
     </aside>
     {sidebarOpen && <div className="mobile-overlay" onClick={() => setSidebarOpen(false)}></div>}
     <main className="main">
       <header className="topbar"><button className="mobile-menu" onClick={() => setSidebarOpen(true)}><Menu size={19}/></button><div className="breadcrumb">Workspace <ChevronRight size={14}/><b>{active}</b></div><div className="top-actions"><span className="connection"><i></i> Local app</span><button className="icon-btn" title="Help"><CircleHelp size={17}/></button><button className="icon-btn" title="Notifications"><Bell size={17}/></button></div></header>
       <div className="page-content">{active === 'Dashboard' ? <Dashboard/> : <Placeholder page={active}/>}</div>
-      <footer><span>Kalshi AI · Local development build</span><span>Paper mode <i className="footer-dot"></i></span></footer>
+      <footer><span>AngelicGTrader · Local development build</span><span>Paper mode <i className="footer-dot"></i></span></footer>
     </main>
   </div>;
 }
