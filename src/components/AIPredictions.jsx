@@ -74,6 +74,13 @@ function recommendedIndex(p) {
   if (index >= 0) return index;
   return Math.max(0, Math.min(Number(p.targetIdx) || 0, p.lines.length - 1));
 }
+function activeWorthCondition(profile, accruedProfit) {
+  const original = Math.max(0, Number(profile?.quotaValue ?? profile?.initialBalance ?? profile?.balance) || 0);
+  const currentWorth = Math.max(0, (Number(profile?.balance) || 0) + (Number(accruedProfit) || 0));
+  const ratio = original > 0 ? currentWorth / original : 0;
+  return ratio >= 3 ? '3x' : ratio >= 2 ? '2x' : ratio >= 1 ? 'break-even' : 'pre-even';
+}
+
 function analysisKey(market, stats) {
   return JSON.stringify({
     ticker: market.ticker, line: market.line, yesAsk: market.yesAsk, noAsk: market.noAsk,
@@ -328,12 +335,16 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         const bt = Date.parse(b.gameTime || b.expectedExpiration || b.closeTime || '') || Infinity;
         return at - bt;
       });
-      const mode = seasonProfile.selectionStrategy || '';
+      const accruedProfit = (await readSeasonTrades(root, seasonProfile)).reduce((sum, trade) => sum + (Number(trade.profit) || 0), 0);
+      const worthCondition = activeWorthCondition(seasonProfile, accruedProfit);
+      const mode = seasonProfile.strategiesByWorthCondition?.[worthCondition] || (seasonProfile.selectionStrategy && seasonProfile.selectionStrategy !== 'baseball-no' ? seasonProfile.selectionStrategy : '');
+      const risk = seasonProfile.riskByWorthCondition?.[worthCondition] || seasonProfile.riskPreference || '';
+      const baseballEnabled = seasonProfile.baseballNoStrategy === true || seasonProfile.selectionStrategy === 'baseball-no';
       const gates = { standard: { probability: 0.92, payout: 1.2 }, value: { probability: 0.84, payout: 1.4 }, highroller: { probability: 0.70, payout: 1.75 } };
-      if (!mode) { setProgress('Piece is not ready for play: select a strategy in its piece entry.'); return; }
+      if (!mode || !risk) { setProgress('Piece is not ready for play: configure strategy and risk for its current worth condition.'); return; }
       const gate = { ...(gates[mode] || gates.standard) };
-      if (seasonProfile.riskPreference === 'probability') { gate.probability += 0.02; }
-      if (seasonProfile.riskPreference === 'value') { gate.probability = Math.max(0.5, gate.probability - 0.02); gate.payout += 0.1; }
+      if (risk === 'probability') { gate.probability += 0.02; }
+      if (risk === 'value') { gate.probability = Math.max(0.5, gate.probability - 0.02); gate.payout += 0.1; }
       for (const p of orderedPredictions) {
         const gameTime = p.gameTime || p.expectedExpiration || p.closeTime;
         if (gameTime && Number.isFinite(Date.parse(gameTime)) && Date.parse(gameTime) <= Date.now()) continue;
@@ -344,7 +355,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
           const analysis = await analyzeSelectedLine(p, line);
           if (!analysis?.prediction) continue;
           const isBaseball = leagueFor(p) === 'MLB';
-          const useBaseballNo = isBaseball;
+          if (isBaseball && !baseballEnabled) continue;
           const sides = isBaseball ? ['NO'] : ['YES', 'NO'];
           for (const side of sides) {
             const probability = probabilityFor(analysis, side);
@@ -355,7 +366,6 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
             if (leagueFor(p) === 'MLB') {
               if (analysis.mlbEligibility?.eligible !== true || probability < 0.90) continue;
             } else {
-              if (mode === 'baseball-no') continue;
               if (mode === 'value' && !pieceQuotaFilled) continue;
               if (mode === 'value') { const knownPPG = Math.min(Number(stats.team?.pointsPerGame) || Infinity, Number(stats.team?.recent5PPG) || Number(stats.team?.pointsPerGame) || Infinity); if (!Number.isFinite(knownPPG) || Number(line.line) > knownPPG * 0.9) continue; }
               if (mode === 'highroller') {
@@ -399,9 +409,11 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
     if (probability == null || ask == null) { setError('OpenAI analysis or executable ask is missing for this line.'); return; }
     if (leagueFor(p) === 'MLB' && (side !== 'NO' || analysis?.mlbEligibility?.eligible !== true)) { setError('MLB is NO-only and this line has not passed the strict MLB eligibility checks.'); return; }
     if (leagueFor(p) !== 'MLB') {
-      const mode = seasonProfile?.selectionStrategy || '';
+      const currentProfit = (await readSeasonTrades(root, seasonProfile)).reduce((sum, trade) => sum + (Number(trade.profit) || 0), 0);
+      const currentCondition = activeWorthCondition(seasonProfile, currentProfit);
+      const mode = seasonProfile?.strategiesByWorthCondition?.[currentCondition] || seasonProfile?.selectionStrategy || '';
       if (!mode) { setError('This piece is not ready for play. Select a strategy in its piece entry.'); return; }
-      if (leagueFor(p) !== 'MLB' && mode === 'baseball-no') { setError('Bet NO Strat is only available for baseball games.'); return; }
+      if (leagueFor(p) === 'MLB' && !(seasonProfile?.baseballNoStrategy === true || seasonProfile?.selectionStrategy === 'baseball-no')) { setError('Enable Bet NO Strat (Baseball) in this piece to select baseball markets.'); return; }
       const gates = { standard: { probability: 0.92, payout: 1.2 }, value: { probability: 0.84, payout: 1.4 }, highroller: { probability: 0.70, payout: 1.75 } };
       const gate = { ...(gates[mode] || gates.standard) };
       if (seasonProfile?.riskPreference === 'probability') { gate.probability += 0.02; }
