@@ -4,17 +4,20 @@ import {
   isSupported, pickDataFolder, getSavedFolder, requestSavedPermission,
 } from '../lib/dataFolder';
 import { bootstrapDataFolder, readIndex } from '../lib/dataModel';
+import KalshiConnect from './KalshiConnect';
 
-
-export default function DataFolderConnect({ onFolderReady }) {
+export default function DataFolderConnect({ onFolderReady, onAccountChange }) {
+  const [kalshiExpanded, setKalshiExpanded] = useState(true);
   const [state, setState] = useState('loading');
   const [folderName, setFolderName] = useState('');
   const [savedHandle, setSavedHandle] = useState(null);
+  const [folderHandle, setFolderHandle] = useState(null);
   const [error, setError] = useState('');
 
   async function activate(handle) {
     const { season } = await bootstrapDataFolder(handle);
     const index = await readIndex(handle);
+    setFolderHandle(handle);
     setFolderName(handle.name);
     setState('connected');
     onFolderReady?.({ handle, season, index });
@@ -66,20 +69,20 @@ export default function DataFolderConnect({ onFolderReady }) {
   if (state === 'loading') return null;
 
   if (state === 'unsupported') {
-    return (
-      <div className="dfc dfc-warn">
-        <span className="dfc-icon warn"><AlertTriangle size={16} /></span>
-        <div className="dfc-text">
-          <b>Local data folder needs a compatible browser</b>
-          <small>Saving prediction .txt files to your machine works in Chrome, Edge, and Opera.</small>
-        </div>
+    return <div className="dfc dfc-warn">
+      <span className="dfc-icon warn"><AlertTriangle size={16} /></span>
+      <div className="dfc-text">
+        <b>Local data folder needs a compatible browser</b>
+        <small>Saving prediction .txt files to your machine works in Chrome, Edge, and Opera.</small>
       </div>
-    );
+    </div>;
   }
 
   const connected = state === 'connected';
 
-  return (
+  return <>
+    <details className="integration-collapse" open={state !== 'connected'}>
+      <summary><span>Local data folder</span><small>{connected ? folderName : 'Not connected'}</small></summary>
     <div className="dfc">
       <span className={`dfc-icon ${connected ? 'ok' : 'idle'}`}>
         {connected ? <CheckCircle2 size={16} /> : <ShieldCheck size={16} />}
@@ -95,7 +98,7 @@ export default function DataFolderConnect({ onFolderReady }) {
             ? 'Season and week structure ready · week1 active.'
             : state === 'saved'
             ? 'This browser needs you to confirm access again.'
-            : 'Grant permission to store prediction .txt files on this machine.'}
+            : 'Grant permission to store prediction .txt files and local account settings on this machine.'}
         </small>
         {error && <em className="dfc-error">{error}</em>}
       </div>
@@ -109,5 +112,10 @@ export default function DataFolderConnect({ onFolderReady }) {
         </button>
       )}
     </div>
-  );
+    </details>
+    <details className="integration-collapse" open={kalshiExpanded}>
+      <summary><span>Kalshi account</span><small>Account connection and balance</small></summary>
+      <KalshiConnect dataFolderHandle={folderHandle} onAccountChange={(account) => { onAccountChange?.(account); if (account) setKalshiExpanded(false); }} />
+    </details>
+  </>;
 }
