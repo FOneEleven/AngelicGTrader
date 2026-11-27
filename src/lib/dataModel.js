@@ -239,7 +239,7 @@ export async function createSeasonProfile(root, profile) {
 }
 
 export async function readTrades(root, season, week) {
-  const seasonDir = await root.getDirectoryHandle(`${SEASON_PREFIX}${season}`, { create: true });
+  const seasonDir = await root.getDirectoryHandle(SEASON_PREFIX + season, { create: true });
   const weekDir = await seasonDir.getDirectoryHandle(week, { create: true });
   const text = await readText(weekDir, 'trades.txt');
   if (!text) return [];
