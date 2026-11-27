@@ -323,13 +323,18 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       setError('');
       setProgress('Start next week: scanning upcoming games and every slider line…');
       const selected = {};
+      const orderedPredictions = [...predictions].sort((a, b) => {
+        const at = Date.parse(a.gameTime || a.expectedExpiration || a.closeTime || '') || Infinity;
+        const bt = Date.parse(b.gameTime || b.expectedExpiration || b.closeTime || '') || Infinity;
+        return at - bt;
+      });
       const mode = seasonProfile.selectionStrategy || '';
       const gates = { standard: { probability: 0.92, payout: 1.2 }, value: { probability: 0.84, payout: 1.4 }, highroller: { probability: 0.70, payout: 1.75 } };
       if (!mode) { setProgress('Piece is not ready for play: select a strategy in its piece entry.'); return; }
       const gate = { ...(gates[mode] || gates.standard) };
       if (seasonProfile.riskPreference === 'probability') { gate.probability += 0.02; }
       if (seasonProfile.riskPreference === 'value') { gate.probability = Math.max(0.5, gate.probability - 0.02); gate.payout += 0.1; }
-      for (const p of predictions) {
+      for (const p of orderedPredictions) {
         const gameTime = p.gameTime || p.expectedExpiration || p.closeTime;
         if (gameTime && Number.isFinite(Date.parse(gameTime)) && Date.parse(gameTime) <= Date.now()) continue;
         const stats = statsByKey[p.key];
@@ -372,13 +377,12 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         const pb = orderedPredictions.find((p) => p.key === b.predictionKey);
         return (Date.parse(pa?.gameTime || pa?.expectedExpiration || pa?.closeTime || '') || Infinity) - (Date.parse(pb?.gameTime || pb?.expectedExpiration || pb?.closeTime || '') || Infinity);
       });
-      const firstSelection = orderedSelections[0];
       setSliderIdx((old) => ({ ...old, ...Object.fromEntries(orderedSelections.map((item) => [item.predictionKey, item.index])) }));
       setSideByKey((old) => ({ ...old, ...Object.fromEntries(orderedSelections.map((item) => [item.predictionKey, item.side])) }));
       const selectedLines = orderedSelections.map(({ predictionKey, ticker, event, team, league, line, side }) => ({ predictionKey, ticker, event, team, league, line, side }));
       try { const updatedProfile = await updateSeasonProfile(root, seasonProfile.id, { selectedLines }); setSeasonProfile(updatedProfile); } catch (e) { setError(e.message || 'Could not save piece selections'); }
       setProgress('Weekly scan complete · ' + orderedSelections.length + ' strategy-game(s) selected. Earliest upcoming game is first. No trade was placed automatically.');
-      onActivity?.('WEEK_SCAN_COMPLETE', Object.keys(selected).length + ' qualifying selections found for ' + seasonProfile.name);
+      onActivity?.('WEEK_SCAN_COMPLETE', orderedSelections.length + ' qualifying selections found for ' + seasonProfile.name);
     })().catch((e) => setError(e.message || 'Weekly scan failed'));
   }, [scanRequest, seasonProfile, predictions, statsByKey]);
 
