@@ -20,7 +20,7 @@ function finiteOrNull(value) {
 
 app.http('GetTeamStatistics', {
   methods: ['GET'],
-  authLevel: 'function',
+  authLevel: 'anonymous',
   route: 'GetTeamStatistics',
   handler: async (request, context) => {
     try {
