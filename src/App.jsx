@@ -219,7 +219,7 @@ export default function App() {
         <div className="top-actions">
           {kalshiAccount && <div className="header-kalshi-account"><b>{kalshiAccount.accountName}</b><span>${Number(kalshiAccount.balanceDollars || 0).toFixed(2)}</span></div>}
           <PaperModeToggle enabled={paperMode} onChange={handlePaperToggle} disabled={!dataFolder?.handle} />
-          <button className="header-doc-btn" title="Documentation"><FileText size={16}/><span>Docs</span></button>
+          <a className="header-doc-btn" title="Documentation" href="https://github.com/FOneEleven/AngelicGTrader/blob/feature/kalshi-workspace-history/README.md" target="_blank" rel="noreferrer"><FileText size={16}/><span>Docs</span></a>
           <button className="icon-btn" title="Notifications"><Bell size={17}/></button>
         </div>
       </header>
