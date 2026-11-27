@@ -117,7 +117,8 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       if (activeSeason && activeSeason !== season) setSeason(activeSeason);
       const profiles = await listSeasonProfiles(root);
       setSeasonProfiles(profiles);
-      const activeProfile = profiles.find((profile) => profile.id === scanRequest?.profileId) || profiles.find((profile) => profile.id === selectedPieceId) || profiles.find((profile) => profile.id === 'season-' + (activeSeason || season)) || null;
+      const requestedProfileId = scanRequest?.requestId !== handledScanRef.current ? scanRequest?.profileId : null;
+      const activeProfile = profiles.find((profile) => profile.id === requestedProfileId) || profiles.find((profile) => profile.id === selectedPieceId) || profiles.find((profile) => profile.id === 'season-' + (activeSeason || season)) || null;
       if (activeProfile && selectedPieceId !== activeProfile.id) setSelectedPieceId(activeProfile.id);
       if (activeProfile && activeProfile.season !== season) setSeason(activeProfile.season);
       setSeasonProfile(activeProfile);
