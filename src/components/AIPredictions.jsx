@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BrainCircuit, ExternalLink, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { readCache } from '../lib/marketCache';
-import { readSettings, appendTrade, readTrades, readAIPredictionSelections } from '../lib/dataModel';
+import { readSettings, appendTrade, readTrades, readAIPredictionSelections, deleteTrade } from '../lib/dataModel';
 import { computePredictions } from '../lib/predictions';
 import { fetchTeamStatistics } from '../lib/sportsStats';
 import { analyzeMarket } from '../lib/analyzeMarket';
@@ -274,6 +274,17 @@ export default function AIPredictions({ dataFolder, onActivity }) {
     finally { setBusy(false); }
   }
 
+  async function removePredictionRecord(p, line, side) {
+    const record = trades.find((t) => t.ticker === line?.ticker && t.side === side);
+    if (!record || !root) return;
+    setBusy(true); setError('');
+    try {
+      await deleteTrade(root, record.id);
+      setTrades((old) => old.filter((t) => t.id !== record.id));
+      onActivity?.('RECORD_REMOVED', 'Record removed · ' + record.market);
+    } catch (e) { setError(e.message || 'Could not remove record'); }
+    finally { setBusy(false); }
+  }
   return (
     <div className="page-shell">
       <div className="page-heading">
@@ -325,7 +336,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
                 <td>{edge == null ? '—' : (edge >= 0 ? '+' : '') + Math.round(edge*100) + '¢'}</td>
                 <td><b className="prob">{payout ? payout.toFixed(2) + '×' : '—'}</b></td>
                 <td>{analysis ? <span className="status-pill strat-cliff">Ready</span> : <span className="status-pill">Pending</span>}</td>
-                <td><button className="secondary-btn" disabled={busy || !root || !paperMode || already || probability == null || ask == null} onClick={()=>recordPrediction(p)}>{already ? <><CheckCircle2 size={14}/> Done</> : 'Record'}</button><a className="icon-btn" href={'https://kalshi.com/markets/' + (p.event || chosen?.ticker || '').toLowerCase()} target="_blank" rel="noreferrer" title="Open on Kalshi" style={{marginLeft:6}}><ExternalLink size={14}/></a></td>
+                <td><button className="secondary-btn" disabled={busy || !root || (!already && (!paperMode || probability == null || ask == null))} onClick={()=>already ? removePredictionRecord(p, chosen, side) : recordPrediction(p)}>{already ? 'Remove record' : 'Record'}</button><a className="icon-btn" href={'https://kalshi.com/markets/' + (p.event || chosen?.ticker || '').toLowerCase()} target="_blank" rel="noreferrer" title="Open on Kalshi" style={{marginLeft:6}}><ExternalLink size={14}/></a></td>
               </tr>;
             })}</tbody>
           </table></div>
