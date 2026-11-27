@@ -22,9 +22,9 @@ async function writeText(root, text) {
 }
 
 const HEADER =
-  '# fetchedAt\tticker\teventTicker\ttitle\tsubtitle\tstatus\tcloseTime\texpectedExpiration\toccurrenceTime\tlatestExpiration\topenInterest\tvolume24h\tvolume\tyesBid\tyesAsk\tnoBid\tnoAsk\tlastPrice\n';
+  '# fetchedAtyesBid: nullableNumber(yesBid),ttickeryesAsk: nullableNumber(yesAsk),teventTickernoBid: nullableNumber(noBid),ttitlenoAsk: nullableNumber(noAsk),tsubtitlelastPrice: nullableNumber(lastPrice),tstatus\tcloseTime\texpectedExpiration\toccurrenceTime\tlatestExpiration\topenInterest\tvolume24h\tvolume\tyesBid\tyesAsk\tnoBid\tnoAsk\tlastPrice\n';
 
-function rowToMarket(fields) {
+function nullableNumber(value) {\n  if (value == null || value === '') return null;\n  const n = Number(value);\n  return Number.isFinite(n) ? n : null;\n}\n\nfunction rowToMarket(fields) {
   const [
     fetchedAt, ticker, eventTicker, title, subtitle, status,
     closeTime, expectedExpiration, occurrenceTime, latestExpiration,
