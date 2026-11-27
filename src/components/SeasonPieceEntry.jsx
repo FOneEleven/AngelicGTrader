@@ -2,25 +2,29 @@ import React, { useState } from 'react';
 import { MessageCircle, Send, ChevronDown, CalendarDays, X } from 'lucide-react';
 import SeasonToken from './SeasonToken';
 
-const GRID_BANDS = [
-  { id: 'pre-even', label: 'Pre-even' },
-  { id: 'break-even', label: 'Breaking even' },
-  { id: '2x', label: '2x' },
-  { id: '3x', label: '3x' },
+const WORTH_CONDITIONS = [
+  { id: 'pre-even', label: 'Pre-even', min: 0, max: 1 },
+  { id: 'break-even', label: 'Breaking even', min: 1, max: 2 },
+  { id: '2x', label: '2x', min: 2, max: 3 },
+  { id: '3x', label: '3x', min: 3, max: Infinity },
 ];
 const STRATEGIES = [
-  { id: 'standard', label: 'Standard', probability: 92, payout: '1.20×' },
-  { id: 'value', label: 'Value', probability: 84, payout: '1.40×' },
-  { id: 'highroller', label: 'High Roller', probability: 70, payout: '1.75×' },
+  { id: 'standard', label: 'Standard' },
+  { id: 'value', label: 'Value' },
+  { id: 'highroller', label: 'High Roller' },
+];
+const RISK_OPTIONS = [
+  { id: 'probability', label: 'Probability first' },
+  { id: 'balanced', label: 'Balanced' },
+  { id: 'value', label: 'Value first' },
 ];
 const money = (value) => '$' + (Number(value) || 0).toFixed(2);
 
-function strategyGrid(profile, currentWorth) {
-  const quota = Math.max(0, Number(profile.quotaValue ?? profile.balance) || 0);
-  const ratio = quota > 0 ? currentWorth / quota : 0;
-  const band = ratio >= 3 ? '3x' : ratio >= 2 ? '2x' : ratio >= 1 ? 'break-even' : 'pre-even';
-  const offset = GRID_BANDS.findIndex((item) => item.id === band);
-  return { ratio, band: profile.gridBand || band, strategies: [...STRATEGIES.slice(offset), ...STRATEGIES.slice(0, offset)] };
+function getWorthState(profile, currentWorth) {
+  const original = Math.max(0, Number(profile.quotaValue ?? profile.initialBalance ?? profile.balance) || 0);
+  const ratio = original > 0 ? currentWorth / original : 0;
+  const condition = ratio >= 3 ? '3x' : ratio >= 2 ? '2x' : ratio >= 1 ? 'break-even' : 'pre-even';
+  return { original, ratio, condition };
 }
 
 export default function SeasonPieceEntry({ profile, earnings = 0, onUpdate, onStartWeek, onNavigate, busy = false, compact = false, onHide }) {
@@ -28,10 +32,14 @@ export default function SeasonPieceEntry({ profile, earnings = 0, onUpdate, onSt
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const currentWorth = Math.max(0, (Number(profile.balance) || 0) + (Number(earnings) || 0));
-  const grid = strategyGrid(profile, currentWorth);
+  const worth = getWorthState(profile, currentWorth);
+  const strategiesByCondition = profile.strategiesByWorthCondition || {};
+  const riskByCondition = profile.riskByWorthCondition || {};
+  const activeStrategy = strategiesByCondition[worth.condition] || (profile.selectionStrategy && profile.selectionStrategy !== 'baseball-no' ? profile.selectionStrategy : '');
+  const baseballEnabled = profile.baseballNoStrategy === true || profile.selectionStrategy === 'baseball-no';
+  const activeRisk = riskByCondition[worth.condition] || profile.riskPreference || '';
+  const ready = Boolean(activeStrategy && activeRisk);
   const messages = Array.isArray(profile.pieceMessages) ? profile.pieceMessages : [];
-  const selected = profile.selectionStrategy || '';
-  const ready = Boolean(selected);
 
   async function sendMessage(event) {
     event.preventDefault();
@@ -45,8 +53,13 @@ export default function SeasonPieceEntry({ profile, earnings = 0, onUpdate, onSt
     } finally { setSaving(false); }
   }
 
-  const chooseStrategy = (strategy) => onUpdate?.(profile, { selectionStrategy: selected === strategy ? '' : strategy });
-  const chooseBand = (band) => onUpdate?.(profile, { gridBand: band });
+  function chooseStrategy(condition, strategy) {
+    const next = { ...strategiesByCondition, [condition]: strategiesByCondition[condition] === strategy ? '' : strategy };
+    onUpdate?.(profile, { strategiesByWorthCondition: next });
+  }
+  function chooseRisk(condition, risk) {
+    onUpdate?.(profile, { riskByWorthCondition: { ...riskByCondition, [condition]: risk } });
+  }
 
   return <article className={`season-piece-card ${profile.activePlayer === false ? 'season-inactive' : ''} ${compact ? 'season-piece-card-compact' : ''}`}>
     {onHide && <button className="remove-piece-btn" title="Remove piece from this graph" onClick={() => onHide(profile)}><X size={14}/></button>}
@@ -55,10 +68,10 @@ export default function SeasonPieceEntry({ profile, earnings = 0, onUpdate, onSt
       <b>{profile.name}</b>
       <span>Season {profile.season} · {profile.paperMode ? 'Paper' : 'Live'} · {profile.activePlayer === false ? 'Inactive' : 'Active'}</span>
       <strong>{money(currentWorth)} current worth</strong>
+      <small>Original {money(worth.original)} · {money(earnings)} earned · {worth.ratio.toFixed(2)}×</small>
       <small>{profile.pieceType} · {profile.baseName} base · {profile.strategy || 'midpoint'} ladder</small>
-      <small>Quota {money(profile.quotaValue ?? profile.balance)} · {money(earnings)} earned</small>
       <small>Next scheduled: {profile.nextScheduledWeek || 'week1'}</small>
-      {!ready && <div className="piece-not-ready" role="status">NOT READY FOR PLAY · SELECT A STRATEGY</div>}
+      {!ready && <div className="piece-not-ready" role="status">NOT READY FOR PLAY · SET STRATEGY AND RISK FOR {WORTH_CONDITIONS.find((x) => x.id === worth.condition)?.label.toUpperCase()}</div>}
       {ready && profile.selectedLines?.[0] && <small className="season-piece-selected-game">Selected game: {profile.selectedLines[0].team || profile.selectedLines[0].event || profile.selectedLines[0].ticker} · {profile.selectedLines[0].league || 'Market'} · {profile.selectedLines[0].line ?? 'ladder'} · {profile.selectedLines[0].side}</small>}
       {profile.activePlayer !== false && <div className="season-piece-controls">
         <button className="secondary-btn" disabled={busy || !ready} onClick={() => onStartWeek?.(profile)}>Start next week</button>
@@ -69,19 +82,30 @@ export default function SeasonPieceEntry({ profile, earnings = 0, onUpdate, onSt
       {expanded && <div className="season-piece-expanded">
         <div className="season-piece-grid-panel">
           <div className="season-piece-section-title">Strategy Graph</div>
-          <div className="piece-strategy-buttons">
-            {grid.strategies.map((strategy) => <button key={strategy.id} className={`piece-strategy-button ${selected === strategy.id ? 'is-selected' : 'is-unset'}`} aria-pressed={selected === strategy.id} onClick={() => chooseStrategy(strategy.id)}>{strategy.label}</button>)}
+          <div className="piece-worth-graph">
+            {WORTH_CONDITIONS.map((condition) => {
+              const selectedStrategy = strategiesByCondition[condition.id] || (condition.id === worth.condition && profile.selectionStrategy && profile.selectionStrategy !== 'baseball-no' ? profile.selectionStrategy : '');
+              const selectedRisk = riskByCondition[condition.id] || (condition.id === worth.condition ? profile.riskPreference : '');
+              return <section className={`piece-worth-column ${condition.id === worth.condition ? 'is-current' : ''}`} key={condition.id}>
+                <button type="button" className={`piece-grid-band-button ${condition.id === worth.condition ? 'active' : ''}`} aria-current={condition.id === worth.condition ? 'step' : undefined}>{condition.label}</button>
+                <div className="piece-worth-strategies">
+                  {STRATEGIES.map((strategy) => <button key={strategy.id} className={`piece-strategy-button ${selectedStrategy === strategy.id ? 'is-selected' : 'is-unset'}`} aria-pressed={selectedStrategy === strategy.id} onClick={() => chooseStrategy(condition.id, strategy.id)}>{strategy.label}</button>)}
+                </div>
+                <label className="piece-axis-control">Risk
+                  <select value={selectedRisk || ''} onChange={(e) => chooseRisk(condition.id, e.target.value)}>
+                    <option value="" disabled>Set risk</option>
+                    {RISK_OPTIONS.map((risk) => <option key={risk.id} value={risk.id}>{risk.label}</option>)}
+                  </select>
+                </label>
+                <small className="piece-worth-status">{selectedStrategy && selectedRisk ? 'Configured' : 'Not configured'}</small>
+              </section>;
+            })}
           </div>
-          <button className={`piece-strategy-button piece-baseball-button ${selected === 'baseball-no' ? 'is-selected' : 'is-unset'}`} aria-pressed={selected === 'baseball-no'} onClick={() => chooseStrategy('baseball-no')}>Bet NO Strat (Baseball)</button>
-          <div className="piece-grid-horizontal">
-            {GRID_BANDS.map((band) => <button type="button" key={band.id} className={`piece-grid-band-button ${grid.band === band.id ? 'active' : ''}`} aria-pressed={grid.band === band.id} onClick={() => chooseBand(band.id)}>{band.label}</button>)}
+          <div className="piece-baseball-row">
+            <span>Bet NO Strat (Baseball)</span>
+            <button type="button" className={`piece-strategy-button ${baseballEnabled ? 'is-selected' : 'is-unset'}`} aria-pressed={baseballEnabled} onClick={() => onUpdate?.(profile, { baseballNoStrategy: !baseballEnabled })}>{baseballEnabled ? 'Enabled' : 'Disabled'}</button>
           </div>
-          <label className="piece-axis-control">Risk
-            <select value={profile.riskPreference || 'probability'} onChange={(e) => onUpdate?.(profile, { riskPreference: e.target.value })}>
-              <option value="probability">Probability first</option><option value="balanced">Balanced</option><option value="value">Value first</option>
-            </select>
-          </label>
-          <div className="piece-strategy-note">{ready ? 'Selected: ' + (selected === 'baseball-no' ? 'Bet NO Strat (Baseball only)' : STRATEGIES.find((item) => item.id === selected)?.label) : 'Strategy selection required.'}</div>
+          <div className="piece-strategy-note">The active worth condition is determined automatically from current piece value divided by its original value. Baseball uses its own strict NO strategy whenever enabled.</div>
         </div>
         <div className="season-piece-chat">
           <div className="season-piece-section-title"><MessageCircle size={14}/> Instructions to this piece</div>
