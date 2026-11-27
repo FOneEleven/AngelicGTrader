@@ -114,6 +114,18 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
   const root = dataFolder?.handle;
 
   useEffect(() => {
+    if (!/\\{\\d+\\}$/.test(progress)) return undefined;
+    const timer = window.setInterval(() => {
+      setProgress((current) => {
+        const match = current.match(/\\{(\\d+)\\}$/);
+        if (!match) return current;
+        return current.replace(/\\{\\d+\\}$/, '{' + Math.max(0, Number(match[1]) - 1) + '}');
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [progress]);
+
+  useEffect(() => {
     if (!root) return;
     (async () => {
       const cached = await readCache(root);
@@ -178,10 +190,10 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
           const key = teamStatsCacheKey({ ...params, season: league === 'MLB' ? gameTime : currentSeason });
           let entry = await getCachedTeamStats(root, key, league === 'MLB' ? 60 * 60 * 1000 : undefined);
           if (!entry) {
-            setProgress((league === 'MLB' ? 'Fetching MLB statistics/weather: ' : 'Fetching ESPN: ') + p.team + ' vs ' + opponent);
+            setProgress((league === 'MLB' ? 'MLB statistics: ' : 'ESPN league statistics: ') + p.team + ' vs ' + opponent + ' {5}');
             const raw = league === 'MLB'
-              ? await fetchMLBTeamStatistics({ team: p.team, opponent, gameTime })
-              : normalizeStats(await fetchTeamStatistics(params), p.team, opponent);
+              ? await fetchMLBTeamStatistics({ team: p.team, opponent, gameTime, onProgress: setProgress })
+              : normalizeStats(await fetchTeamStatistics({ ...params, onProgress: setProgress }), p.team, opponent);
             entry = await setCachedTeamStats(root, key, raw);
           }
           const stats = entry.data;
