@@ -172,6 +172,10 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       setDebugEntries([{ time: new Date().toLocaleTimeString(), message: 'Refresh started · ' + predictions.length + ' prediction entries · ' + new Date().toISOString() }]);
       const nextStats = {}, nextAnalyses = {}, nextErrors = {};
       const statsForPrediction = new Map();
+      const reportProgress = (label) => {
+        setProgress(label);
+        setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'STEP · ' + label }].slice(-40));
+      };
       try {
         const currentSeason = new Date().getFullYear();
         const orderedPredictions = [...predictions].sort((a, b) => {
@@ -201,8 +205,8 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
             setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'REQUEST · ' + league + ' · ' + p.team + ' vs ' + opponent + ' · provider=' + (league === 'MLB' ? 'MLB Stats API + Open-Meteo' : 'Azure GetTeamStatistics / ESPN') + ' · timeout=5000ms' }].slice(-40));
             try {
               const raw = league === 'MLB'
-                ? await fetchMLBTeamStatistics({ team: p.team, opponent, gameTime, onProgress: setProgress })
-                : normalizeStats(await fetchTeamStatistics({ ...params, onProgress: setProgress }), p.team, opponent);
+                ? await fetchMLBTeamStatistics({ team: p.team, opponent, gameTime, onProgress: reportProgress })
+                : normalizeStats(await fetchTeamStatistics({ ...params, onProgress: reportProgress }), p.team, opponent);
               entry = await setCachedTeamStats(root, key, raw);
               setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SUCCESS · ' + league + ' · ' + p.team + ' vs ' + opponent + ' · ' + (Date.now() - startedAt) + 'ms · provider=' + (raw.provider || 'ESPN') }].slice(-40));
             } catch (requestError) {
