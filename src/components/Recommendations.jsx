@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { RefreshCw, PlusCircle, WalletCards, Scissors } from 'lucide-react';
-import { createSeasonProfile, listSeasonProfiles, updateSeasonProfile, advanceSeasonWeek, splitSeasonPiece, readSeasonTrades } from '../lib/dataModel';
+import { createSeasonProfile, listSeasonProfiles, updateSeasonProfile, splitSeasonPiece, readSeasonTrades } from '../lib/dataModel';
 import SeasonToken from './SeasonToken';
 
 const PIECES = ['Quarterback', 'Running Back', 'Receiver', 'Lineman', 'Slam Dunk', 'Posterizer', 'Dribbler', '3Pt Shooter', 'Baseball a Slugger', 'Baseball a Heater', 'Baseball a Catcher', 'Baseball a Runner'];
