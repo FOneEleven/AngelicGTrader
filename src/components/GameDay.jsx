@@ -6,13 +6,6 @@ import { listSeasonProfiles, readSeasonTrades, updateSeasonProfile, advanceSeaso
 const FILTERS = [{ id: 'active', label: 'Active' }, { id: 'all', label: 'All' }, { id: 'winners', label: 'Highest winners' }];
 const isLoss = (trade) => /^(lost|loss|settled_loss|settled-loss)$/i.test(String(trade.outcome || trade.status || '')) || Number(trade.earnings ?? trade.profit ?? 0) < 0;
 
-function earningsFor(trades) {
-  return trades.reduce((sum, trade) => {
-    const value = Number(trade.earnings ?? trade.profit ?? 0);
-    return sum + (Number.isFinite(value) ? value : 0);
-  }, 0);
-}
-
 function EarningsGraph({ pieces }) {
   const width = Math.max(560, pieces.length * 150 + 100), height = 300;
   const left = 66, right = 24, top = 22, bottom = 72;
