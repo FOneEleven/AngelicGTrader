@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ShieldCheck, Wallet, RefreshCw, Link2, Unlink, AlertCircle } from 'lucide-react';
 import { appendActivity } from '../lib/dataModel';
 
@@ -72,6 +72,7 @@ export default function KalshiConnect({ dataFolderHandle, onAccountChange }) {
   const [balance, setBalance] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const historySyncRef = useRef(new Map());
 
   useEffect(() => {
     let cancelled = false;
@@ -141,6 +142,9 @@ export default function KalshiConnect({ dataFolderHandle, onAccountChange }) {
   }
 
   async function importKalshiHistory(connection) {
+    const accountId = connection.keyId;
+    if (historySyncRef.current.has(accountId)) return historySyncRef.current.get(accountId);
+    const task = (async () => {
     const response = await fetch(API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -152,7 +156,6 @@ export default function KalshiConnect({ dataFolderHandle, onAccountChange }) {
     const file = await meta.getFileHandle('kalshi-history.json', { create: true });
     let store = { accounts: {} };
     try { store = JSON.parse(await (await file.getFile()).text()); } catch {}
-    const accountId = connection.keyId;
     const previous = store.accounts?.[accountId] || { nickname: connection.nickname, importedFillIds: [], fills: [] };
     const seen = new Set(previous.importedFillIds || []);
     const fresh = result.fills.filter((fill) => {
