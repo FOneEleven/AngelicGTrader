@@ -7,7 +7,10 @@ const FILTERS = [{ id: 'active', label: 'Active' }, { id: 'all', label: 'All' },
 const isLoss = (trade) => /^(lost|loss|settled_loss|settled-loss)$/i.test(String(trade.outcome || trade.status || '')) || Number(trade.earnings ?? trade.profit ?? 0) < 0;
 
 function earningsFor(trades) {
-  return trades.reduce((sum, trade) => sum + Number(trade.earnings ?? trade.profit ?? 0), 0);
+  return trades.reduce((sum, trade) => {
+    const value = Number(trade.earnings ?? trade.profit ?? 0);
+    return sum + (Number.isFinite(value) ? value : 0);
+  }, 0);
 }
 
 function EarningsGraph({ pieces }) {
