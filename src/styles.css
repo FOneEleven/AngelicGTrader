@@ -1384,3 +1384,46 @@ tr.row-mid td {
 .season-piece-info strong{font:600 14px 'Space Grotesk';color:#e7e9ee}
 .season-pieces-empty{padding:18px;border:1px dashed #343b47;border-radius:9px;color:#7e8999;font-size:10px;text-align:center}
 @media(max-width:850px){.season-create-layout{grid-template-columns:1fr}.season-token-preview{min-height:270px}.season-create-controls{max-width:none}}
+
+
+/* Season piece controls */
+.season-manager-main{min-width:0;flex:1;display:flex;flex-direction:column;gap:6px}
+.season-manager-row.season-inactive{opacity:.58;border-color:#4a3434}
+.season-piece-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:5px}
+.season-piece-controls .secondary-btn{padding:7px 10px;font-size:9px}
+.season-piece-controls select{min-width:112px;background:#10151d;border:1px solid #343c49;border-radius:6px;color:#d7dbe2;padding:7px 9px;font-size:9px}
+.auto-switch{display:inline-flex;align-items:center;gap:7px;padding:5px 8px;border:1px solid #353b47;border-radius:20px;background:#141922;color:#8a94a4;cursor:pointer;font-size:9px;user-select:none}
+.auto-switch input{position:absolute;opacity:0;pointer-events:none}
+.auto-switch-track{width:27px;height:15px;border-radius:20px;background:#343b47;position:relative;transition:background .15s}
+.auto-switch-track:after{content:'';position:absolute;width:11px;height:11px;left:2px;top:2px;border-radius:50%;background:#9aa3b0;transition:transform .15s}
+.auto-switch.enabled{border-color:#4b673e;background:#17251c;color:#a7d8a9;box-shadow:0 0 10px #63b97825}
+.auto-switch.enabled .auto-switch-track{background:#4b9b65}
+.auto-switch.enabled .auto-switch-track:after{transform:translateX(12px);background:#f1fff2}
+.auto-switch.enabled b{color:#a7d8a9}
+.game-day-filters{display:flex;gap:5px;flex-wrap:wrap}
+.game-day-filters .seg-btn{border:1px solid #303744;border-radius:6px}
+.game-day-chart-scroll{width:100%;overflow-x:auto;padding:8px 12px 0}
+.game-day-chart{display:block;width:100%;min-width:560px;height:auto;overflow:visible}
+.game-day-chart-foot{display:flex;justify-content:space-between;align-items:center;padding:8px 16px 12px;border-bottom:1px solid #252c38;color:#7e8999;font-size:9px}
+.game-day-piece-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:10px;padding:14px}
+.game-day-piece{position:relative;display:flex;align-items:center;gap:9px;min-width:0;padding:9px 30px 9px 8px;border:1px solid #2c3440;border-radius:9px;background:#131922}
+.game-day-piece-main{min-width:0;flex:1;display:flex;flex-direction:column;gap:5px}
+.game-day-piece-main>b{font:600 10px 'Space Grotesk';color:#ead39c;overflow-wrap:anywhere}
+.game-day-piece-main>span,.game-day-piece-main>small{font-size:9px;color:#8992a1}
+.game-day-piece-main>strong{font:600 13px 'Space Grotesk';color:#e8e9ed}
+.remove-piece-btn{position:absolute;right:7px;top:7px;width:22px;height:22px;display:grid;place-items:center;border:1px solid #49363a;background:#21171a;color:#d89b9b;border-radius:5px}
+.game-day-schedule-piece{padding:12px 16px;border-top:1px solid #252c38;display:grid;grid-template-columns:minmax(150px,.6fr) minmax(0,1.4fr);gap:12px;align-items:start}
+.game-day-schedule-piece>div:first-child{display:flex;flex-direction:column;gap:4px}
+.game-day-schedule-piece>div:first-child b{font-size:10px;color:#e2d1a5}
+.game-day-schedule-piece>div:first-child small{font-size:9px;color:#b99953}
+.game-day-match{display:flex;flex-direction:column;gap:4px;padding:9px 10px;margin-bottom:6px;background:#141a23;border:1px solid #2c3440;border-radius:7px}
+.game-day-match b{font-size:9px;color:#cbd0d9}
+.game-day-match span,.game-day-no-matches{font-size:9px;color:#7e8999}
+.game-day-no-matches{padding:8px 0}
+.game-day-note{font-size:9px;color:#788394;line-height:1.5;padding:0 3px}
+@media(max-width:700px){
+  .season-piece-controls{gap:6px}
+  .game-day-schedule-piece{grid-template-columns:1fr}
+  .game-day-piece-list{grid-template-columns:1fr;padding:10px}
+  .game-day-chart-foot{flex-wrap:wrap;gap:8px}
+}
