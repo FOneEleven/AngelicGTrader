@@ -43,8 +43,11 @@ export function settleSeasonRound(season, {
   }
 
   const stake = season.fixedStake;
+  const contracts = Math.floor((stake + 1e-9) / price);
+  if (contracts < 1) throw new Error('Fixed stake is too small to buy one contract at this price.');
+  const amountInvested = Number((contracts * price).toFixed(2));
   const fees = Math.max(0, numberOr(fee));
-  const grossProfit = won ? stake * ((1 - price) / price) : -stake;
+  const grossProfit = won ? contracts * (1 - price) : -amountInvested;
   const netProfit = grossProfit - fees;
   const round = {
     roundNumber: season.rounds.length + 1,
@@ -54,6 +57,9 @@ export function settleSeasonRound(season, {
     matchup: matchup || null,
     side: side || null,
     stake,
+    contracts,
+    amountInvested,
+    uninvestedStake: Number((stake - amountInvested).toFixed(2)),
     entryPrice: price,
     fee: fees,
     won,
@@ -112,7 +118,7 @@ export function simulateSeason({
       wins: state.wins,
       losses: state.losses,
       fixedStake: state.fixedStake,
-      totalStaked: Number((state.rounds.length * state.fixedStake).toFixed(2)),
+      totalStaked: Number(state.rounds.reduce((sum, round) => sum + round.amountInvested, 0).toFixed(2)),
       accumulatedProfit: state.accumulatedProfit,
       status: state.status,
       winRate: state.rounds.length ? Number((state.wins / state.rounds.length).toFixed(4)) : null,
