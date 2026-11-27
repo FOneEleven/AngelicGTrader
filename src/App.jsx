@@ -11,7 +11,7 @@ import PaperModeToggle from './components/PaperModeToggle';
 import Recommendations from './components/Recommendations';
 import LiveMarketScanner from './components/LiveMarketScanner';
 import AIPredictions from './components/AIPredictions';
-import { readSettings, writeSettings } from './lib/dataModel';
+import { readSettings, writeSettings, readTrades } from './lib/dataModel';
 
 const nav = [
   { label: 'Dashboard', icon: LayoutDashboard, group: 'WORKSPACE' },
@@ -39,7 +39,20 @@ function StatCard({ title, value, note, icon: Icon, tone = 'gold', trend }) {
   </div>;
 }
 
-function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, paperMode }) {
+function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, paperMode, onNavigate }) {
+  const [records, setRecords] = useState([]);
+  useEffect(() => {
+    const root = dataFolder?.handle;
+    if (!root) { setRecords([]); return; }
+    let cancelled = false;
+    (async () => {
+      const season = dataFolder?.season || 1;
+      const all = (await Promise.all(['week1', 'week2', 'week3'].map((week) => readTrades(root, season, week)))).flat();
+      all.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      if (!cancelled) setRecords(all);
+    })().catch(() => { if (!cancelled) setRecords([]); });
+    return () => { cancelled = true; };
+  }, [dataFolder, refreshKey]);
   return <>
     <div className="page-heading">
       <div><div className="eyebrow">OVERVIEW</div><h1>Dashboard</h1><p>Your sports-market intelligence at a glance.</p></div>
@@ -58,11 +71,13 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
     </div>
     <div className="content-grid">
       <section className="panel opportunities-panel">
-        <div className="panel-heading"><div><h2>Opportunity pipeline</h2><p>Illustrative layout · not live market data</p></div><button className="text-btn">View scanner <ChevronRight size={15}/></button></div>
-        <div className="table-wrap"><table><thead><tr><th>SPORT / MATCHUP</th><th>TEAM SCORING MARKET</th><th>MODEL PROB.</th><th>PRICE</th><th>STATUS</th></tr></thead><tbody>
-          {opportunities.map((o) => <tr key={o.matchup}><td><div className="match-sport"><span className={`sport-badge ${o.color}`}>{o.sport}</span><div><b>{o.matchup}</b><small>{o.league} · {o.time}</small></div></div></td><td>{o.market}</td><td><b className="prob">{o.probability}%</b></td><td>{o.price}</td><td><span className="status-pill">{o.status}</span></td></tr>)}
-        </tbody></table></div>
-        <div className="table-foot"><span>Sample rows demonstrate the interface only.</span><span>Live discovery not connected</span></div>
+        <div className="panel-heading"><div><h2>Records</h2><p>Predictions and recommendations saved using Record</p></div><button className="text-btn" onClick={() => onNavigate?.('AI Predictions')}>AI Predictions <ChevronRight size={15}/></button></div>
+        {records.length ? (
+          <div className="table-wrap"><table><thead><tr><th>RECORDED</th><th>MATCHUP</th><th>MARKET</th><th>SIDE</th><th>MODEL PROB.</th><th>PRICE</th><th>STATUS</th></tr></thead><tbody>
+            {records.map((r) => <tr key={r.id}><td>{new Date(r.timestamp).toLocaleString()}</td><td>{r.matchup}</td><td>{r.market}</td><td>{r.side}</td><td>{r.modelProbability == null ? (r.probability + '%') : Math.round(Number(r.modelProbability) * 100) + '%'}</td><td>{r.price}¢</td><td><span className="status-pill">{r.status || 'open'}</span></td></tr>)}
+          </tbody></table></div>
+        ) : <div className="empty-state"><div className="empty-icon"><ClipboardList size={22}/></div><b>No records yet</b><span>Use Record in AI Predictions or Betting Recommendations to add an entry here.</span></div>}
+        <div className="table-foot"><span>Saved locally in your season/week records</span><span>{records.length} records</span></div>
       </section>
       <section className="panel side-panel">
         <div className="panel-heading"><div><h2>System checks</h2><p>Integration status</p></div><span className="check-ring"><ShieldCheck size={17}/></span></div>
@@ -156,11 +171,11 @@ export default function App() {
         {active === 'Dashboard' && (
           <>
             <DataFolderConnect onFolderReady={setDataFolder} />
-            <Dashboard dataFolder={dataFolder} activityFilter={activityFilter} onActivityFilter={setActivityFilter} refreshKey={refreshKey} paperMode={paperMode} />
+            <Dashboard dataFolder={dataFolder} activityFilter={activityFilter} onActivityFilter={setActivityFilter} refreshKey={refreshKey} paperMode={paperMode} onNavigate={setActive} />
           </>
         )}
         {active === 'Live Market Scanner' && (
-          <LiveMarketScanner dataFolder={dataFolder} onActivity={handleActivity} />
+          <LiveMarketScanner dataFolder={dataFolder} onActivity={handleActivity} onNavigate={setActive} />
         )}
         {active === 'AI Predictions' && (
           <AIPredictions dataFolder={dataFolder} onActivity={handleActivity} />
