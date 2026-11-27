@@ -71,7 +71,7 @@ function getOutputText(response) {
   throw new Error('OpenAI returned no analysis text');
 }
 
-async function callOpenAI(input, isMLB) {
+async function callOpenAI(input, isMLB, pieceInstruction = '') {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY is not configured');
 
@@ -110,7 +110,7 @@ MLB STRATEGY — STRICT NO-ONLY TEAM RUN TOTALS:
 Find mispriced outcomes, including underdogs with stronger historical performance than market expectations, team totals requiring unusually strong scoring performances, NO positions where YES requires historically uncommon performance, and recent form that differs from season averages.
 - Do not automatically favor YES or NO.
 `}
-`.trim();
+`.trim() + (pieceInstruction ? `\n\nPIECE-SPECIFIC REASSESSMENT INSTRUCTION (treat as a hypothesis, not evidence):\n${pieceInstruction}\n\nEvaluate this instruction critically against the supplied statistics. Do not agree merely because the user requested it. Do not anchor to the baseline probability. Change the probability only when the evidence supports a change; explain evidence for and against the instruction. Preserve uncertainty and identify unsupported assumptions.` : '');
 
   let lastError;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -155,6 +155,8 @@ async function analyzeMarketHandler(context, req) {
     const market = body.market;
     const teamStats = body.teamStats;
     const opponentStats = body.opponentStats || null;
+    const pieceInstruction = String(body.pieceInstruction || '').trim().slice(0, 2000);
+    const baselinePrediction = body.baselinePrediction && typeof body.baselinePrediction === 'object' ? body.baselinePrediction : null;
     if (!market || !teamStats) {
       context.res = { status: 400, headers: CORS, body: JSON.stringify({ error: 'market and teamStats are required' }) };
       return;
@@ -205,6 +207,8 @@ async function analyzeMarketHandler(context, req) {
       teamStatistics: teamStats,
       opponentStatistics: opponentStats,
       additionalContext: body.context || {},
+      baselinePrediction,
+      pieceInstruction: pieceInstruction || null,
       analysisInstructions: {
         objective: isMLB ? 'Estimate probability of the team scoring OVER the exact run threshold; NO-only decision.' : 'Independent probability estimation',
         focus: isMLB
@@ -236,7 +240,7 @@ async function analyzeMarketHandler(context, req) {
     }
 
     context.log('AnalyzeMarket: ' + (market.ticker || market.title || 'Unknown market'));
-    const result = await callOpenAI(input, isMLB);
+    const result = await callOpenAI(input, isMLB, pieceInstruction);
     const analysis = result.analysis;
     if (!Number.isFinite(analysis.probabilityYes) || analysis.probabilityYes < 0 || analysis.probabilityYes > 1) {
       throw new Error('Invalid probability returned by OpenAI');
@@ -280,6 +284,7 @@ async function analyzeMarketHandler(context, req) {
         durationMs: Date.now() - started,
         market: { ticker: market.ticker || '', title: market.title || '', line, yesAsk, noAsk },
         prediction: { ...analysis, recommendation },
+        ...(pieceInstruction ? { reassessment: { requested: true, instruction: pieceInstruction, baselineProbabilityYes: Number(baselinePrediction?.probabilityYes), revisedProbabilityYes: analysis.probabilityYes, probabilityChange: Number.isFinite(Number(baselinePrediction?.probabilityYes)) ? analysis.probabilityYes - Number(baselinePrediction.probabilityYes) : null, baselineConfidence: Number(baselinePrediction?.confidence), revisedConfidence: analysis.confidence } } : {}),
         marketValue: {
           ...value,
           marketProbabilityYes: yesAsk,
