@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BrainCircuit, ExternalLink, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { readCache } from '../lib/marketCache';
-import { readSettings, appendTrade, readTrades, readAIPredictionSelections, deleteTrade, latestSeason, listSeasonProfiles, updateSeasonProfile, readSeasonTrades } from '../lib/dataModel';
+import { readSettings, appendTrade, readTrades, readAIPredictionSelections, deleteTrade, latestSeason, listSeasonProfiles, updateSeasonProfile, readSeasonTrades, confirmedWalletReturns } from '../lib/dataModel';
 import { computePredictions } from '../lib/predictions';
 import { fetchTeamStatistics } from '../lib/sportsStats';
 import { fetchMLBTeamStatistics } from '../lib/mlbStats';
@@ -74,9 +74,9 @@ function recommendedIndex(p) {
   if (index >= 0) return index;
   return Math.max(0, Math.min(Number(p.targetIdx) || 0, p.lines.length - 1));
 }
-function activeWorthCondition(profile, accruedProfit) {
+function activeWorthCondition(profile, currentWorthValue) {
   const original = Math.max(0, Number(profile?.quotaValue ?? profile?.initialBalance ?? profile?.balance) || 0);
-  const currentWorth = Math.max(0, (Number(profile?.balance) || 0) + (Number(accruedProfit) || 0));
+  const currentWorth = Math.max(0, Number(currentWorthValue) || 0);
   const ratio = original > 0 ? currentWorth / original : 0;
   return ratio >= 3 ? '3x' : ratio >= 2 ? '2x' : ratio >= 1 ? 'break-even' : 'pre-even';
 }
@@ -335,8 +335,8 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         const bt = Date.parse(b.gameTime || b.expectedExpiration || b.closeTime || '') || Infinity;
         return at - bt;
       });
-      const accruedProfit = (await readSeasonTrades(root, seasonProfile)).reduce((sum, trade) => sum + (Number(trade.profit) || 0), 0);
-      const worthCondition = activeWorthCondition(seasonProfile, accruedProfit);
+      const confirmedReturns = confirmedWalletReturns(await readSeasonTrades(root, seasonProfile));
+      const worthCondition = activeWorthCondition(seasonProfile, confirmedReturns);
       const mode = seasonProfile.strategiesByWorthCondition?.[worthCondition] || (seasonProfile.selectionStrategy && seasonProfile.selectionStrategy !== 'baseball-no' ? seasonProfile.selectionStrategy : '');
       const risk = seasonProfile.riskByWorthCondition?.[worthCondition] || '';
       const baseballEnabled = seasonProfile.baseballNoStrategy === true || seasonProfile.selectionStrategy === 'baseball-no';
@@ -412,8 +412,8 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       if (side !== 'NO' || analysis?.mlbEligibility?.eligible !== true || probability < 0.90) { setError('Baseball NO strategy requires the original strict MLB eligibility and 90% probability rules.'); return; }
     }
     if (leagueFor(p) !== 'MLB') {
-      const currentProfit = (await readSeasonTrades(root, seasonProfile)).reduce((sum, trade) => sum + (Number(trade.profit) || 0), 0);
-      const currentCondition = activeWorthCondition(seasonProfile, currentProfit);
+      const confirmedReturns = confirmedWalletReturns(await readSeasonTrades(root, seasonProfile));
+      const currentCondition = activeWorthCondition(seasonProfile, confirmedReturns);
       const mode = seasonProfile?.strategiesByWorthCondition?.[currentCondition] || (seasonProfile?.selectionStrategy && seasonProfile.selectionStrategy !== 'baseball-no' ? seasonProfile.selectionStrategy : '');
       const risk = seasonProfile?.riskByWorthCondition?.[currentCondition] || '';
       if (!mode || !risk) { setError('This piece is not ready for play. Set strategy and risk for its current worth condition.'); return; }
