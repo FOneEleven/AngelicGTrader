@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { RefreshCw, PlusCircle, WalletCards, Scissors } from 'lucide-react';
 import { createSeasonProfile, listSeasonProfiles, updateSeasonProfile, splitSeasonPiece, readSeasonTrades } from '../lib/dataModel';
 import SeasonToken from './SeasonToken';
+import SeasonPieceEntry from './SeasonPieceEntry';
 
 const PIECES = ['Quarterback', 'Running Back', 'Receiver', 'Lineman', 'Slam Dunk', 'Posterizer', 'Dribbler', '3Pt Shooter', 'Baseball a Slugger', 'Baseball a Heater', 'Baseball a Catcher', 'Baseball a Runner'];
 const BASES = [
@@ -24,7 +25,7 @@ function makeToken() {
 }
 function money(value) { return '$' + (Number(value) || 0).toFixed(2); }
 
-export default function Recommendations({ dataFolder, paperMode: currentPaperMode = true, kalshiAccount, onActivity, onStartWeek }) {
+export default function Recommendations({ dataFolder, paperMode: currentPaperMode = true, kalshiAccount, onActivity, onStartWeek, onNavigate }) {
   const root = dataFolder?.handle;
   const [balance, setBalance] = useState('0');
   const availableBalance = kalshiAccount?.connected ? Math.max(0, Number(kalshiAccount.balanceDollars) || 0) : 0;
@@ -134,37 +135,9 @@ export default function Recommendations({ dataFolder, paperMode: currentPaperMod
       {seasons.length ? <div className="season-manager-list">{seasons.map((s) => {
         const currentWorth = Math.max(0, (Number(s.balance) || 0) + (Number(pieceProfit[s.id]) || 0));
         const quota = Number(s.quotaValue ?? s.balance) || 0;
-        const selected = s.selectionStrategy || 'standard';
-        const grid = strategyOrder(s, currentWorth, quota);
-        const ordered = grid.items;
-        return <article className={`season-manager-row ${s.activePlayer === false ? 'season-inactive' : ''}`} key={s.id}>
-          <SeasonToken pieceType={s.pieceType} baseColor={s.baseColor} size={68}/>
+        return <div className={`season-manager-row season-manager-piece-entry ${s.activePlayer === false ? 'season-inactive' : ''}`} key={s.id}>
           <div className="season-manager-main">
-            <b>{s.name}</b><span>Piece worth {money(currentWorth)} · Quota {money(quota)} · Season {s.season}</span>
-            <small>{s.pieceType} · {s.baseName} base · {s.status === 'split' ? 'Split parent' : s.activePlayer === false ? 'Inactive' : 'Active'} · {s.paperMode ? 'Paper' : 'Live'}</small>
-            {s.parentPieceId && <small>Split from {s.parentPieceId} · child {s.splitIndex}/{s.splitCount}</small>}
-            <div className="season-piece-controls">
-              <button className="secondary-btn" onClick={() => startNextWeek(s)} disabled={busy || s.activePlayer === false}>Start next week</button>
-              <label className={`auto-switch ${s.auto ? 'enabled' : ''}`}><input type="checkbox" checked={!!s.auto} onChange={(e) => updatePiece(s, { auto: e.target.checked })}/><span className="auto-switch-track"></span><b>Auto</b></label>
-              <select value={s.strategy || 'midpoint'} onChange={(e) => updatePiece(s, { strategy: e.target.value })} aria-label={s.name + ' ladder population'}><option value="midpoint">Midpoint lines</option><option value="cliff">Cliff lines</option></select>
-            </div>
-            <div className="piece-strategy-grid">
-              <div className="piece-grid-settings">
-                <label>Risk · top axis<select value={s.riskPreference || 'probability'} onChange={(e) => updatePiece(s, { riskPreference: e.target.value })}><option value="probability">Probability first · strict</option><option value="balanced">Balanced</option><option value="value">Value first · lenient</option></select></label>
-                <label className={'auto-switch ' + (s.safe ? 'enabled' : '')}><input type="checkbox" checked={!!s.safe} onChange={(e) => updatePiece(s, { safe: e.target.checked })}/><span className="auto-switch-track"></span><b>Safe strategy</b></label>
-              </div>
-              <div className="piece-grid-horizontal">
-                {GRID_BANDS.map((band) => <span key={band} className={'piece-grid-band ' + (grid.band === band ? 'active' : '')}>{band === 'pre-even' ? 'Pre-even' : band === 'break-even' ? 'Breaking even' : band}</span>)}
-              </div>
-              <small>Position: {grid.band} · {grid.ratio.toFixed(2)}× quota</small>
-              <div className="piece-grid-settings">
-                <label>Diversity · bottom axis<select value={s.diversityMode || 'allow-overlap'} onChange={(e) => updatePiece(s, { diversityMode: e.target.value })}><option value="allow-overlap">Allow same games</option><option value="avoid-overlap">Avoid other pieces' games</option><option value="split">Prefer diversified split</option></select></label>
-              </div>
-              <div className="piece-strategy-buttons">
-                {ordered.map((item) => <button key={item.id} className={`secondary-btn ${selected === item.id ? 'active' : ''}`} onClick={() => updatePiece(s, { selectionStrategy: item.id })}>{item.label}</button>)}
-              </div>
-              <small>Thresholds: {STRATEGIES.find((x) => x.id === selected)?.probability}% probability · {STRATEGIES.find((x) => x.id === selected)?.confidence}% confidence · {STRATEGIES.find((x) => x.id === selected)?.payout.toFixed(2)}× minimum payout</small>
-            </div>
+            <SeasonPieceEntry profile={s} earnings={pieceProfit[s.id] || 0} onUpdate={updatePiece} onStartWeek={startNextWeek} onNavigate={onNavigate}/>
             <div className="piece-quota-controls">
               <label>Piece quota value <input type="number" min="0" step="0.01" value={quota} onChange={(e) => updatePiece(s, { quotaValue: Math.max(0, Number(e.target.value) || 0) })}/></label>
               <label>Split into <select value={splitCounts[s.id] || s.splitCount || 2} onChange={(e) => setSplitCounts((old) => ({ ...old, [s.id]: Number(e.target.value) }))}>{Array.from({ length: 19 }, (_, i) => i + 2).map((n) => <option key={n} value={n}>{n} pieces</option>)}</select></label>
@@ -173,8 +146,8 @@ export default function Recommendations({ dataFolder, paperMode: currentPaperMod
             </div>
             <small>Next scheduled: {s.nextScheduledWeek || 'week1'}</small>
           </div>
-        </article>;
-      })}</div> : <div className="empty-state"><b>No seasons created yet</b><span>Your committed season tokens will be listed here.</span></div>}
+        </div>;
+<b>No seasons created yet</b><span>Your committed season tokens will be listed here.</span></div>}
     </section>
   </div>;
 }
