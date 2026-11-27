@@ -168,13 +168,13 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       (!seasonProfile?.strategy || p.strategy === seasonProfile.strategy)
     ),
   }), [markets, selectedEntries, seasonProfile?.strategy]);
-  const predictionDatasetSignature = JSON.stringify(predictions.map((p) => ({ key: p.key, event: p.event, gameTime: p.gameTime || p.expectedExpiration || p.closeTime || null, lines: p.lines.map((line) => [line.ticker, line.line, line.yesAsk, line.noAsk]), recommended: p.recommended?.ticker || null })));
+  const predictionDatasetSignature = JSON.stringify(predictions.map((p) => ({ key: p.key, event: p.event, opponent: eventOpponent(markets, p.event, p.team), gameTime: p.gameTime || p.expectedExpiration || p.closeTime || null, lines: p.lines.map((line) => [line.ticker, line.line, line.yesAsk, line.noAsk]), recommended: p.recommended?.ticker || null })));
 
   useEffect(() => {
     if (!root || !seasonProfile) return;
     const datasetSignature = predictionDatasetSignature;
     const previousRefresh = lastStatsRefreshRef.current;
-    if (previousRefresh && !previousRefresh.cancelled && previousRefresh.root === root && previousRefresh.profileId === seasonProfile.id && previousRefresh.signature === datasetSignature) return;
+    if (previousRefresh && previousRefresh.root === root && previousRefresh.profileId === seasonProfile.id && previousRefresh.signature === datasetSignature) return;
     const refreshRecord = { root, profileId: seasonProfile.id, signature: datasetSignature, cancelled: false, completed: false };
     lastStatsRefreshRef.current = refreshRecord;
     let cancelled = false;
@@ -301,8 +301,10 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       }
     }
     run();
-    return () => { cancelled = true; if (!refreshRecord.completed) refreshRecord.cancelled = true; };
-  }, [root, markets, predictions, predictionDatasetSignature, seasonProfile?.id, autoRetryCount]);
+    // Do not cancel on effect cleanup: React StrictMode replays effects in development.
+    // The signature guard above prevents duplicate refreshes for the same dataset.
+    return undefined;
+  }, [root, predictionDatasetSignature, seasonProfile?.id, autoRetryCount]);
 
   useEffect(() => {
     if (!autoRetryAt) return undefined;
