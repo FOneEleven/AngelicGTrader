@@ -3,6 +3,7 @@ import { BrainCircuit, ExternalLink, CheckCircle2, AlertCircle } from 'lucide-re
 import { readCache } from '../lib/marketCache';
 import { readSettings, appendTrade, readTrades } from '../lib/dataModel';
 import { computePredictions, DEFAULTS } from '../lib/predictions';
+import { estimateTeamTotalProbability, calculateEdge } from '../lib/hybridModel';
 
 function cents(v) {
   if (v == null || Number.isNaN(v)) return '—';
@@ -36,6 +37,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
   const [tuning, setTuning] = useState(DEFAULTS);
   const [showDiag, setShowDiag] = useState(false);
   const [sliderIdx, setSliderIdx] = useState({});
+  const [teamContexts, setTeamContexts] = useState({});
 
   const root = dataFolder?.handle;
 
@@ -72,6 +74,9 @@ export default function AIPredictions({ dataFolder, onActivity }) {
     const idx = idxFor(p);
     const chosen = p.lines[idx];
     if (!chosen) return;
+    const context = teamContexts[p.team] || {};
+    const estimate = estimateTeamTotalProbability(context, chosen.line);
+    const edge = estimate.available ? calculateEdge(estimate.modelProbability, chosen.yesAsk) : null;
     setBusy(true); setError('');
     try {
       const trade = {
@@ -81,7 +86,16 @@ export default function AIPredictions({ dataFolder, onActivity }) {
         market: `${p.team} over ${chosen.line} pts`,
         side: 'YES',
         price: Math.round(chosen.yesAsk * 100),
-        probability: Math.round(chosen.yesAsk * 100),
+        probability: estimate.available ? Math.round(estimate.modelProbability * 100) : '',
+        strategy: p.strategy,
+        ticker: chosen.ticker,
+        line: chosen.line,
+        marketProbability: chosen.yesAsk,
+        modelProbability: estimate.available ? estimate.modelProbability : null,
+        edge: edge?.available ? edge.edge : null,
+        modelVersion: estimate.available ? estimate.modelVersion : 'hybrid-1.0.0',
+        context: estimate.available ? { ...estimate.inputs, injuryAdjustment: context.injuryAdjustment, weatherAdjustment: context.weatherAdjustment, paceAdjustment: context.paceAdjustment } : null,
+        reasoning: estimate.available ? `Expected ${estimate.expectedPoints} points; model ${Math.round(estimate.modelProbability * 100)}% vs market ${Math.round(chosen.yesAsk * 100)}%.` : 'Independent team and opponent scoring inputs not supplied; no model probability assigned.',
         stake: 1,
         paper: true,
         status: 'open',
@@ -103,7 +117,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
         <div>
           <div className="eyebrow">WORKSPACE</div>
           <h1>AI Predictions</h1>
-          <p>Cliff strategy first; midpoint back-off fills the gaps. Yellow rows close outside the preferred window.</p>
+          <p>Quantitative cliff/midpoint screening plus an independent team-total model. Context inputs are explicit; missing data never gets guessed.</p>
         </div>
       </div>
 
@@ -188,6 +202,8 @@ export default function AIPredictions({ dataFolder, onActivity }) {
                   <th>JUMP</th>
                   <th style={{ minWidth: 220 }}>LINE</th>
                   <th>YES ASK</th>
+                  <th>MODEL P</th>
+                  <th>EDGE</th>
                   <th>NO ASK</th>
                   <th>PAYOUT</th>
                   <th>FLAGS</th>
@@ -200,6 +216,9 @@ export default function AIPredictions({ dataFolder, onActivity }) {
                   const chosen = p.lines[idx];
                   const already = trades.some((t) => t.market === `${p.team} over ${chosen?.line} pts`);
                   const payout = chosen?.yesAsk ? 1 / chosen.yesAsk : null;
+                  const context = teamContexts[p.team] || {};
+                  const model = estimateTeamTotalProbability(context, chosen?.line);
+                  const edge = model.available ? calculateEdge(model.modelProbability, chosen?.yesAsk) : null;
                   const isRecommended = idx === p.targetIdx;
                   const isCliff = p.strategy === 'cliff';
                   const refLine = isCliff ? p.strong : p.mid;
@@ -219,6 +238,10 @@ export default function AIPredictions({ dataFolder, onActivity }) {
                       <td><span className="status-pill">{p.league}</span></td>
                       <td>
                         <b>{p.team}</b>
+                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 5 }}>
+                          <input aria-label={p.team + ' points per game'} title="Team points per game" type="number" min="0" max="100" step="0.1" placeholder="Team PPG" value={context.teamPointsPerGame ?? ''} onChange={(e) => setTeamContexts((prev) => ({ ...prev, [p.team]: { ...prev[p.team], teamPointsPerGame: e.target.value === '' ? undefined : Number(e.target.value) } }))} style={{ width: 76, fontSize: 10 }} />
+                          <input aria-label={p.team + ' opponent points allowed'} title="Opponent points allowed per game" type="number" min="0" max="100" step="0.1" placeholder="Opp PA" value={context.opponentPointsAllowedPerGame ?? ''} onChange={(e) => setTeamContexts((prev) => ({ ...prev, [p.team]: { ...prev[p.team], opponentPointsAllowedPerGame: e.target.value === '' ? undefined : Number(e.target.value) } }))} style={{ width: 76, fontSize: 10 }} />
+                        </div>
                         {isRecommended && <small style={{ color: '#e5c77f' }}>recommended</small>}
                         {idx === p.midIdx && !isCliff && <small style={{ color: '#8f9aab' }}>midpoint</small>}
                         {idx === p.strongIdx && isCliff && <small style={{ color: '#8acb9d' }}>confidence</small>}
@@ -250,6 +273,8 @@ export default function AIPredictions({ dataFolder, onActivity }) {
                         </small>
                       </td>
                       <td>{cents(chosen?.yesAsk)}</td>
+                      <td>{model.available ? `${Math.round(model.modelProbability * 100)}%` : '—'}</td>
+                      <td>{edge?.available ? `${edge.edge >= 0 ? '+' : ''}${Math.round(edge.edge * 100)}¢` : '—'}</td>
                       <td>{cents(chosen?.noAsk)}</td>
                       <td><b className="prob">{payout ? `${payout.toFixed(2)}×` : '—'}</b></td>
                       <td>
@@ -285,7 +310,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
         )}
 
         <div className="table-foot">
-          <span>Source: cached Kalshi scan · cliff → midpoint fallback</span>
+          <span>Hybrid model · quantitative market ladder + independent scoring estimate</span>
           <span>{predictions.length} rows</span>
         </div>
       </section>
