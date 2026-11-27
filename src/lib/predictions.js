@@ -168,8 +168,8 @@ export function computePredictions(markets, opts = {}) {
   }
 
   const sortWithin = (rows) => rows.sort((a, b) => {
-    const aNfl = a.league === 'NFL' ? 0 : 1;
-    const bNfl = b.league === 'NFL' ? 0 : 1;
+    const priority = (league) => league === 'NFL' ? 0 : league === 'MLB' ? 1 : league === 'NBA' ? 2 : 3;
+    const aNfl = priority(a.league), bNfl = priority(b.league);
     if (aNfl !== bNfl) return aNfl - bNfl;
     return b.payout - a.payout;
   });
