@@ -13,7 +13,7 @@ import LiveMarketScanner from './components/LiveMarketScanner';
 import AIPredictions from './components/AIPredictions';
 import GameDay from './components/GameDay';
 import SeasonToken from './components/SeasonToken';
-import { readSettings, writeSettings, readTrades, readAllRecords, deleteTrade, listSeasonProfiles } from './lib/dataModel';
+import { readSettings, writeSettings, readTrades, readAllRecords, deleteTrade, listSeasonProfiles, updateSeasonProfile, advanceSeasonWeek } from './lib/dataModel';
 import { WEEKS } from './lib/dataFolder';
 import { readCache, isCacheFresh, appendCacheBatch } from './lib/marketCache';
 import { fetchSportsMarkets } from './lib/kalshi';
@@ -65,6 +65,21 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
     })().catch(() => { if (!cancelled) setRecords([]); });
     return () => { cancelled = true; };
   }, [dataFolder, refreshKey]);
+
+  async function updateDashboardPiece(profile, patch) {
+    try {
+      const updated = await updateSeasonProfile(dataFolder.handle, profile.id, patch);
+      setSeasonProfiles((old) => old.map((item) => item.id === updated.id ? updated : item));
+      onActivity?.('SEASON_UPDATE', updated.name + ' updated');
+    } catch (e) { console.error(e); }
+  }
+  async function startDashboardWeek(profile) {
+    try {
+      const updated = await advanceSeasonWeek(dataFolder.handle, profile);
+      setSeasonProfiles((old) => old.map((item) => item.id === updated.id ? updated : item));
+      onActivity?.('WEEK_START', updated.name + ' scheduled for ' + updated.nextScheduledWeek);
+    } catch (e) { console.error(e); }
+  }
 
   // Warm the local market cache when Dashboard opens; the scanner viewer stays collapsed.
   useEffect(() => {
@@ -119,9 +134,16 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
     </div>
     <section className="season-pieces-section">
       <div className="season-pieces-heading"><div><h2>Season pieces</h2><p>Each committed token represents an individual season.</p></div><span>{seasonProfiles.length} active</span></div>
-      {seasonProfiles.length ? <div className="season-pieces-grid">{seasonProfiles.map((season) => <article className="season-piece-card" key={season.id}>
+      {seasonProfiles.length ? <div className="season-pieces-grid">{seasonProfiles.map((season) => <article className={`season-piece-card ${season.activePlayer === false ? 'season-inactive' : ''}`} key={season.id}>
         <div className="season-piece-art"><SeasonToken pieceType={season.pieceType} baseColor={season.baseColor} size={104}/></div>
-        <div className="season-piece-info"><b>{season.name}</b><span>Season {season.season} · {season.paperMode ? 'Paper' : 'Live'}</span><strong>$ {Number(season.balance).toFixed(2)}</strong><small>{season.pieceType} · {season.baseName} base</small></div>
+        <div className="season-piece-info"><b>{season.name}</b><span>Season {season.season} · {season.paperMode ? 'Paper' : 'Live'} · {season.activePlayer === false ? 'Inactive' : 'Active'}</span><strong>$ {Number(season.balance).toFixed(2)}</strong><small>{season.pieceType} · {season.baseName} base · {season.strategy || 'midpoint'}</small>
+          <small>Next scheduled: {season.nextScheduledWeek || 'week1'}</small>
+          {season.activePlayer !== false && <div className="season-piece-controls">
+            <button className="secondary-btn" onClick={() => startDashboardWeek(season)}>Start next week</button>
+            <label className={`auto-switch ${season.auto ? 'enabled' : ''}`}><input type="checkbox" checked={!!season.auto} onChange={(e) => updateDashboardPiece(season, { auto: e.target.checked })}/><span className="auto-switch-track"></span><b>Auto</b></label>
+            <select value={season.strategy || 'midpoint'} onChange={(e) => updateDashboardPiece(season, { strategy: e.target.value })} aria-label={season.name + ' strategy'}><option value="midpoint">Midpoint</option><option value="cliff">Cliff</option></select>
+          </div>}
+        </div>
       </article>)}</div> : <div className="season-pieces-empty">No season pieces yet. Create your first one in Season Manager.</div>}
     </section>
     <LatestActivity dataFolder={dataFolder} filter={activityFilter} onFilterChange={onActivityFilter} key={refreshKey} />
