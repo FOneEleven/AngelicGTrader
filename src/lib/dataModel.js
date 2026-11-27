@@ -220,14 +220,14 @@ export async function listSeasonProfiles(root) {
   const metaDir = await root.getDirectoryHandle(META, { create: true });
   const text = await readText(metaDir, SEASON_PROFILES_FILE);
   if (!text) return [];
-  try { const parsed = JSON.parse(text); return Array.isArray(parsed) ? parsed.map((profile) => ({ activePlayer: true, auto: false, strategy: 'midpoint', selectionStrategy: 'standard', safe: false, selectedLines: [], quotaValue: Number(profile.balance) || 0, gridBand: 'pre-even', riskPreference: 'probability', diversityMode: 'allow-overlap', splitCount: 2, piecePrompt: '', pieceMessages: [], nextScheduledWeek: 'week1', ...profile })).sort((a, b) => Number(a.season) - Number(b.season)) : []; } catch { return []; }
+  try { const parsed = JSON.parse(text); return Array.isArray(parsed) ? parsed.map((profile) => ({ activePlayer: true, auto: false, strategy: 'midpoint', selectionStrategy: '', safe: false, selectedLines: [], quotaValue: Number(profile.balance) || 0, gridBand: 'pre-even', riskPreference: 'probability', diversityMode: 'allow-overlap', splitCount: 2, piecePrompt: '', pieceMessages: [], nextScheduledWeek: 'week1', ...profile })).sort((a, b) => Number(a.season) - Number(b.season)) : []; } catch { return []; }
 }
 
 export async function createSeasonProfile(root, profile) {
   const season = (await latestSeason(root)) + 1;
   await createSeason(root, season);
   const createdAt = new Date().toISOString();
-  const saved = { ...profile, season, id: 'season-' + season, createdAt, status: 'active', activePlayer: true, auto: false, strategy: profile.strategy || 'midpoint', selectionStrategy: profile.selectionStrategy || 'standard', safe: profile.safe === true, selectedLines: Array.isArray(profile.selectedLines) ? profile.selectedLines : [], quotaValue: Number(profile.quotaValue ?? profile.balance) || 0, gridBand: profile.gridBand || 'pre-even', riskPreference: profile.riskPreference || 'probability', diversityMode: profile.diversityMode || 'allow-overlap', splitCount: Number(profile.splitCount) || 2, piecePrompt: profile.piecePrompt || '', pieceMessages: Array.isArray(profile.pieceMessages) ? profile.pieceMessages : [], nextScheduledWeek: 'week1', name: profile.name || ('Season ' + season + '-' + profile.nonce) };
+  const saved = { ...profile, season, id: 'season-' + season, createdAt, status: 'active', activePlayer: true, auto: false, strategy: profile.strategy || 'midpoint', selectionStrategy: profile.selectionStrategy || '', safe: profile.safe === true, selectedLines: Array.isArray(profile.selectedLines) ? profile.selectedLines : [], quotaValue: Number(profile.quotaValue ?? profile.balance) || 0, gridBand: profile.gridBand || 'pre-even', riskPreference: profile.riskPreference || 'probability', diversityMode: profile.diversityMode || 'allow-overlap', splitCount: Number(profile.splitCount) || 2, piecePrompt: profile.piecePrompt || '', pieceMessages: Array.isArray(profile.pieceMessages) ? profile.pieceMessages : [], nextScheduledWeek: 'week1', name: profile.name || ('Season ' + season + '-' + profile.nonce) };
   const seasonDir = await root.getDirectoryHandle(SEASON_PREFIX + season, { create: false });
   await writeText(seasonDir, 'season-profile.json', JSON.stringify(saved, null, 2) + '\n');
   const profiles = await listSeasonProfiles(root);
