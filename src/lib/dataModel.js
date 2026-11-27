@@ -220,7 +220,7 @@ export async function listSeasonProfiles(root) {
   const metaDir = await root.getDirectoryHandle(META, { create: true });
   const text = await readText(metaDir, SEASON_PROFILES_FILE);
   if (!text) return [];
-  try { const parsed = JSON.parse(text); return Array.isArray(parsed) ? parsed.sort((a, b) => Number(a.season) - Number(b.season)) : []; } catch { return []; }
+  try { const parsed = JSON.parse(text); return Array.isArray(parsed) ? parsed.map((profile) => ({ activePlayer: true, auto: false, strategy: 'midpoint', nextScheduledWeek: 'week1', ...profile })).sort((a, b) => Number(a.season) - Number(b.season)) : []; } catch { return []; }
 }
 
 export async function createSeasonProfile(root, profile) {
