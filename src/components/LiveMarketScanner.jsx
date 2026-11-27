@@ -78,6 +78,7 @@ export default function LiveMarketScanner({ dataFolder, onActivity, onNavigate }
   }
 
   async function fetchFresh() {
+    setHasAttemptedLoad(true);
     setLoading(true); setError('');
     try {
       const list = await fetchSportsMarkets();
@@ -112,7 +113,7 @@ export default function LiveMarketScanner({ dataFolder, onActivity, onNavigate }
   async function addLadderToPredictions(market) {
     if (!root) { setError('Connect a data folder before adding AI Prediction entries.'); return; }
     const text = market.subtitle || market.title || '';
-    const match = text.match(/^(.+?)\\s+over\\s+[\\d.]+/i);
+    const match = text.match(/^(.+?)\s+over\s+[\d.]+/i);
     if (!match) { setError('Could not identify the team for this team-total market.'); return; }
     const key = (market.eventTicker || market.ticker) + '::' + match[1].trim();
     const next = [...new Set([...selections, key])];
@@ -122,7 +123,10 @@ export default function LiveMarketScanner({ dataFolder, onActivity, onNavigate }
   }
 
   function handleMarketsToggle(event) {
-    if (event.currentTarget.open && !hasAttemptedLoad && markets.length === 0) ensureData();
+    if (event.currentTarget.open && !hasAttemptedLoad && markets.length === 0) {
+      setHasAttemptedLoad(true);
+      ensureData();
+    }
   }
 
   async function handleRefresh() { setHasAttemptedLoad(true); await ensureData({ force: true }); }
@@ -294,7 +298,7 @@ export default function LiveMarketScanner({ dataFolder, onActivity, onNavigate }
                       <td>
                         {/^KX[A-Z0-9]+?TEAMTOTAL-/.test(m.ticker || '') ? (
                           <button className="secondary-btn" disabled={!root} onClick={() => addLadderToPredictions(m)} title="Add the complete team-total ladder to AI Predictions">
-                            {selections.includes((m.eventTicker || m.ticker) + '::' + ((m.subtitle || m.title || '').match(/^(.+?)\\s+over\\s+[\\d.]+/i)?.[1]?.trim() || '')) ? <><CheckCircle2 size={13}/> Added</> : <><Plus size={13}/> Add ladder</>}
+                            {selections.includes((m.eventTicker || m.ticker) + '::' + ((m.subtitle || m.title || '').match(/^(.+?)\s+over\s+[\d.]+/i)?.[1]?.trim() || '')) ? <><CheckCircle2 size={13}/> Added</> : <><Plus size={13}/> Add ladder</>}
                           </button>
                         ) : <span className="muted">—</span>}
                       </td>
