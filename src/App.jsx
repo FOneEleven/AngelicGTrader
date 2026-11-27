@@ -213,7 +213,10 @@ export default function App() {
         {active === 'AI Predictions' && (
           <AIPredictions dataFolder={dataFolder} onActivity={handleActivity} />
         )}
-        {active === 'Game Day' && (\n          <GameDay dataFolder={dataFolder} onActivity={handleActivity} />\n        )}\n        {active === 'Season Manager' && (
+        {active === 'Game Day' && (
+          <GameDay dataFolder={dataFolder} onActivity={handleActivity} />
+        )}
+        {active === 'Season Manager' && (
           <Recommendations dataFolder={dataFolder} paperMode={paperMode} onActivity={handleActivity} />
         )}
         {active !== 'Dashboard'
