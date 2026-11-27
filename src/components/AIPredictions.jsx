@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BrainCircuit, ExternalLink, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { readCache } from '../lib/marketCache';
-import { readSettings, appendTrade, readTrades, readAIPredictionSelections, deleteTrade, latestSeason, listSeasonProfiles, updateSeasonProfile } from '../lib/dataModel';
+import { readSettings, appendTrade, readTrades, readAIPredictionSelections, deleteTrade, latestSeason, listSeasonProfiles, updateSeasonProfile, readSeasonTrades } from '../lib/dataModel';
 import { computePredictions } from '../lib/predictions';
 import { fetchTeamStatistics } from '../lib/sportsStats';
 import { fetchMLBTeamStatistics } from '../lib/mlbStats';
@@ -98,6 +98,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
   const [sliderIdx, setSliderIdx] = useState({});
   const [selectedEntries, setSelectedEntries] = useState([]);
   const [piecePrompt, setPiecePrompt] = useState('');
+  const [pieceQuotaFilled, setPieceQuotaFilled] = useState(false);
   const root = dataFolder?.handle;
 
   useEffect(() => {
@@ -114,6 +115,9 @@ export default function AIPredictions({ dataFolder, onActivity }) {
       const activeProfile = profiles.find((profile) => profile.id === 'season-' + (activeSeason || season)) || null;
       setSeasonProfile(activeProfile);
       setPiecePrompt(activeProfile?.piecePrompt || '');
+      const profileTrades = activeProfile ? await readSeasonTrades(root, activeProfile) : [];
+      const accruedProfit = profileTrades.reduce((sum, trade) => sum + (Number(trade.profit) || 0), 0);
+      setPieceQuotaFilled(!!activeProfile && accruedProfit >= (Number(activeProfile.quotaValue ?? activeProfile.balance) || 0));
       const activeWeek = activeProfile?.nextScheduledWeek || week;
       if (activeWeek !== week) setWeek(activeWeek);
       setTrades(await readTrades(root, activeSeason || season, activeWeek));
@@ -310,6 +314,15 @@ export default function AIPredictions({ dataFolder, onActivity }) {
     const probability = probabilityFor(analysis, side), ask = askFor(line, side);
     if (probability == null || ask == null) { setError('OpenAI analysis or executable ask is missing for this line.'); return; }
     if (leagueFor(p) === 'MLB' && (side !== 'NO' || analysis?.mlbEligibility?.eligible !== true)) { setError('MLB is NO-only and this line has not passed the strict MLB eligibility checks.'); return; }
+    if (leagueFor(p) !== 'MLB') {
+      const mode = seasonProfile?.selectionStrategy || 'standard';
+      const gates = { standard: { probability: 0.92, confidence: 90, payout: 1.2 }, value: { probability: 0.84, confidence: 84, payout: 1.4 }, highroller: { probability: 0.70, confidence: 70, payout: 1.75 } };
+      const gate = gates[mode] || gates.standard;
+      const confidence = Number(analysis?.prediction?.confidence) || 0;
+      const payout = ask > 0 ? 1 / ask : 0;
+      if (mode === 'value' && (!pieceQuotaFilled || seasonProfile?.safe === true)) { setError('Value strategy requires this piece to have filled its monetary quota and not be marked Safe.'); return; }
+      if (probability < gate.probability || confidence < gate.confidence || payout <= gate.payout) { setError(mode + ' strategy thresholds not met: probability ' + Math.round(probability * 100) + '% / confidence ' + confidence + ' / payout ' + payout.toFixed(2) + '×.'); return; }
+    }
     if (trades.some((t) => t.ticker === line.ticker && t.side === side)) return;
     setBusy(true); setError('');
     try {
