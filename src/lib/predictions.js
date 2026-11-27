@@ -22,8 +22,9 @@ function leagueOf(ticker = '') {
   return m ? m[1] : null;
 }
 function teamName(subtitle = '') {
-  const m = subtitle.match(/^(.+?)\s+over\s+/i);
-  return m ? m[1].trim() : subtitle;
+  const cleaned = String(subtitle || '').replace(/^Will\\s+(?:the\\s+)?/i, '').replace(/\\s+score\\s+over\\s+/i, ' over ');
+  const m = cleaned.match(/^(.+?)\\s+over\\s+/i);
+  return m ? m[1].trim() : cleaned;
 }
 function parseLine(subtitle = '') {
   const m = subtitle.match(/over\s+([\d.]+)/i);
