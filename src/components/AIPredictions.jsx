@@ -125,7 +125,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       setPiecePrompt(activeProfile?.piecePrompt || '');
       const otherProfiles = profiles.filter((profile) => profile.id !== activeProfile?.id && profile.activePlayer !== false);
       const otherTrades = (await Promise.all(otherProfiles.map((profile) => readSeasonTrades(root, profile)))).flat();
-      setOtherPieceTickers(otherTrades.map((trade) => trade.ticker).filter(Boolean));
+      setOtherPieceTickers([...otherTrades.map((trade) => trade.ticker), ...otherProfiles.flatMap((profile) => (profile.selectedLines || []).map((item) => item.ticker))].filter(Boolean));
       const profileTrades = activeProfile ? await readSeasonTrades(root, activeProfile) : [];
       const accruedProfit = profileTrades.reduce((sum, trade) => sum + (Number(trade.profit) || 0), 0);
       setPieceQuotaFilled(!!activeProfile && accruedProfit >= (Number(activeProfile.quotaValue ?? activeProfile.balance) || 0));
@@ -363,13 +363,15 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
               if (probability < gate.probability || confidence < gate.confidence || payout <= gate.payout) continue;
             }
             const value = probability - ask;
-            if (!best || value > best.value) best = { index: p.lines.findIndex((item) => item.ticker === line.ticker), side, value };
+            if (!best || value > best.value) best = { index: p.lines.findIndex((item) => item.ticker === line.ticker), ticker: line.ticker, event: p.event, side, value };
           }
         }
         if (best) selected[p.key] = best;
       }
       setSliderIdx((old) => ({ ...old, ...Object.fromEntries(Object.entries(selected).map(([key, item]) => [key, item.index])) }));
       setSideByKey((old) => ({ ...old, ...Object.fromEntries(Object.entries(selected).map(([key, item]) => [key, item.side])) }));
+      const selectedLines = Object.entries(selected).map(([predictionKey, item]) => ({ predictionKey, ticker: item.ticker, event: item.event, side: item.side }));
+      try { const updatedProfile = await updateSeasonProfile(root, seasonProfile.id, { selectedLines }); setSeasonProfile(updatedProfile); } catch (e) { setError(e.message || 'Could not save piece selections'); }
       setProgress('Weekly scan complete · ' + Object.keys(selected).length + ' qualifying game selections found. Nothing was placed automatically.');
       onActivity?.('WEEK_SCAN_COMPLETE', Object.keys(selected).length + ' qualifying selections found for ' + seasonProfile.name);
     })().catch((e) => setError(e.message || 'Weekly scan failed'));
