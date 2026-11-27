@@ -6,6 +6,7 @@ import {
   Clock3, Target, Zap, Menu, X, RefreshCw, Filter, ExternalLink
 } from 'lucide-react';
 import DataFolderConnect from './components/DataFolderConnect';
+import { FileText } from 'lucide-react';
 import LatestActivity from './components/LatestActivity';
 import PaperModeToggle from './components/PaperModeToggle';
 import Recommendations from './components/Recommendations';
@@ -171,6 +172,7 @@ export default function App() {
   const [paperMode, setPaperMode] = useState(true);
   const [activityFilter, setActivityFilter] = useState('all');
   const [refreshKey, setRefreshKey] = useState(0);
+  const [kalshiAccount, setKalshiAccount] = useState(null);
 
   const groups = ['WORKSPACE', 'INSIGHTS', 'SYSTEM'];
   const filtered = nav.filter(n => n.label.toLowerCase().includes(search.toLowerCase()));
@@ -216,16 +218,16 @@ export default function App() {
         <button className="mobile-menu" onClick={() => setSidebarOpen(true)}><Menu size={19}/></button>
         <div className="breadcrumb">Workspace <ChevronRight size={14}/><b>{active}</b></div>
         <div className="top-actions">
+          {kalshiAccount && <div className="header-kalshi-account"><b>{kalshiAccount.accountName}</b><span>${Number(kalshiAccount.balanceDollars || 0).toFixed(2)}</span></div>}
           <PaperModeToggle enabled={paperMode} onChange={handlePaperToggle} disabled={!dataFolder?.handle} />
-          <span className="connection"><i></i> Local app</span>
-          <button className="icon-btn" title="Help"><CircleHelp size={17}/></button>
+          <button className="header-doc-btn" title="Documentation"><FileText size={16}/><span>Docs</span></button>
           <button className="icon-btn" title="Notifications"><Bell size={17}/></button>
         </div>
       </header>
       <div className="page-content">
         {active === 'Dashboard' && (
           <>
-            <DataFolderConnect onFolderReady={setDataFolder} />
+            <DataFolderConnect onFolderReady={setDataFolder} onAccountChange={setKalshiAccount} />
             <Dashboard dataFolder={dataFolder} activityFilter={activityFilter} onActivityFilter={setActivityFilter} refreshKey={refreshKey} paperMode={paperMode} onNavigate={setActive} onActivity={handleActivity} />
           </>
         )}
