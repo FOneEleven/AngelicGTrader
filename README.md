@@ -1,34 +1,30 @@
-# Kalshi AI Dashboard — starter
+# AngelicGTrader
 
-This is the first runnable browser dashboard shell. It is intentionally in **paper mode** and does not connect to Kalshi or place trades.
+Local-first Kalshi sports-market research dashboard. The current implementation remains paper-only: it does not place live orders.
 
-## Requirements
-- Node.js 18 or newer
-- npm
+## Run
+- Node.js 18+
+- `npm install`
+- `npm run dev`
+- `npm run build`
 
-## Run locally
-1. Extract this folder.
-2. Open a terminal in the project folder.
-3. Run `npm install`
-4. Run `npm run dev`
-5. Open the local URL printed by Vite (usually http://localhost:5173).
+## Hybrid prediction engine
 
-## Build check
-Run `npm run build`.
+The engine has two distinct layers:
 
-## Current state
-- Responsive React dashboard and navigation
-- Dashboard overview and illustrative opportunity pipeline
-- Placeholder pages for each planned module
-- Paper-mode indicator
-- No API keys, live data, or real-money trading
+1. **Quantitative market screen:** existing cliff detection and midpoint fallback identify candidate team-total lines from the Kalshi YES-ask ladder.
+2. **Independent scoring model:** estimates a team's score distribution from team points per game and opponent points allowed, then applies explicit optional adjustments for recent form, injuries, weather, and pace. It calculates model probability and edge against the executable YES ask.
 
-## Next implementation steps
-1. Connect Kalshi market discovery (read-only).
-2. Add sports schedules, standings, team scoring and injury data.
-3. Implement stakes qualification and probability estimates.
-4. Write immutable timestamped prediction records to TXT files.
-5. Add paper-trading settlement and performance reports.
-6. Generate manual betting recommendations with direct market links.
+The prediction UI exposes team PPG and opponent points allowed inputs for each team. If those independent inputs are missing, model probability and edge display as unavailable; the engine does not copy market odds into the model probability. The probability model is a transparent baseline, not an AI-trained model or a guarantee of accuracy.
 
-Do not treat sample rows or displayed probabilities as real predictions.
+## Recorded prediction audit trail
+New paper records preserve strategy, ticker, selected line, market probability, independent model probability (when available), edge, model version, input context, and a short explanation. Existing ten-column TSV trade records remain readable.
+
+## Not implemented yet
+- Automated sports data research/provider integration
+- Injury/weather feeds and verified source timestamps
+- Automated event result retrieval and Kalshi settlement reconciliation
+- Performance/ROI dashboards and probability calibration
+- Live order execution
+
+Do not treat an unpopulated model estimate or sample UI data as a real prediction.
