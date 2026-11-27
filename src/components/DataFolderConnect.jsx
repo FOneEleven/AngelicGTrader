@@ -98,7 +98,7 @@ export default function DataFolderConnect({ onFolderReady, onAccountChange }) {
             ? 'Season and week structure ready · week1 active.'
             : state === 'saved'
             ? 'This browser needs you to confirm access again.'
-            : 'Grant permission to store prediction .txt files and encrypted account credentials on this machine.'}
+            : 'Grant permission to store prediction .txt files and local account settings on this machine.'}
         </small>
         {error && <em className="dfc-error">{error}</em>}
       </div>
