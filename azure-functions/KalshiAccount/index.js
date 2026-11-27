@@ -143,13 +143,42 @@ app.http('KalshiAccount', {
       }
 
       const signingPem = decryptCredential(body.envelope, setStage);
-      setStage('select Kalshi environment and balance endpoint');
+      setStage('select Kalshi environment and account endpoint');
       const environment = process.env.KALSHI_ENVIRONMENT === 'demo' ? 'demo' : 'production';
+      const host = HOSTS[environment];
+      if (body.action === 'history') {
+        const allPages = [];
+        const allFills = [];
+        let truncated = false;
+        for (const endpoint of ['/portfolio/fills', '/historical/fills']) {
+          let cursor = '';
+          let pageCount = 0;
+          do {
+            const query = new URLSearchParams({ limit: '1000' });
+            if (cursor) query.set('cursor', cursor);
+            const requestPath = PREFIX + endpoint + '?' + query.toString();
+            const headers = signRequest(keyId, signingPem, 'GET', requestPath, setStage);
+            setStage('retrieve Kalshi fills ' + endpoint);
+            const upstream = await fetch(host + requestPath, { method: 'GET', headers, signal: AbortSignal.timeout(20000) });
+            const payload = await upstream.json().catch(() => ({}));
+            if (!upstream.ok) return response(upstream.status === 401 ? 401 : 502, { error: 'Kalshi history request failed.', endpoint, kalshiStatus: upstream.status, detail: payload?.error?.details || payload?.error?.message || null });
+            const fills = Array.isArray(payload.fills) ? payload.fills : [];
+            allFills.push(...fills);
+            allPages.push({ endpoint, response: payload });
+            cursor = payload.cursor || '';
+            pageCount += 1;
+          } while (cursor && pageCount < 50);
+          if (cursor) truncated = true;
+        }
+        const unique = new Map();
+        for (const fill of allFills) unique.set(String(fill.fill_id || fill.trade_id || fill.id || JSON.stringify(fill)), fill);
+        return response(200, { connected: true, environment, fills: Array.from(unique.values()), apiResponses: allPages, truncated });
+      }
       const path = PREFIX + '/portfolio/balance';
       const headers = signRequest(keyId, signingPem, 'GET', path, setStage);
 
       setStage('send signed request to Kalshi');
-      const upstream = await fetch(HOSTS[environment] + path, {
+      const upstream = await fetch(host + path, {
         method: 'GET',
         headers,
         signal: AbortSignal.timeout(15000),
@@ -175,7 +204,6 @@ app.http('KalshiAccount', {
         portfolioValueCents: Number(payload.portfolio_value ?? 0),
         portfolioValueDollars: (Number(payload.portfolio_value ?? 0) / 100).toFixed(2),
         updatedAt: payload.updated_ts || null,
-        accountNameAvailable: false,
       });
     } catch (error) {
       const diagnostic = {
