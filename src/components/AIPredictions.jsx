@@ -114,12 +114,12 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
   const root = dataFolder?.handle;
 
   useEffect(() => {
-    if (!/\\{\\d+\\}$/.test(progress)) return undefined;
+    if (!/\{\d+\}$/.test(progress)) return undefined;
     const timer = window.setInterval(() => {
       setProgress((current) => {
-        const match = current.match(/\\{(\\d+)\\}$/);
+        const match = current.match(/\{(\d+)\}$/);
         if (!match) return current;
-        return current.replace(/\\{\\d+\\}$/, '{' + Math.max(0, Number(match[1]) - 1) + '}');
+        return current.replace(/\{\d+\}$/, '{' + Math.max(0, Number(match[1]) - 1) + '}');
       });
     }, 1000);
     return () => window.clearInterval(timer);
