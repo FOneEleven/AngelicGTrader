@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BrainCircuit, ExternalLink, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { readCache } from '../lib/marketCache';
-import { readSettings, appendTrade, readTrades, readAIPredictionSelections, deleteTrade } from '../lib/dataModel';
+import { readSettings, appendTrade, readTrades, readAIPredictionSelections, deleteTrade, latestSeason } from '../lib/dataModel';
 import { computePredictions } from '../lib/predictions';
 import { fetchTeamStatistics } from '../lib/sportsStats';
 import { analyzeMarket } from '../lib/analyzeMarket';
@@ -105,7 +105,9 @@ export default function AIPredictions({ dataFolder, onActivity }) {
       setSelectedEntries(await readAIPredictionSelections(root));
       const settings = await readSettings(root);
       setPaperMode(!!settings.paperMode);
-      setTrades(await readTrades(root, season, week));
+      const activeSeason = await latestSeason(root);
+      if (activeSeason && activeSeason !== season) setSeason(activeSeason);
+      setTrades(await readTrades(root, activeSeason || season, week));
     })().catch((e) => setError(e.message));
   }, [root, season, week]);
 
