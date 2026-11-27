@@ -32,7 +32,7 @@ function parseLine(subtitle = '') {
 
 // Prefer expected_expiration_time; fall back to close_time for legacy cache rows.
 function resolveGameTime(m) {
-  return m.expectedExpiration || m.closeTime || '';
+  return m.occurrenceTime || m.expectedExpiration || m.closeTime || '';
 }
 
 export function computePredictions(markets, opts = {}) {
@@ -62,6 +62,7 @@ export function computePredictions(markets, opts = {}) {
         league: leagueOf(m.ticker),
         closeTime: m.closeTime,
         expectedExpiration: m.expectedExpiration,
+        occurrenceTime: m.occurrenceTime || '',
         gameTime: resolveGameTime(m),
         lines: [],
       });
