@@ -364,7 +364,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       setSideByKey((old) => ({ ...old, ...Object.fromEntries(Object.entries(selected).map(([key, item]) => [key, item.side])) }));
       const selectedLines = Object.entries(selected).map(([predictionKey, item]) => ({ predictionKey, ticker: item.ticker, event: item.event, team: item.team, league: item.league, line: item.line, side: item.side }));
       try { const updatedProfile = await updateSeasonProfile(root, seasonProfile.id, { selectedLines }); setSeasonProfile(updatedProfile); } catch (e) { setError(e.message || 'Could not save piece selections'); }
-      setProgress('Weekly scan complete · ' + Object.keys(selected).length + ' qualifying game selections found. Nothing was placed automatically.');
+      setProgress('Weekly scan complete · ' + Object.keys(selected).length + ' strategy-selected game found. No trade was placed automatically.');
       onActivity?.('WEEK_SCAN_COMPLETE', Object.keys(selected).length + ' qualifying selections found for ' + seasonProfile.name);
     })().catch((e) => setError(e.message || 'Weekly scan failed'));
   }, [scanRequest, seasonProfile, predictions, statsByKey]);
