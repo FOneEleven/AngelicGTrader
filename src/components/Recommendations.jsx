@@ -149,14 +149,16 @@ export default function Recommendations({ dataFolder, paperMode: currentPaperMod
               <select value={s.strategy || 'midpoint'} onChange={(e) => updatePiece(s, { strategy: e.target.value })} aria-label={s.name + ' ladder population'}><option value="midpoint">Midpoint lines</option><option value="cliff">Cliff lines</option></select>
             </div>
             <div className="piece-strategy-grid">
+              <div className="piece-grid-settings">
+                <label>Risk · top axis<select value={s.riskPreference || 'probability'} onChange={(e) => updatePiece(s, { riskPreference: e.target.value })}><option value="probability">Probability first · strict</option><option value="balanced">Balanced</option><option value="value">Value first · lenient</option></select></label>
+                <label className={'auto-switch ' + (s.safe ? 'enabled' : '')}><input type="checkbox" checked={!!s.safe} onChange={(e) => updatePiece(s, { safe: e.target.checked })}/><span className="auto-switch-track"></span><b>Safe strategy</b></label>
+              </div>
               <div className="piece-grid-horizontal">
                 {GRID_BANDS.map((band) => <span key={band} className={'piece-grid-band ' + (grid.band === band ? 'active' : '')}>{band === 'pre-even' ? 'Pre-even' : band === 'break-even' ? 'Breaking even' : band}</span>)}
               </div>
               <small>Position: {grid.band} · {grid.ratio.toFixed(2)}× quota</small>
               <div className="piece-grid-settings">
-                <label>Risk · top axis<select value={s.riskPreference || 'probability'} onChange={(e) => updatePiece(s, { riskPreference: e.target.value })}><option value="probability">Probability first · strict</option><option value="balanced">Balanced</option><option value="value">Value first · lenient</option></select></label>
                 <label>Diversity · bottom axis<select value={s.diversityMode || 'allow-overlap'} onChange={(e) => updatePiece(s, { diversityMode: e.target.value })}><option value="allow-overlap">Allow same games</option><option value="avoid-overlap">Avoid other pieces' games</option><option value="split">Prefer diversified split</option></select></label>
-                <label className={'auto-switch ' + (s.safe ? 'enabled' : '')}><input type="checkbox" checked={!!s.safe} onChange={(e) => updatePiece(s, { safe: e.target.checked })}/><span className="auto-switch-track"></span><b>Safe strategy</b></label>
               </div>
               <div className="piece-strategy-buttons">
                 {ordered.map((item) => <button key={item.id} className={`secondary-btn ${selected === item.id ? 'active' : ''}`} onClick={() => updatePiece(s, { selectionStrategy: item.id })}>{item.label}</button>)}
