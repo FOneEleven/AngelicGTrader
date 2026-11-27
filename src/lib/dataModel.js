@@ -183,6 +183,129 @@ export async function appendTrade(root, season, week, trade) {
   return trade;
 }
 
+// Remove a record from every season/week file and the canonical Dashboard index.
+export async function deleteTrade(root, tradeId) {
+  if (!tradeId) return false;
+  let removed = false;
+  const seasons = await listSeasons(root);
+  for (const season of seasons) {
+    const seasonDir = await root.getDirectoryHandle(SEASON_PREFIX + season, { create: false });
+    for (const week of WEEKS) {
+      let weekDir;
+      try { weekDir = await seasonDir.getDirectoryHandle(week, { create: false }); } catch { continue; }
+      const text = await readText(weekDir, 'trades.txt');
+      if (!text) continue;
+      const lines = text.split('\n');
+      const kept = lines.filter((line) => {
+        if (!line || line.startsWith('#')) return true;
+        const match = line.split('\t')[0] === tradeId;
+        if (match) removed = true;
+        return !match;
+      });
+      if (kept.length !== lines.length) await writeText(weekDir, 'trades.txt', kept.join('\n'));
+    }
+  }
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  const records = await readText(metaDir, 'records.txt');
+  if (records) {
+    const lines = records.split('\n');
+    const kept = lines.filter((line) => !line || line.startsWith('#') || line.split('\t')[0] !== tradeId);
+    if (kept.length !== lines.length) { await writeText(metaDir, 'records.txt', kept.join('\n')); removed = true; }
+  }
+  return removed;
+}
+
+const SEASON_PROFILES_FILE = 'season-profiles.json';
+export async function listSeasonProfiles(root) {
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  const text = await readText(metaDir, SEASON_PROFILES_FILE);
+  if (!text) return [];
+  try { const parsed = JSON.parse(text); return Array.isArray(parsed) ? parsed.sort((a, b) => Number(a.season) - Number(b.season)) : []; } catch { return []; }
+}
+
+export async function createSeasonProfile(root, profile) {
+  const season = (await latestSeason(root)) + 1;
+  await createSeason(root, season);
+  const createdAt = new Date().toISOString();
+  const saved = { ...profile, season, id: 'season-' + season, createdAt, status: 'active', name: profile.name || ('Season ' + season + '-' + profile.nonce) };
+  const seasonDir = await root.getDirectoryHandle(SEASON_PREFIX + season, { create: false });
+  await writeText(seasonDir, 'season-profile.json', JSON.stringify(saved, null, 2) + '\n');
+  const profiles = await listSeasonProfiles(root);
+  profiles.push(saved);
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  await writeText(metaDir, SEASON_PROFILES_FILE, JSON.stringify(profiles, null, 2) + '\n');
+  await appendActivity(root, 'SEASON_START', saved.name + ' created · ' + (saved.paperMode ? 'Paper' : 'Live') + ' season · balance 
+  const seasonDir = await root.getDirectoryHandle(`${SEASON_PREFIX}${season}`, { create: true });
+  const weekDir = await seasonDir.getDirectoryHandle(week, { create: true });
+  const text = await readText(weekDir, 'trades.txt');
+  if (!text) return [];
+  return text
+    .split('\n')
+    .filter((l) => l && !l.startsWith('#'))
+    .map((line) => {
+      const fields = line.split('\t');
+      const [id, timestamp, matchup, market, side, price, probability, stake, paper, status] = fields;
+      let metadata = {};
+      try { metadata = fields.length > 10 ? JSON.parse(fields.slice(10).join('\t')) : {}; } catch { /* retain legacy row */ }
+      return { id, timestamp, matchup, market, side, price, probability, stake, paper: paper === 'paper', status, ...metadata };
+    });
+}
+
+export async function tradeSummary(root, season, week) {
+  const trades = await readTrades(root, season, week);
+  return {
+    total: trades.length,
+    paper: trades.filter((t) => t.paper).length,
+    live: trades.filter((t) => !t.paper).length,
+  };
+}
+
+// --- Bootstrap ---
+
+export async function bootstrapDataFolder(root) {
+  await ensureStructure(root);
+  const { season, created } = await ensureSeason(root, { forceNew: false });
+  await writeIndex(root, { season, activeWeek: 'week1' });
+
+  if (created) {
+    await appendActivity(root, 'SEASON_START', `Season ${season} started`);
+  }
+  return { season, created };
+}
+
+// Persist ladders explicitly added from Live Market Scanner.
+export async function readAIPredictionSelections(root) {
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  const text = await readText(metaDir, AI_SELECTIONS_FILE);
+  if (!text) return [];
+  try { const parsed = JSON.parse(text); return Array.isArray(parsed) ? parsed.filter((v) => typeof v === 'string') : []; }
+  catch { return []; }
+}
+
+export async function writeAIPredictionSelections(root, selections) {
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  const unique = [...new Set((selections || []).filter((v) => typeof v === 'string'))];
+  await writeText(metaDir, AI_SELECTIONS_FILE, JSON.stringify(unique, null, 2) + '\n');
+  return unique;
+}
+
+
+// Read the canonical record feed shared by every dashboard view.
+export async function readAllRecords(root) {
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  const text = await readText(metaDir, 'records.txt');
+  if (!text) return [];
+  return text.split('\n').filter((line) => line && !line.startsWith('#')).map((line) => {
+    const fields = line.split('\t');
+    const [id, timestamp, matchup, market, side, price, probability, stake, paper, status] = fields;
+    let metadata = {};
+    try { metadata = fields.length > 10 ? JSON.parse(fields.slice(10).join('\t')) : {}; } catch {}
+    return { id, timestamp, matchup, market, side, price, probability, stake, paper: paper === 'paper', status, ...metadata };
+  }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+}
+ + Number(saved.balance).toFixed(2));
+  return saved;
+}
 export async function readTrades(root, season, week) {
   const seasonDir = await root.getDirectoryHandle(`${SEASON_PREFIX}${season}`, { create: true });
   const weekDir = await seasonDir.getDirectoryHandle(week, { create: true });
