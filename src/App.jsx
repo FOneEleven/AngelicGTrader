@@ -41,7 +41,7 @@ function StatCard({ title, value, note, icon: Icon, tone = 'gold', trend }) {
   </div>;
 }
 
-function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, paperMode, onNavigate, onActivity }) {
+function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, paperMode, onNavigate, onActivity, onStartWeek }) {
   const [records, setRecords] = useState([]);
   const [seasonProfiles, setSeasonProfiles] = useState([]);
   useEffect(() => {
@@ -70,13 +70,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
       onActivity?.('SEASON_UPDATE', updated.name + ' updated');
     } catch (e) { console.error(e); }
   }
-  async function startDashboardWeek(profile) {
-    try {
-      const updated = await advanceSeasonWeek(dataFolder.handle, profile);
-      setSeasonProfiles((old) => old.map((item) => item.id === updated.id ? updated : item));
-      onActivity?.('WEEK_START', updated.name + ' scheduled for ' + updated.nextScheduledWeek);
-    } catch (e) { console.error(e); }
-  }
+  async function startDashboardWeek(profile) { onStartWeek?.(profile); }
 
   // Warm the local market cache when Dashboard opens; the scanner viewer stays collapsed.
   useEffect(() => {
@@ -169,6 +163,7 @@ export default function App() {
   const [activityFilter, setActivityFilter] = useState('all');
   const [refreshKey, setRefreshKey] = useState(0);
   const [kalshiAccount, setKalshiAccount] = useState(null);
+  const [scanRequest, setScanRequest] = useState(null);
 
   const groups = ['WORKSPACE'];
   const filtered = nav;
@@ -193,6 +188,18 @@ export default function App() {
   const handleActivity = useCallback(() => {
     setRefreshKey((k) => k + 1);
   }, []);
+
+  const handleStartWeek = useCallback(async (profile) => {
+    if (!dataFolder?.handle || !profile) return;
+    try {
+      const updated = await advanceSeasonWeek(dataFolder.handle, profile);
+      setScanRequest({ profileId: updated.id, requestId: updated.id + '-' + Date.now() });
+      setActive('AI Predictions');
+      handleActivity();
+    } catch (e) {
+      console.error(e);
+    }
+  }, [dataFolder, handleActivity]);
 
   return <div className="app-shell">
     <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
@@ -228,20 +235,20 @@ export default function App() {
         {active === 'Dashboard' && (
           <>
             <DataFolderConnect onFolderReady={setDataFolder} onAccountChange={(account) => { setKalshiAccount(account); if (!account?.connected) handlePaperToggle(true); }} />
-            <Dashboard dataFolder={dataFolder} activityFilter={activityFilter} onActivityFilter={setActivityFilter} refreshKey={refreshKey} paperMode={paperMode} onNavigate={setActive} onActivity={handleActivity} />
+            <Dashboard dataFolder={dataFolder} activityFilter={activityFilter} onActivityFilter={setActivityFilter} refreshKey={refreshKey} paperMode={paperMode} onNavigate={setActive} onActivity={handleActivity} onStartWeek={handleStartWeek} />
           </>
         )}
         {active === 'Live Market Scanner' && (
           <LiveMarketScanner dataFolder={dataFolder} onActivity={handleActivity} onNavigate={setActive} />
         )}
         {active === 'AI Predictions' && (
-          <AIPredictions dataFolder={dataFolder} onActivity={handleActivity} />
+          <AIPredictions dataFolder={dataFolder} onActivity={handleActivity} scanRequest={scanRequest} />
         )}
         {active === 'Game Day' && (
           <GameDay dataFolder={dataFolder} onActivity={handleActivity} />
         )}
         {active === 'Season Manager' && (
-          <Recommendations dataFolder={dataFolder} paperMode={paperMode} kalshiAccount={kalshiAccount} onActivity={handleActivity} />
+          <Recommendations dataFolder={dataFolder} paperMode={paperMode} kalshiAccount={kalshiAccount} onActivity={handleActivity} onStartWeek={handleStartWeek} />
         )}
         {active !== 'Dashboard'
           && active !== 'Live Market Scanner'
