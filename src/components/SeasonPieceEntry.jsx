@@ -56,6 +56,7 @@ export default function SeasonPieceEntry({
       <strong>{money(currentWorth)} {showEarnings ? 'current worth' : 'piece worth'}</strong>
       <small>{profile.pieceType} · {profile.baseName} base · {profile.strategy || 'midpoint'} ladder</small>
       <small>Quota {money(profile.quotaValue ?? profile.balance)} · {showEarnings ? money(tradesEarnings) + ' earned' : 'Next: ' + (profile.nextScheduledWeek || 'week1')}</small>
+      {profile.selectedLines?.[0] && <small className="season-piece-selected-game">Strategy pick: {profile.selectedLines[0].team || profile.selectedLines[0].event || profile.selectedLines[0].ticker} · {profile.selectedLines[0].league || 'Market'} · {profile.selectedLines[0].line ?? 'ladder'} · {profile.selectedLines[0].side}</small>}
       {profile.activePlayer !== false && <div className="season-piece-controls">
         <button className="secondary-btn" disabled={busy} onClick={() => onStartWeek?.(profile)}>Start next week</button>
         <button className="secondary-btn" onClick={() => onNavigate?.('Game Day')}><CalendarDays size={13}/> Go To Gameday</button>
