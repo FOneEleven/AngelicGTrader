@@ -167,7 +167,7 @@ export async function appendTrade(root, season, week, trade) {
     trade.stake,
     trade.paper ? 'paper' : 'live',
     trade.status || 'open',
-    JSON.stringify({ strategy: trade.strategy ?? null, selectionStrategy: trade.selectionStrategy ?? null, riskPreference: trade.riskPreference ?? null, diversityMode: trade.diversityMode ?? null, ticker: trade.ticker ?? null, line: trade.line ?? null, marketProbability: trade.marketProbability ?? null, modelProbability: trade.modelProbability ?? null, edge: trade.edge ?? null, modelVersion: trade.modelVersion ?? null, context: trade.context ?? null, reasoning: trade.reasoning ?? null, seasonPieceId: trade.seasonPieceId ?? null, week: trade.week ?? week, earnings: trade.earnings ?? null, profit: trade.profit ?? null, outcome: trade.outcome ?? null }),
+    JSON.stringify({ strategy: trade.strategy ?? null, selectionStrategy: trade.selectionStrategy ?? null, riskPreference: trade.riskPreference ?? null, diversityMode: trade.diversityMode ?? null, ticker: trade.ticker ?? null, line: trade.line ?? null, marketProbability: trade.marketProbability ?? null, modelProbability: trade.modelProbability ?? null, edge: trade.edge ?? null, modelVersion: trade.modelVersion ?? null, context: trade.context ?? null, reasoning: trade.reasoning ?? null, seasonPieceId: trade.seasonPieceId ?? null, week: trade.week ?? week, earnings: trade.earnings ?? null, profit: trade.profit ?? null, outcome: trade.outcome ?? null, resolutionStatus: trade.resolutionStatus ?? null, walletReturnedAmount: trade.walletReturnedAmount ?? null, walletReturnConfirmed: trade.walletReturnConfirmed === true, walletConfirmedAt: trade.walletConfirmedAt ?? null }),
   ].join('\t') + '\n';
   const w = await file.createWritable();
   await w.write(existing + header + row);
@@ -250,6 +250,18 @@ export async function updateSeasonProfile(root, profileId, patch) {
   const seasonDir = await root.getDirectoryHandle(SEASON_PREFIX + updated.season, { create: true });
   await writeText(seasonDir, 'season-profile.json', JSON.stringify(updated, null, 2) + '\n');
   return updated;
+}
+
+// Only cash actually credited back to the connected wallet counts toward piece worth.
+// A resolved/closed label alone is insufficient: walletReturnConfirmed must be explicit.
+export function confirmedWalletReturns(trades = []) {
+  return trades.reduce((total, trade) => {
+    const closed = /^(closed|settled|resolved)$/i.test(String(trade.status || ''));
+    const resolved = String(trade.resolutionStatus || '').toLowerCase() === 'resolved';
+    const confirmed = trade.walletReturnConfirmed === true && closed && resolved;
+    const amount = Number(trade.walletReturnedAmount);
+    return confirmed && Number.isFinite(amount) && amount > 0 ? total + amount : total;
+  }, 0);
 }
 
 export async function readSeasonTrades(root, profile) {
