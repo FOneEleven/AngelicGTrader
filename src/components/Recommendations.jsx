@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { RefreshCw, PlusCircle, WalletCards } from 'lucide-react';
-import { readSettings, createSeasonProfile, listSeasonProfiles } from '../lib/dataModel';
+import { createSeasonProfile, listSeasonProfiles } from '../lib/dataModel';
 import SeasonToken from './SeasonToken';
 
 const PIECES = ['Quarterback', 'Running Back', 'Receiver', 'Lineman', 'Slam Dunk', 'Posterizer', 'Dribbler', '3Pt Shooter'];
@@ -18,10 +18,10 @@ function makeToken() {
   return { pieceType, baseColor: base.color, baseName: base.name, nonce, name: randomFrom(EPITHETS) + ' ' + pieceType + ' · ' + nonce };
 }
 
-export default function Recommendations({ dataFolder, onActivity }) {
+export default function Recommendations({ dataFolder, paperMode: currentPaperMode = true, onActivity }) {
   const root = dataFolder?.handle;
   const [balance, setBalance] = useState('100');
-  const [paperMode, setPaperMode] = useState(true);
+  const paperMode = currentPaperMode;
   const [token, setToken] = useState(makeToken);
   const [seasons, setSeasons] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -30,10 +30,7 @@ export default function Recommendations({ dataFolder, onActivity }) {
 
   useEffect(() => {
     if (!root) return;
-    Promise.all([readSettings(root), listSeasonProfiles(root)]).then(([settings, profiles]) => {
-      setPaperMode(!!settings.paperMode);
-      setSeasons(profiles);
-    }).catch((e) => setError(e.message || 'Could not load seasons'));
+    listSeasonProfiles(root).then(setSeasons).catch((e) => setError(e.message || 'Could not load seasons'));
   }, [root]);
 
   function cyclePiece() { setToken(makeToken()); setCreated(null); }
