@@ -400,7 +400,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       const confidence = Number(analysis?.prediction?.confidence) || 0;
       const payout = ask > 0 ? 1 / ask : 0;
       if (mode === 'value' && (!pieceQuotaFilled || seasonProfile?.safe === true)) { setError('Value strategy requires this piece to have filled its monetary quota and not be marked Safe.'); return; }
-      if (mode === 'value') { const stats = statsByKey[p.key]; const knownPPG = Math.min(Number(stats?.team?.pointsPerGame) || Infinity, Number(stats?.team?.recent5PPG) || Number(stats?.team?.pointsPerGame) || Infinity); if (!Number.isFinite(knownPPG) || Number(line.line) > knownPPG * 0.9) { setError('Value strategy requires a line at least 10% below the team's season and recent scoring average.'); return; } }
+      if (mode === 'value') { const stats = statsByKey[p.key]; const knownPPG = Math.min(Number(stats?.team?.pointsPerGame) || Infinity, Number(stats?.team?.recent5PPG) || Number(stats?.team?.pointsPerGame) || Infinity); if (!Number.isFinite(knownPPG) || Number(line.line) > knownPPG * 0.9) { setError("Value strategy requires a line at least 10% below the team's season and recent scoring average."); return; } }
       if (mode === 'highroller') {
         const stats = statsByKey[p.key];
         const teamPPG = Number(stats?.team?.pointsPerGame) || 0;
