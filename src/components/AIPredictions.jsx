@@ -4,6 +4,7 @@ import { readCache } from '../lib/marketCache';
 import { readSettings, appendTrade, readTrades, readAIPredictionSelections, deleteTrade, latestSeason, listSeasonProfiles } from '../lib/dataModel';
 import { computePredictions } from '../lib/predictions';
 import { fetchTeamStatistics } from '../lib/sportsStats';
+import { fetchMLBTeamStatistics } from '../lib/mlbStats';
 import { analyzeMarket } from '../lib/analyzeMarket';
 import { teamStatsCacheKey, getCachedTeamStats, setCachedTeamStats } from '../lib/teamStatsCache';
 import { getCachedAnalysis, setCachedAnalysis } from '../lib/analysisCache';
@@ -28,7 +29,7 @@ function marketTeamName(m) {
   return match ? match[1].trim() : text.trim();
 }
 function leagueFor(p) {
-  const match = String(p.league || '').match(/^(NFL|NBA)$/i);
+  const match = String(p.league || '').match(/^(NFL|NBA|MLB)$/i);
   return match ? match[1].toUpperCase() : null;
 }
 function eventOpponent(markets, event, team) {
@@ -119,7 +120,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
 
   const { predictions } = useMemo(() => ({
     predictions: computePredictions(markets).predictions.filter((p) =>
-      (['NFL', 'NBA'].includes(String(p.league).toUpperCase()) || selectedEntries.includes(p.key)) &&
+      (['NFL', 'NBA', 'MLB'].includes(String(p.league).toUpperCase()) || selectedEntries.includes(p.key)) &&
       (!seasonProfile?.strategy || p.strategy === seasonProfile.strategy)
     ),
   }), [markets, selectedEntries, seasonProfile?.strategy]);
@@ -128,7 +129,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
     if (!root || !markets.length || !predictions.length) return;
     let cancelled = false;
     async function run() {
-      setBusy(true); setError(''); setProgress('Resolving ESPN team statistics…');
+      setBusy(true); setError(''); setProgress('Resolving league statistics and MLB weather…');
       const nextStats = {}, nextAnalyses = {}, nextErrors = {};
       const statsForPrediction = new Map();
       try {
@@ -141,17 +142,20 @@ export default function AIPredictions({ dataFolder, onActivity }) {
             nextErrors[p.key] = !league ? 'Unsupported league for ESPN statistics.' : 'Could not identify the opponent in this event.';
             continue;
           }
+          const gameTime = p.gameTime || p.expectedExpiration || p.closeTime;
           const params = { league, team: p.team, opponent, season: currentSeason, seasonType: '2' };
-          const key = teamStatsCacheKey(params);
-          let entry = await getCachedTeamStats(root, key);
+          const key = teamStatsCacheKey({ ...params, season: league === 'MLB' ? gameTime : currentSeason });
+          let entry = await getCachedTeamStats(root, key, league === 'MLB' ? 60 * 60 * 1000 : undefined);
           if (!entry) {
-            setProgress('Fetching ESPN: ' + p.team + ' vs ' + opponent);
-            const raw = await fetchTeamStatistics(params);
-            entry = await setCachedTeamStats(root, key, normalizeStats(raw, p.team, opponent));
+            setProgress((league === 'MLB' ? 'Fetching MLB statistics/weather: ' : 'Fetching ESPN: ') + p.team + ' vs ' + opponent);
+            const raw = league === 'MLB'
+              ? await fetchMLBTeamStatistics({ team: p.team, opponent, gameTime })
+              : normalizeStats(await fetchTeamStatistics(params), p.team, opponent);
+            entry = await setCachedTeamStats(root, key, raw);
           }
           const stats = entry.data;
-          if (!stats?.team || stats.team.pointsPerGame == null || stats.opponent?.pointsAllowedPerGame == null) {
-            nextErrors[p.key] = 'ESPN response is missing team PPG or opponent PA.';
+          if (!stats?.team || stats.team.pointsPerGame == null || stats.opponent?.pointsAllowedPerGame == null || (league === 'MLB' && (!stats.weather || stats.weather.rainoutRisk === true))) {
+            nextErrors[p.key] = league === 'MLB' && stats?.weather?.rainoutRisk ? 'Likely rainout: MLB market excluded.' : league === 'MLB' ? 'MLB statistics or batting-weather forecast is incomplete.' : 'ESPN response is missing team PPG or opponent PA.';
             continue;
           }
           nextStats[p.key] = stats;
@@ -171,11 +175,13 @@ export default function AIPredictions({ dataFolder, onActivity }) {
           if (cancelled) return;
           const batch = tasks.slice(offset, offset + 3);
           const results = await Promise.all(batch.map(async ({ p, line, stats }) => {
+            const league = leagueFor(p);
             const market = {
-              ticker: line.ticker, title: p.team + ' over ' + line.line + ' points',
-              league: leagueFor(p), team: p.team, opponent: stats.opponent?.name || '',
+              ticker: line.ticker, title: p.team + ' over ' + line.line + (league === 'MLB' ? ' runs' : ' points'),
+              league, team: p.team, opponent: stats.opponent?.name || '',
               line: line.line, yesAsk: line.yesAsk, noAsk: line.noAsk,
               closeTime: p.closeTime || p.expectedExpiration || null,
+              gameTime: p.gameTime || p.expectedExpiration || null,
             };
             const cacheKey = analysisKey(market, stats);
             const cached = await getCachedAnalysis(root, cacheKey);
@@ -184,7 +190,9 @@ export default function AIPredictions({ dataFolder, onActivity }) {
               market,
               teamStats: { ...stats.team, modelInputs: stats.modelInputs, recentGames: stats.recentGames, dataQuality: stats.dataQuality },
               opponentStats: stats.opponent,
-              context: { source: 'ESPN', season: stats.season, seasonType: stats.seasonType, statisticsFetchedAt: stats.fetchedAt },
+              context: league === 'MLB'
+                ? { source: stats.provider, season: stats.season, statisticsFetchedAt: stats.fetchedAt, mlb: { weather: stats.weather, schedule: stats.schedule, modelInputs: stats.modelInputs, dataQuality: stats.dataQuality } }
+                : { source: 'ESPN', season: stats.season, seasonType: stats.seasonType, statisticsFetchedAt: stats.fetchedAt },
             });
             return { ticker: line.ticker, data, cacheKey };
           }));
@@ -210,7 +218,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
     return () => { cancelled = true; };
   }, [root, markets, predictions]);
 
-  function sideFor(p) { return sideByKey[p.key] || 'YES'; }
+  function sideFor(p) { return sideByKey[p.key] || (leagueFor(p) === 'MLB' ? 'NO' : 'YES'); }
   function idxFor(p) {
     if (sliderIdx[p.key] != null) return Math.max(0, Math.min(sliderIdx[p.key], p.lines.length - 1));
     return recommendedIndex(p);
@@ -229,11 +237,13 @@ export default function AIPredictions({ dataFolder, onActivity }) {
     setProgress('Analyzing selected line: ' + p.team + ' over ' + line.line);
     setAnalysisErrors((old) => ({ ...old, [p.key]: '' }));
     try {
+      const league = leagueFor(p);
       const market = {
-        ticker: line.ticker, title: p.team + ' over ' + line.line + ' points',
-        league: leagueFor(p), team: p.team, opponent: stats.opponent?.name || '',
+        ticker: line.ticker, title: p.team + ' over ' + line.line + (league === 'MLB' ? ' runs' : ' points'),
+        league, team: p.team, opponent: stats.opponent?.name || '',
         line: line.line, yesAsk: line.yesAsk, noAsk: line.noAsk,
         closeTime: p.closeTime || p.expectedExpiration || null,
+        gameTime: p.gameTime || p.expectedExpiration || null,
       };
       const cacheKey = analysisKey(market, stats);
       const cached = await getCachedAnalysis(root, cacheKey);
@@ -241,7 +251,9 @@ export default function AIPredictions({ dataFolder, onActivity }) {
         market,
         teamStats: { ...stats.team, modelInputs: stats.modelInputs, recentGames: stats.recentGames, dataQuality: stats.dataQuality },
         opponentStats: stats.opponent,
-        context: { source: 'ESPN', season: stats.season, seasonType: stats.seasonType, statisticsFetchedAt: stats.fetchedAt },
+        context: league === 'MLB'
+          ? { source: stats.provider, season: stats.season, statisticsFetchedAt: stats.fetchedAt, mlb: { weather: stats.weather, schedule: stats.schedule, modelInputs: stats.modelInputs, dataQuality: stats.dataQuality } }
+          : { source: 'ESPN', season: stats.season, seasonType: stats.seasonType, statisticsFetchedAt: stats.fetchedAt },
       });
       if (!cached) await setCachedAnalysis(root, cacheKey, data);
       setAnalyses((old) => ({ ...old, [line.ticker]: data }));
@@ -263,6 +275,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
     const line = p.lines[idxFor(p)], side = sideFor(p), analysis = analyses[line?.ticker];
     const probability = probabilityFor(analysis, side), ask = askFor(line, side);
     if (probability == null || ask == null) { setError('OpenAI analysis or executable ask is missing for this line.'); return; }
+    if (leagueFor(p) === 'MLB' && (side !== 'NO' || analysis?.mlbEligibility?.eligible !== true)) { setError('MLB is NO-only and this line has not passed the strict MLB eligibility checks.'); return; }
     if (trades.some((t) => t.ticker === line.ticker && t.side === side)) return;
     setBusy(true); setError('');
     try {
@@ -270,11 +283,11 @@ export default function AIPredictions({ dataFolder, onActivity }) {
       const trade = {
         id: line.ticker + '-' + side + '-' + Date.now(), timestamp: new Date().toISOString(),
         matchup: p.team + ' vs ' + (stats.opponent?.name || 'opponent') + ' · ' + closeDate(p.closeTime),
-        market: p.team + ' over ' + line.line + ' pts', side,
+        market: p.team + ' over ' + line.line + (leagueFor(p) === 'MLB' ? ' runs' : ' pts'), side,
         price: Math.round(ask * 100), probability: Math.round(probability * 100),
         strategy: seasonProfile?.strategy || p.strategy || null, seasonPieceId: seasonProfile?.id || null, week, ticker: line.ticker, line: line.line, marketProbability: ask,
         modelProbability: probability, edge: probability - ask, modelVersion: analysis.model || 'OpenAI',
-        context: { team: stats.team, opponent: stats.opponent, modelInputs: stats.modelInputs, dataQuality: stats.dataQuality },
+        context: { team: stats.team, opponent: stats.opponent, modelInputs: stats.modelInputs, dataQuality: stats.dataQuality, weather: stats.weather || null, schedule: stats.schedule || null },
         reasoning: (ai.reasoning || []).join(' '), stake: 1, paper: true, status: 'open',
       };
       await appendTrade(root, season, week, trade);
@@ -298,14 +311,14 @@ export default function AIPredictions({ dataFolder, onActivity }) {
   return (
     <div className="page-shell">
       <div className="page-heading">
-        <div><div className="eyebrow">WORKSPACE</div><h1>AI Predictions</h1><p>Scanner-selected team-total ladders enriched with cached ESPN statistics and OpenAI probability analysis.</p></div>
+        <div><div className="eyebrow">WORKSPACE</div><h1>AI Predictions</h1><p>Scanner-selected team-total ladders with league-specific statistics, MLB batting-weather screening, and OpenAI probability analysis.</p></div>
         <div className="status-pill">{busy ? 'Analyzing markets' : 'Analysis ready'}</div>
       </div>
       {!root && <div className="notice"><div className="notice-icon"><BrainCircuit size={18}/></div><div><b>Connect a data folder</b><span>ESPN and OpenAI results are cached in its meta folder.</span></div></div>}
       {error && <div className="notice error-notice"><b>{error}</b></div>}
       {progress && <div className="notice"><RefreshCw size={16}/><b>{progress}</b></div>}
       <section className="panel">
-        <div className="panel-heading"><div><h2>AI prediction entries · {predictions.length}</h2><p>NFL/NBA entries are populated automatically. The active season piece's strategy filters the entries shown here.</p></div></div>
+        <div className="panel-heading"><div><h2>AI prediction entries · {predictions.length}</h2><p>NFL/NBA/MLB entries are populated automatically. The active season piece's strategy filters the entries shown here.</p></div></div>
         {!predictions.length ? (
           <div className="empty-state"><div className="empty-icon"><AlertCircle size={22}/></div><b>No AI prediction entries selected</b><span>Open Live Market Scanner and use Add ladder on a team-total market.</span></div>
         ) : (
@@ -340,7 +353,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
                   </div>
                   <small className="line-range" style={{display:'block',whiteSpace:'nowrap'}}>{p.lines[0]?.line} – {p.lines[p.lines.length-1]?.line}</small>
                 </td>
-                <td><select value={side} onChange={(e)=>setSide(p,e.target.value)} aria-label={p.team + ' position side'}><option value="YES">YES</option><option value="NO">NO</option></select></td>
+                <td><select value={side} onChange={(e)=>setSide(p,e.target.value)} aria-label={p.team + ' position side'}>{leagueFor(p) === 'MLB' ? <option value="NO">NO</option> : <><option value="YES">YES</option><option value="NO">NO</option></>}</select></td>
                 <td>{cents(ask)}</td>
                 <td><b className="prob">{probability == null ? '—' : Math.round(probability*100) + '%'}</b><small style={{display:'block'}}>{probability == null ? 'Awaiting analysis' : 'Selected line'}</small></td>
                 <td>{edge == null ? '—' : (edge >= 0 ? '+' : '') + Math.round(edge*100) + '¢'}</td>
