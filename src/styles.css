@@ -1592,3 +1592,41 @@ tr.row-mid td {
   .piece-grid-settings,
   .piece-quota-controls { grid-template-columns: 1fr; }
 }
+
+
+/* Shared expandable season-piece entry */
+.season-piece-card{align-items:flex-start;min-width:0}
+.season-piece-info{width:100%;flex:1;min-width:0}
+.season-piece-expanded{display:flex;flex-direction:column;gap:12px;width:100%;margin-top:10px;padding-top:12px;border-top:1px solid #303744}
+.season-piece-grid-panel,.season-piece-chat{display:flex;flex-direction:column;gap:9px;padding:12px;border:1px solid rgba(198,157,78,.2);border-radius:9px;background:rgba(8,12,20,.48)}
+.season-piece-section-title{display:flex;align-items:center;gap:7px;color:#e5ce99;font-size:10px;font-weight:700;letter-spacing:.04em}
+.piece-axis-control{display:flex;flex-direction:column;gap:5px;color:#9da7b6;font-size:9px;font-weight:700}
+.piece-axis-control select{width:100%;min-width:0;padding:8px 9px;border:1px solid #343c49;border-radius:7px;background:#0d1118;color:#d7dbe2;font-size:10px}
+.season-piece-strategy-note{color:#8490a1;font-size:9px;line-height:1.5}
+.piece-safe-control{display:flex;align-items:center;gap:7px;color:#9da7b6;font-size:9px}
+.piece-safe-control input{accent-color:#c69d4e}
+.season-piece-chat-history{display:flex;flex-direction:column;gap:8px;max-height:190px;overflow:auto}
+.season-piece-chat-message{padding:8px 10px;border:1px solid #303744;border-radius:8px;background:#171d27}
+.season-piece-chat-message small{color:#778394;font-size:8px}
+.season-piece-chat-message p{margin:4px 0 0;color:#d7dbe2;font-size:10px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.season-piece-chat-empty{padding:10px;border:1px dashed #343c49;border-radius:8px;color:#8792a2;font-size:9px;line-height:1.5}
+.season-piece-chat-compose{display:flex;align-items:flex-end;gap:8px}
+.season-piece-chat-compose textarea{flex:1;min-width:0;resize:vertical;min-height:54px;padding:9px;border:1px solid #343c49;border-radius:8px;background:#0d1118;color:#e2e5eb;font:inherit;font-size:10px}
+.season-piece-chat-compose .primary-btn{white-space:nowrap;padding:9px 11px;font-size:9px}
+.piece-expand-button{display:inline-flex;align-items:center;gap:5px}
+.season-manager-piece-entry{display:block;padding:10px}
+.season-manager-piece-entry .season-manager-main{width:100%}
+.season-manager-piece-entry .season-piece-card{width:100%;margin:0;border:0;background:transparent;padding:4px}
+.season-manager-piece-entry .piece-quota-controls{margin-top:10px}
+.game-day-piece-list .season-piece-card{width:100%;min-width:0}
+.game-day-piece-list .season-piece-controls{flex-wrap:wrap}
+.piece-instruction-current{display:flex;flex-direction:column;gap:5px;padding:9px 10px;border:1px solid #303744;border-radius:8px;background:#111720}
+.piece-instruction-current b{font-size:9px;color:#d8c18e}
+.piece-instruction-current span{font-size:10px;color:#aab3c0;line-height:1.5;white-space:pre-wrap}
+@media(max-width:700px){
+  .season-piece-card{flex-direction:column;align-items:stretch}
+  .season-piece-art{align-self:center}
+  .season-piece-chat-compose{align-items:stretch;flex-direction:column}
+  .season-piece-chat-compose .primary-btn{align-self:flex-end}
+  .season-manager-piece-entry{padding:8px}
+}
