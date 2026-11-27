@@ -147,7 +147,7 @@ export default function Recommendations({ dataFolder, paperMode: currentPaperMod
             <small>Next scheduled: {s.nextScheduledWeek || 'week1'}</small>
           </div>
         </div>;
-<b>No seasons created yet</b><span>Your committed season tokens will be listed here.</span></div>}
+      })}</div> : <div className="empty-state"><b>No seasons created yet</b><span>Your committed season tokens will be listed here.</span></div>}
     </section>
   </div>;
 }
