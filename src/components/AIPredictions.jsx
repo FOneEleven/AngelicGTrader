@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BrainCircuit, ExternalLink, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { readCache } from '../lib/marketCache';
-import { readSettings, appendTrade, readTrades, readAIPredictionSelections, deleteTrade, latestSeason } from '../lib/dataModel';
+import { readSettings, appendTrade, readTrades, readAIPredictionSelections, deleteTrade, latestSeason, listSeasonProfiles } from '../lib/dataModel';
 import { computePredictions } from '../lib/predictions';
 import { fetchTeamStatistics } from '../lib/sportsStats';
 import { analyzeMarket } from '../lib/analyzeMarket';
@@ -83,6 +83,7 @@ function analysisKey(market, stats) {
 export default function AIPredictions({ dataFolder, onActivity }) {
   const [markets, setMarkets] = useState([]);
   const [trades, setTrades] = useState([]);
+  const [seasonProfile, setSeasonProfile] = useState(null);
   const [paperMode, setPaperMode] = useState(true);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState('');
@@ -107,7 +108,12 @@ export default function AIPredictions({ dataFolder, onActivity }) {
       setPaperMode(!!settings.paperMode);
       const activeSeason = await latestSeason(root);
       if (activeSeason && activeSeason !== season) setSeason(activeSeason);
-      setTrades(await readTrades(root, activeSeason || season, week));
+      const profiles = await listSeasonProfiles(root);
+      const activeProfile = profiles.find((profile) => profile.id === 'season-' + (activeSeason || season)) || null;
+      setSeasonProfile(activeProfile);
+      const activeWeek = activeProfile?.nextScheduledWeek || week;
+      if (activeWeek !== week) setWeek(activeWeek);
+      setTrades(await readTrades(root, activeSeason || season, activeWeek));
     })().catch((e) => setError(e.message));
   }, [root, season, week]);
 
@@ -251,6 +257,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
   }
   async function recordPrediction(p) {
     if (!paperMode) { setError('Paper mode must be ON to record predictions.'); return; }
+    if (seasonProfile?.activePlayer === false) { setError('This season piece is inactive after a loss and cannot record new matches.'); return; }
     if (!root) { setError('Connect a data folder first.'); return; }
     const line = p.lines[idxFor(p)], side = sideFor(p), analysis = analyses[line?.ticker];
     const probability = probabilityFor(analysis, side), ask = askFor(line, side);
@@ -264,7 +271,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
         matchup: p.team + ' vs ' + (stats.opponent?.name || 'opponent') + ' · ' + closeDate(p.closeTime),
         market: p.team + ' over ' + line.line + ' pts', side,
         price: Math.round(ask * 100), probability: Math.round(probability * 100),
-        strategy: null, ticker: line.ticker, line: line.line, marketProbability: ask,
+        strategy: seasonProfile?.strategy || p.strategy || null, seasonPieceId: seasonProfile?.id || null, week, ticker: line.ticker, line: line.line, marketProbability: ask,
         modelProbability: probability, edge: probability - ask, modelVersion: analysis.model || 'OpenAI',
         context: { team: stats.team, opponent: stats.opponent, modelInputs: stats.modelInputs, dataQuality: stats.dataQuality },
         reasoning: (ai.reasoning || []).join(' '), stake: 1, paper: true, status: 'open',
@@ -338,7 +345,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
                 <td>{edge == null ? '—' : (edge >= 0 ? '+' : '') + Math.round(edge*100) + '¢'}</td>
                 <td><b className="prob">{payout ? payout.toFixed(2) + '×' : '—'}</b></td>
                 <td>{analysis ? <span className="status-pill strat-cliff">Ready</span> : <span className="status-pill">Pending</span>}</td>
-                <td><button className="secondary-btn" disabled={busy || !root || (!already && (!paperMode || probability == null || ask == null))} onClick={()=>already ? removePredictionRecord(p, chosen, side) : recordPrediction(p)}>{already ? 'Remove record' : 'Record'}</button><a className="icon-btn" href={'https://kalshi.com/markets/' + (p.event || chosen?.ticker || '').toLowerCase()} target="_blank" rel="noreferrer" title="Open on Kalshi" style={{marginLeft:6}}><ExternalLink size={14}/></a></td>
+                <td><button className="secondary-btn" disabled={busy || !root || (!already && (!paperMode || seasonProfile?.activePlayer === false || probability == null || ask == null))} onClick={()=>already ? removePredictionRecord(p, chosen, side) : recordPrediction(p)}>{already ? 'Remove record' : 'Record'}</button><a className="icon-btn" href={'https://kalshi.com/markets/' + (p.event || chosen?.ticker || '').toLowerCase()} target="_blank" rel="noreferrer" title="Open on Kalshi" style={{marginLeft:6}}><ExternalLink size={14}/></a></td>
               </tr>;
             })}</tbody>
           </table></div>
