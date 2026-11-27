@@ -4,7 +4,7 @@ import SeasonToken from './SeasonToken';
 import { listSeasonProfiles, readSeasonTrades, updateSeasonProfile, advanceSeasonWeek } from '../lib/dataModel';
 
 const FILTERS = [{ id: 'active', label: 'Active' }, { id: 'all', label: 'All' }, { id: 'winners', label: 'Highest winners' }];
-const isLoss = (trade) => /^(lost|loss|settled_loss|settled-loss)$/i.test(String(trade.outcome || trade.status || ''));
+const isLoss = (trade) => /^(lost|loss|settled_loss|settled-loss)$/i.test(String(trade.outcome || trade.status || '')) || Number(trade.earnings ?? trade.profit ?? 0) < 0;
 
 function earningsFor(trades) {
   return trades.reduce((sum, trade) => sum + Number(trade.earnings ?? trade.profit ?? 0), 0);
@@ -14,25 +14,30 @@ function EarningsGraph({ pieces }) {
   const width = Math.max(560, pieces.length * 150 + 100), height = 300;
   const left = 66, right = 24, top = 22, bottom = 72;
   const plotW = width - left - right, plotH = height - top - bottom;
-  const maxValue = Math.max(10, ...pieces.map((p) => Math.max(0, p.earnings))) * 1.15;
-  const ticks = [0, .25, .5, .75, 1].map((n) => maxValue * n);
+  const minValue = Math.min(0, ...pieces.map((p) => p.earnings));
+  const maxValue = Math.max(10, ...pieces.map((p) => p.earnings));
+  const range = Math.max(1, maxValue - minValue);
+  const ticks = [0, .25, .5, .75, 1].map((n) => minValue + range * n);
   const slot = pieces.length ? plotW / pieces.length : plotW;
   const barW = Math.min(64, slot * .48);
+  const yFor = (value) => top + plotH - ((value - minValue) / range) * plotH;
+  const zeroY = yFor(0);
   return <div className="game-day-chart-scroll">
     <svg className="game-day-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Season piece earnings graph">
       {ticks.map((tick, i) => {
-        const y = top + plotH - (tick / maxValue) * plotH;
+        const y = yFor(tick);
         return <g key={i}><line x1={left} x2={width-right} y1={y} y2={y} stroke="#29313d" strokeDasharray="3 5"/><text x={left-12} y={y+4} textAnchor="end" fill="#8992a1" fontSize="10">{'$' + tick.toFixed(0)}</text></g>;
       })}
       <line x1={left} x2={left} y1={top} y2={top+plotH} stroke="#505968"/>
-      <line x1={left} x2={width-right} y1={top+plotH} y2={top+plotH} stroke="#505968"/>
+      <line x1={left} x2={width-right} y1={zeroY} y2={zeroY} stroke="#687385"/>
       {pieces.map((piece, i) => {
         const x = left + slot * i + (slot - barW) / 2;
-        const barH = Math.max(0, piece.earnings / maxValue * plotH);
-        const y = top + plotH - barH;
+        const valueY = yFor(piece.earnings);
+        const barY = Math.min(zeroY, valueY);
+        const barH = Math.max(2, Math.abs(zeroY - valueY));
         return <g key={piece.id}>
-          <rect x={x} y={y} width={barW} height={Math.max(2,barH)} rx="5" fill={piece.baseColor || '#c69d4e'} opacity=".88"/>
-          <text x={x+barW/2} y={Math.max(top+12,y-8)} textAnchor="middle" fill="#e6d5a9" fontSize="10">{'$' + piece.earnings.toFixed(2)}</text>
+          <rect x={x} y={barY} width={barW} height={barH} rx="5" fill={piece.baseColor || '#c69d4e'} opacity=".88"/>
+          <text x={x+barW/2} y={piece.earnings >= 0 ? Math.max(top+12,barY-8) : Math.min(top+plotH-3,barY+barH+13)} textAnchor="middle" fill="#e6d5a9" fontSize="10">{'$' + piece.earnings.toFixed(2)}</text>
           <text x={x+barW/2} y={top+plotH+19} textAnchor="middle" fill="#cbd0d9" fontSize="10">{piece.pieceType}</text>
           <text x={x+barW/2} y={top+plotH+34} textAnchor="middle" fill="#788394" fontSize="9">{piece.name.length > 18 ? piece.name.slice(0,16)+'…' : piece.name}</text>
         </g>;
@@ -113,7 +118,7 @@ export default function GameDay({ dataFolder, onActivity }) {
     <section className="panel game-day-earnings">
       <div className="panel-heading"><div><h2>Earnings</h2><p>Money earned by each season piece</p></div><div className="game-day-filters">{FILTERS.map((item) => <button key={item.id} className={`seg-btn ${filter === item.id ? 'active' : ''}`} onClick={() => setFilter(item.id)}>{item.label}</button>)}</div></div>
       <EarningsGraph pieces={visiblePieces}/>
-      <div className="game-day-chart-foot"><span>{visiblePieces.length} pieces shown</span><button className="text-btn" onClick={() => setHiddenIds([])}>Show all pieces</button></div>
+      <div className="game-day-chart-foot"><span>{visiblePieces.length} pieces shown</span><button className="text-btn" onClick={() => { setHiddenIds([]); setFilter('all'); }}>Show all pieces</button></div>
       <div className="game-day-piece-list">
         {visiblePieces.map((piece) => <article className="game-day-piece" key={piece.id}>
           <SeasonToken pieceType={piece.pieceType} baseColor={piece.baseColor} size={76}/>
