@@ -154,7 +154,7 @@ export async function appendTrade(root, season, week, trade) {
   const existing = await (await file.getFile()).text().catch(() => '');
   const header = existing
     ? ''
-    : '# id\ttimestamp\tmatchup\tmarket\tside\tprice\tprobability\tstake\tpaper\tstatus\n';
+    : '# id\ttimestamp\tmatchup\tmarket\tside\tprice\tprobability\tstake\tpaper\tstatus\tmetadata_json\n';
   const row = [
     trade.id,
     trade.timestamp,
