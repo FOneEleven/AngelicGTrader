@@ -168,10 +168,11 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       (!seasonProfile?.strategy || p.strategy === seasonProfile.strategy)
     ),
   }), [markets, selectedEntries, seasonProfile?.strategy]);
+  const predictionDatasetSignature = JSON.stringify(predictions.map((p) => ({ key: p.key, event: p.event, gameTime: p.gameTime || p.expectedExpiration || p.closeTime || null, lines: p.lines.map((line) => [line.ticker, line.line, line.yesAsk, line.noAsk]), recommended: p.recommended?.ticker || null })));
 
   useEffect(() => {
     if (!root || !seasonProfile) return;
-    const datasetSignature = JSON.stringify(predictions.map((p) => ({ key: p.key, event: p.event, gameTime: p.gameTime || p.expectedExpiration || p.closeTime || null, lines: p.lines.map((line) => [line.ticker, line.line, line.yesAsk, line.noAsk]), recommended: p.recommended?.ticker || null })));
+    const datasetSignature = predictionDatasetSignature;
     const previousRefresh = lastStatsRefreshRef.current;
     if (previousRefresh && !previousRefresh.cancelled && previousRefresh.root === root && previousRefresh.profileId === seasonProfile.id && previousRefresh.signature === datasetSignature) return;
     const refreshRecord = { root, profileId: seasonProfile.id, signature: datasetSignature, cancelled: false, completed: false };
@@ -301,7 +302,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
     }
     run();
     return () => { cancelled = true; if (!refreshRecord.completed) refreshRecord.cancelled = true; };
-  }, [root, markets, predictions, seasonProfile?.id]);
+  }, [root, markets, predictions, predictionDatasetSignature, seasonProfile?.id]);
 
   useEffect(() => {
     if (!autoRetryAt) return undefined;
@@ -390,7 +391,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
     const isAuto = seasonProfile?.auto === true;
     if (!scanRequest?.requestId && !isAuto) return;
     if (scanRequest?.requestId && seasonProfile?.id !== scanRequest.profileId) return;
-    const attemptKey = (scanRequest?.requestId || ('auto-' + seasonProfile?.id)) + ':' + autoRetryCount;
+    const attemptKey = (scanRequest?.requestId || ('auto-' + seasonProfile?.id)) + ':' + autoRetryCount + ':' + predictionDatasetSignature;
     if (handledScanRef.current === attemptKey) return;
     if (!seasonProfile || !statsResolved) return;
     handledScanRef.current = attemptKey;
@@ -482,7 +483,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         }
       }
     })().catch((e) => { setError(e.message || 'Weekly scan failed'); setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SCAN ERROR · ' + (e.message || String(e)) }].slice(-40)); });
-  }, [scanRequest, seasonProfile, predictions, statsByKey, statsResolved, autoRetryCount]);
+  }, [scanRequest, seasonProfile, predictions, predictionDatasetSignature, statsByKey, statsResolved, autoRetryCount]);
 
   function setSide(p, side) {
     setSideByKey((old) => ({ ...old, [p.key]: side }));
