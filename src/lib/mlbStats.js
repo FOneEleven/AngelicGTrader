@@ -68,7 +68,7 @@ async function fetchWeather(latitude, longitude, date, gameDateTime) {
   const target = new Date(gameDateTime).getTime();
   let index = 0, distance = Infinity;
   times.forEach((time, i) => {
-    const d = Math.abs(new Date(time).getTime() - target);
+    const d = Math.abs(new Date(time.endsWith('Z') ? time : time + 'Z').getTime() - target);
     if (d < distance) { distance = d; index = i; }
   });
   const value = (field) => n(hourly[field]?.[index]);
@@ -125,9 +125,9 @@ export async function fetchMLBTeamStatistics({ team, opponent, gameTime }) {
 
   const [hitting, recentHitting, opponentPitching, recentOpponentPitching] = await Promise.all([
     teamStats(teamRow.id, 'hitting', season, 'season'),
-    teamStats(teamRow.id, 'hitting', season, 'last10'),
+    teamStats(teamRow.id, 'hitting', season, 'lastXGames').catch(() => null),
     teamStats(opponentRow.id, 'pitching', season, 'season'),
-    teamStats(opponentRow.id, 'pitching', season, 'last10'),
+    teamStats(opponentRow.id, 'pitching', season, 'lastXGames').catch(() => null),
   ]);
   if (!hitting || !opponentPitching) throw new Error('MLB provider did not return the required season hitting/pitching statistics.');
 
