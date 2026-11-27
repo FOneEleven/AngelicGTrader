@@ -128,12 +128,12 @@ export default function KalshiConnect({ dataFolderHandle, onAccountChange }) {
       await saveConnection(dataFolderHandle, connection);
       setSaved(connection);
       try { await importKalshiHistory(connection); }
-      catch (historyError) { setNotice('Account connected. Trade history import failed: ' + historyError.message); }
+      catch (historyError) { setError('Account connected; trade history import failed: ' + historyError.message); }
       setPrivateKey('');
       setKeyId('');
       setShowForm(false);
       setShowGuide(false);
-      if (!notice.startsWith('Account connected. Trade history import failed:')) setNotice('Kalshi account connected.');
+      setNotice('Kalshi account connected.');
       setBalance(result);
     } catch (e) {
       setError(e.message || 'Could not connect to Kalshi.');
