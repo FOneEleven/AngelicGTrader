@@ -397,16 +397,17 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
     const line = p.lines[idxFor(p)], side = sideFor(p), analysis = analyses[line?.ticker];
     const probability = probabilityFor(analysis, side), ask = askFor(line, side);
     if (probability == null || ask == null) { setError('OpenAI analysis or executable ask is missing for this line.'); return; }
-    if (['avoid-overlap', 'split'].includes(seasonProfile?.diversityMode) && otherPieceTickers.includes(line.ticker)) { setError('This game is already selected by another active season piece. Diversity mode blocks overlap.'); return; }
     if (leagueFor(p) === 'MLB' && (side !== 'NO' || analysis?.mlbEligibility?.eligible !== true)) { setError('MLB is NO-only and this line has not passed the strict MLB eligibility checks.'); return; }
     if (leagueFor(p) !== 'MLB') {
-      const mode = seasonProfile?.selectionStrategy || 'standard';
+      const mode = seasonProfile?.selectionStrategy || '';
+      if (!mode) { setError('This piece is not ready for play. Select a strategy in its piece entry.'); return; }
+      if (leagueFor(p) !== 'MLB' && mode === 'baseball-no') { setError('Bet NO Strat is only available for baseball games.'); return; }
       const gates = { standard: { probability: 0.92, payout: 1.2 }, value: { probability: 0.84, payout: 1.4 }, highroller: { probability: 0.70, payout: 1.75 } };
       const gate = { ...(gates[mode] || gates.standard) };
       if (seasonProfile?.riskPreference === 'probability') { gate.probability += 0.02; }
       if (seasonProfile?.riskPreference === 'value') { gate.probability = Math.max(0.5, gate.probability - 0.02); gate.payout += 0.1; }
       const payout = ask > 0 ? 1 / ask : 0;
-      if (mode === 'value' && (!pieceQuotaFilled || seasonProfile?.safe === true)) { setError('Value strategy requires this piece to have filled its monetary quota and not be marked Safe.'); return; }
+      if (mode === 'value' && !pieceQuotaFilled) { setError('Value strategy requires this piece to have filled its monetary quota.'); return; }
       if (mode === 'value') { const stats = statsByKey[p.key]; const knownPPG = Math.min(Number(stats?.team?.pointsPerGame) || Infinity, Number(stats?.team?.recent5PPG) || Number(stats?.team?.pointsPerGame) || Infinity); if (!Number.isFinite(knownPPG) || Number(line.line) > knownPPG * 0.9) { setError("Value strategy requires a line at least 10% below the team's season and recent scoring average."); return; } }
       if (mode === 'highroller') {
         const stats = statsByKey[p.key];
@@ -427,7 +428,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         matchup: p.team + ' vs ' + (stats.opponent?.name || 'opponent') + ' · ' + closeDate(p.closeTime),
         market: p.team + ' over ' + line.line + (leagueFor(p) === 'MLB' ? ' runs' : ' pts'), side,
         price: Math.round(ask * 100), probability: Math.round(probability * 100),
-        strategy: seasonProfile?.strategy || p.strategy || null, selectionStrategy: seasonProfile?.selectionStrategy || 'standard', riskPreference: seasonProfile?.riskPreference || 'probability', diversityMode: seasonProfile?.diversityMode || 'allow-overlap', seasonPieceId: seasonProfile?.id || null, week, ticker: line.ticker, line: line.line, marketProbability: ask,
+        strategy: seasonProfile?.strategy || p.strategy || null, selectionStrategy: seasonProfile?.selectionStrategy || '', riskPreference: seasonProfile?.riskPreference || 'probability', seasonPieceId: seasonProfile?.id || null, week, ticker: line.ticker, line: line.line, marketProbability: ask,
         modelProbability: probability, edge: probability - ask, modelVersion: analysis.model || 'OpenAI',
         context: { team: stats.team, opponent: stats.opponent, modelInputs: stats.modelInputs, dataQuality: stats.dataQuality, weather: stats.weather || null, schedule: stats.schedule || null },
         reasoning: (ai.reasoning || []).join(' '), stake: 1, paper: true, status: 'open',
