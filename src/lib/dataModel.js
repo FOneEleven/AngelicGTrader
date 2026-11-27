@@ -172,6 +172,14 @@ export async function appendTrade(root, season, week, trade) {
   const w = await file.createWritable();
   await w.write(existing + header + row);
   await w.close();
+
+  // Canonical append-only index used by the Dashboard Records panel.
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  const recordsFile = await metaDir.getFileHandle('records.txt', { create: true });
+  const recordsExisting = await (await recordsFile.getFile()).text().catch(() => '');
+  const recordsWriter = await recordsFile.createWritable();
+  await recordsWriter.write(recordsExisting + (recordsExisting ? '' : header) + row);
+  await recordsWriter.close();
   return trade;
 }
 
@@ -228,4 +236,19 @@ export async function writeAIPredictionSelections(root, selections) {
   const unique = [...new Set((selections || []).filter((v) => typeof v === 'string'))];
   await writeText(metaDir, AI_SELECTIONS_FILE, JSON.stringify(unique, null, 2) + '\n');
   return unique;
+}
+
+
+// Read the canonical record feed shared by every dashboard view.
+export async function readAllRecords(root) {
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  const text = await readText(metaDir, 'records.txt');
+  if (!text) return [];
+  return text.split('\n').filter((line) => line && !line.startsWith('#')).map((line) => {
+    const fields = line.split('\t');
+    const [id, timestamp, matchup, market, side, price, probability, stake, paper, status] = fields;
+    let metadata = {};
+    try { metadata = fields.length > 10 ? JSON.parse(fields.slice(10).join('\t')) : {}; } catch {}
+    return { id, timestamp, matchup, market, side, price, probability, stake, paper: paper === 'paper', status, ...metadata };
+  }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 }
