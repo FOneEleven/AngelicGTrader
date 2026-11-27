@@ -7,17 +7,18 @@ async function getJson(url, label, onProgress) {
   onProgress?.(label + ' {5}');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
-  let response;
+  let response, data;
   try {
     response = await fetch(url, { headers: { Accept: 'application/json' }, signal: controller.signal });
+    if (!response.ok) throw new Error(label + ' request failed (' + response.status + ')');
+    data = await response.json();
   } catch (error) {
     if (error.name === 'AbortError') throw new Error(label + ' timed out after 5 seconds.');
     throw error;
   } finally {
     clearTimeout(timeout);
   }
-  if (!response.ok) throw new Error(label + ' request failed (' + response.status + ')');
-  return response.json();
+  return data;
 }
 function keyName(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
