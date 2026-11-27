@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { KeyRound, ShieldCheck, Wallet, RefreshCw, ChevronDown, Link2, Unlink, AlertCircle } from 'lucide-react';
+import { ShieldCheck, Wallet, RefreshCw, ChevronDown, Link2, Unlink, AlertCircle } from 'lucide-react';
 
 const API = 'https://angelicgtrader-dvhgf4dhc6hahqhs.westus3-01.azurewebsites.net/api/KalshiAccount';
 const META_FILE = 'kalshi-connection.json';
@@ -68,6 +68,10 @@ export default function KalshiConnect({ dataFolderHandle }) {
       if (!cancelled) {
         setSaved(connection);
         if (connection?.nickname) setNickname(connection.nickname);
+        if (connection?.keyId && connection?.envelope) {
+          try { await verifyAndLoad(connection); }
+          catch (e) { setError(e.message || 'Saved Kalshi connection could not be verified.'); }
+        }
       }
     })();
     return () => { cancelled = true; };
