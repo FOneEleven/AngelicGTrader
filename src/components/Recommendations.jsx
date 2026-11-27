@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { RefreshCw, PlusCircle, WalletCards, Scissors } from 'lucide-react';
-import { createSeasonProfile, listSeasonProfiles, updateSeasonProfile, splitSeasonPiece, readSeasonTrades } from '../lib/dataModel';
+import { createSeasonProfile, listSeasonProfiles, updateSeasonProfile, splitSeasonPiece, readSeasonTrades, confirmedWalletReturns } from '../lib/dataModel';
 import SeasonToken from './SeasonToken';
 import SeasonPieceEntry from './SeasonPieceEntry';
 
@@ -39,7 +39,7 @@ export default function Recommendations({ dataFolder, paperMode: currentPaperMod
     const profits = {};
     await Promise.all(profiles.map(async (profile) => {
       const rows = await readSeasonTrades(root, profile);
-      profits[profile.id] = rows.reduce((sum, trade) => sum + (Number(trade.profit) || 0), 0);
+      profits[profile.id] = confirmedWalletReturns(rows);
     }));
     setPieceProfit(profits);
   }
@@ -60,7 +60,7 @@ export default function Recommendations({ dataFolder, paperMode: currentPaperMod
     const count = Number(splitCounts[profile.id] || profile.splitCount || 2);
     setBusy(true); setError('');
     try {
-      const worth = Math.max(0, (Number(profile.balance) || 0) + (Number(pieceProfit[profile.id]) || 0));
+      const worth = Math.max(0, Number(pieceProfit[profile.id]) || 0);
       if (worth <= 0) throw new Error('This piece has no remaining value to split.');
       const result = await splitSeasonPiece(root, { ...profile, balance: worth }, count);
       setSeasons((old) => [...old.map((item) => item.id === profile.id ? result.parent : item), ...result.children]);
@@ -117,9 +117,9 @@ export default function Recommendations({ dataFolder, paperMode: currentPaperMod
       </div>
     </section>
     <section className="panel">
-      <div className="panel-heading"><div><h2>Season pieces · {seasons.filter((s) => s.activePlayer !== false).length}</h2><p>Configure the grid, risk, diversity, strategy, and each piece's monetary quota.</p></div></div>
+      <div className="panel-heading"><div><h2>Season pieces · {seasons.filter((s) => s.activePlayer !== false).length}</h2><p>Configure each piece's strategy and risk against confirmed returned funds.</p></div></div>
       {seasons.length ? <div className="season-manager-list">{seasons.map((s) => {
-        const currentWorth = Math.max(0, (Number(s.balance) || 0) + (Number(pieceProfit[s.id]) || 0));
+        const currentWorth = Math.max(0, Number(pieceProfit[s.id]) || 0);
         const quota = Number(s.quotaValue ?? s.balance) || 0;
         return <div className={`season-manager-row season-manager-piece-entry ${s.activePlayer === false ? 'season-inactive' : ''}`} key={s.id}>
           <div className="season-manager-main">
