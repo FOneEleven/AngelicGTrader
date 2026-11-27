@@ -107,6 +107,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
   const [week, setWeek] = useState('week1');
   const [analyses, setAnalyses] = useState({});
   const [statsByKey, setStatsByKey] = useState({});
+  const [statsResolved, setStatsResolved] = useState(false);
   const [analysisErrors, setAnalysisErrors] = useState({});
   const [sideByKey, setSideByKey] = useState({});
   const [sliderIdx, setSliderIdx] = useState({});
@@ -173,6 +174,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
     let cancelled = false;
     async function run() {
       setBusy(true); setError(''); setProgress('Resolving league statistics and MLB weather…');
+      setStatsResolved(false);
       setDebugEntries([{ time: new Date().toLocaleTimeString(), message: 'Refresh started · ' + predictions.length + ' prediction entries · ' + new Date().toISOString() }]);
       const nextStats = {}, nextAnalyses = {}, nextErrors = {};
       const statsForPrediction = new Map();
@@ -272,10 +274,10 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         }
         if (cancelled) return;
         setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'REFRESH COMPLETE · valid stats=' + Object.keys(nextStats).length + ' · stats errors=' + Object.keys(nextErrors).length + ' · AI analyses=' + Object.keys(nextAnalyses).length }].slice(-40));
-        setStatsByKey(nextStats); setAnalyses(nextAnalyses); setAnalysisErrors(nextErrors); setProgress('');
+        setStatsByKey(nextStats); setAnalyses(nextAnalyses); setAnalysisErrors(nextErrors); setStatsResolved(true); setProgress('');
       } catch (e) {
         if (!cancelled) {
-          setStatsByKey(nextStats); setAnalyses(nextAnalyses); setAnalysisErrors(nextErrors);
+          setStatsByKey(nextStats); setAnalyses(nextAnalyses); setAnalysisErrors(nextErrors); setStatsResolved(true);
           setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'REFRESH ERROR · ' + (e.message || String(e)) }].slice(-40));
           setError(e.message || 'Prediction analysis failed'); setProgress('');
         }
@@ -376,7 +378,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
     if (scanRequest?.requestId && seasonProfile?.id !== scanRequest.profileId) return;
     const attemptKey = (scanRequest?.requestId || ('auto-' + seasonProfile?.id)) + ':' + autoRetryCount;
     if (handledScanRef.current === attemptKey) return;
-    if (!seasonProfile || !predictions.length || !Object.keys(statsByKey).length) return;
+    if (!seasonProfile || !predictions.length || !statsResolved) return;
     handledScanRef.current = attemptKey;
     if (autoRetryTimerRef.current) { window.clearTimeout(autoRetryTimerRef.current); autoRetryTimerRef.current = null; }
     setAutoRetryAt(null); setAutoRetrySeconds(0);
@@ -464,7 +466,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         }
       }
     })().catch((e) => { setError(e.message || 'Weekly scan failed'); setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SCAN ERROR · ' + (e.message || String(e)) }].slice(-40)); });
-  }, [scanRequest, seasonProfile, predictions, statsByKey, autoRetryCount]);
+  }, [scanRequest, seasonProfile, predictions, statsByKey, statsResolved, autoRetryCount]);
 
   function setSide(p, side) {
     setSideByKey((old) => ({ ...old, [p.key]: side }));
