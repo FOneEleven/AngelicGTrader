@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BrainCircuit, ExternalLink, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { readCache } from '../lib/marketCache';
-import { readSettings, appendTrade, readTrades, readAIPredictionSelections, deleteTrade, latestSeason, listSeasonProfiles } from '../lib/dataModel';
+import { readSettings, appendTrade, readTrades, readAIPredictionSelections, deleteTrade, latestSeason, listSeasonProfiles, updateSeasonProfile } from '../lib/dataModel';
 import { computePredictions } from '../lib/predictions';
 import { fetchTeamStatistics } from '../lib/sportsStats';
 import { fetchMLBTeamStatistics } from '../lib/mlbStats';
@@ -97,6 +97,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
   const [sideByKey, setSideByKey] = useState({});
   const [sliderIdx, setSliderIdx] = useState({});
   const [selectedEntries, setSelectedEntries] = useState([]);
+  const [piecePrompt, setPiecePrompt] = useState('');
   const root = dataFolder?.handle;
 
   useEffect(() => {
@@ -112,6 +113,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
       const profiles = await listSeasonProfiles(root);
       const activeProfile = profiles.find((profile) => profile.id === 'season-' + (activeSeason || season)) || null;
       setSeasonProfile(activeProfile);
+      setPiecePrompt(activeProfile?.piecePrompt || '');
       const activeWeek = activeProfile?.nextScheduledWeek || week;
       if (activeWeek !== week) setWeek(activeWeek);
       setTrades(await readTrades(root, activeSeason || season, activeWeek));
@@ -264,6 +266,38 @@ export default function AIPredictions({ dataFolder, onActivity }) {
       setProgress('');
     }
   }
+  async function savePiecePrompt() {
+    if (!root || !seasonProfile) return;
+    try {
+      const updated = await updateSeasonProfile(root, seasonProfile.id, { piecePrompt });
+      setSeasonProfile(updated);
+      setProgress('Piece instruction saved.');
+    } catch (e) { setError(e.message || 'Could not save piece instruction'); }
+  }
+
+  async function reassessSelectedLine(p, line) {
+    const stats = statsByKey[p.key];
+    const baseline = analyses[line?.ticker];
+    if (!root || !stats || !line || !baseline || !piecePrompt.trim()) return;
+    setBusy(true); setError('');
+    setProgress('Reassessing ' + p.team + ' over ' + line.line + ' against the piece instruction…');
+    try {
+      const league = leagueFor(p);
+      const market = { ticker: line.ticker, title: p.team + ' over ' + line.line + (league === 'MLB' ? ' runs' : ' points'), league, team: p.team, opponent: stats.opponent?.name || '', line: line.line, yesAsk: line.yesAsk, noAsk: line.noAsk, closeTime: p.closeTime || p.expectedExpiration || null, gameTime: p.gameTime || p.expectedExpiration || null };
+      const revised = await analyzeMarket({
+        market,
+        teamStats: { ...stats.team, modelInputs: stats.modelInputs, recentGames: stats.recentGames, dataQuality: stats.dataQuality },
+        opponentStats: stats.opponent,
+        context: league === 'MLB' ? { source: stats.provider, season: stats.season, statisticsFetchedAt: stats.fetchedAt, mlb: { weather: stats.weather, schedule: stats.schedule, modelInputs: stats.modelInputs, dataQuality: stats.dataQuality } } : { source: 'ESPN', season: stats.season, seasonType: stats.seasonType, statisticsFetchedAt: stats.fetchedAt },
+        pieceInstruction: piecePrompt.trim(),
+        baselinePrediction: baseline.prediction,
+      });
+      setAnalyses((old) => ({ ...old, [line.ticker]: { ...revised, baselinePrediction: baseline.prediction, pieceInstruction: piecePrompt.trim() } }));
+      setProgress('AI reassessment complete. Compare the revised probability with the original.');
+    } catch (e) { setError(e.message || 'Piece instruction reassessment failed'); }
+    finally { setBusy(false); }
+  }
+
   function setSide(p, side) {
     setSideByKey((old) => ({ ...old, [p.key]: side }));
     setSliderIdx((old) => { const next = { ...old }; delete next[p.key]; return next; });
@@ -319,6 +353,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
       {progress && <div className="notice"><RefreshCw size={16}/><b>{progress}</b></div>}
       <section className="panel">
         <div className="panel-heading"><div><h2>AI prediction entries · {predictions.length}</h2><p>NFL/NBA/MLB entries are populated automatically. The active season piece's strategy filters the entries shown here.</p></div></div>
+        <div className="piece-instruction-box"><label htmlFor="piece-ai-instruction">Instruction to this season piece</label><textarea id="piece-ai-instruction" rows="3" value={piecePrompt} onChange={(e) => setPiecePrompt(e.target.value)} placeholder="Ask this piece to investigate a matchup factor, trend, or concern. Azure will test the claim against evidence rather than assume it is true."/><button className="secondary-btn" disabled={!seasonProfile || busy} onClick={savePiecePrompt}>Save piece instruction</button></div>
         {!predictions.length ? (
           <div className="empty-state"><div className="empty-icon"><AlertCircle size={22}/></div><b>No AI prediction entries selected</b><span>Open Live Market Scanner and use Add ladder on a team-total market.</span></div>
         ) : (
@@ -359,7 +394,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
                 <td>{edge == null ? '—' : (edge >= 0 ? '+' : '') + Math.round(edge*100) + '¢'}</td>
                 <td><b className="prob">{payout ? payout.toFixed(2) + '×' : '—'}</b></td>
                 <td>{analysis ? <span className="status-pill strat-cliff">Ready</span> : <span className="status-pill">Pending</span>}</td>
-                <td><button className="secondary-btn" disabled={busy || !root || (!already && (!paperMode || seasonProfile?.activePlayer === false || probability == null || ask == null || (leagueFor(p) === 'MLB' && (side !== 'NO' || analysis?.mlbEligibility?.eligible !== true))))} onClick={()=>already ? removePredictionRecord(p, chosen, side) : recordPrediction(p)}>{already ? 'Remove record' : 'Record'}</button><a className="icon-btn" href={'https://kalshi.com/markets/' + (p.event || chosen?.ticker || '').toLowerCase()} target="_blank" rel="noreferrer" title="Open on Kalshi" style={{marginLeft:6}}><ExternalLink size={14}/></a></td>
+                <td><button className="secondary-btn" disabled={busy || !piecePrompt.trim() || !analysis || !statsByKey[p.key]} onClick={()=>reassessSelectedLine(p, chosen)}>Reassess</button> <button className="secondary-btn" disabled={busy || !root || (!already && (!paperMode || seasonProfile?.activePlayer === false || probability == null || ask == null || (leagueFor(p) === 'MLB' && (side !== 'NO' || analysis?.mlbEligibility?.eligible !== true))))} onClick={()=>already ? removePredictionRecord(p, chosen, side) : recordPrediction(p)}>{already ? 'Remove record' : 'Record'}</button><a className="icon-btn" href={'https://kalshi.com/markets/' + (p.event || chosen?.ticker || '').toLowerCase()} target="_blank" rel="noreferrer" title="Open on Kalshi" style={{marginLeft:6}}><ExternalLink size={14}/></a></td>
               </tr>;
             })}</tbody>
           </table></div>
