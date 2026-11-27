@@ -244,7 +244,8 @@ export default function App() {
         {active !== 'Dashboard'
           && active !== 'Live Market Scanner'
           && active !== 'AI Predictions'
-          && active !== 'Season Manager'\n          && active !== 'Game Day'
+          && active !== 'Season Manager'
+          && active !== 'Game Day'
           && <Placeholder page={active} />}
       </div>
       <footer>
