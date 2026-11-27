@@ -166,6 +166,7 @@ export async function appendTrade(root, season, week, trade) {
     trade.stake,
     trade.paper ? 'paper' : 'live',
     trade.status || 'open',
+    JSON.stringify({ strategy: trade.strategy ?? null, ticker: trade.ticker ?? null, line: trade.line ?? null, marketProbability: trade.marketProbability ?? null, modelProbability: trade.modelProbability ?? null, edge: trade.edge ?? null, modelVersion: trade.modelVersion ?? null, context: trade.context ?? null, reasoning: trade.reasoning ?? null }),
   ].join('\t') + '\n';
   const w = await file.createWritable();
   await w.write(existing + header + row);
@@ -182,8 +183,11 @@ export async function readTrades(root, season, week) {
     .split('\n')
     .filter((l) => l && !l.startsWith('#'))
     .map((line) => {
-      const [id, timestamp, matchup, market, side, price, probability, stake, paper, status] = line.split('\t');
-      return { id, timestamp, matchup, market, side, price, probability, stake, paper: paper === 'paper', status };
+      const fields = line.split('\t');
+      const [id, timestamp, matchup, market, side, price, probability, stake, paper, status] = fields;
+      let metadata = {};
+      try { metadata = fields.length > 10 ? JSON.parse(fields.slice(10).join('\t')) : {}; } catch { /* retain legacy row */ }
+      return { id, timestamp, matchup, market, side, price, probability, stake, paper: paper === 'paper', status, ...metadata };
     });
 }
 
