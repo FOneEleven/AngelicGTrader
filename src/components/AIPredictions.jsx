@@ -329,7 +329,6 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         if (gameTime && Number.isFinite(Date.parse(gameTime)) && Date.parse(gameTime) <= Date.now()) continue;
         const stats = statsByKey[p.key];
         if (!stats) continue;
-        let best = null;
         for (const line of p.lines) {
           setProgress('Scanning ' + p.team + ' line ' + line.line + ' · ' + p.league);
           const analysis = await analyzeSelectedLine(p, line);
@@ -400,7 +399,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
           : leagueFor(p) === 'NBA' ? teamPPG >= 110 && opponentPA >= 110 : false;
         if (!shootoutProfile) { setError('High Roller requires a high-scoring team profile against a weaker defense; this matchup does not meet the statistical screen.'); return; }
       }
-      if (probability < gate.probability || payout <= gate.payout) { setError(mode + ' strategy thresholds not met: probability ' + Math.round(probability * 100) + '% / confidence ' + confidence + ' / payout ' + payout.toFixed(2) + '×.'); return; }
+      if (probability < gate.probability || payout <= gate.payout) { setError(mode + ' strategy thresholds not met: probability ' + Math.round(probability * 100) + '% / payout ' + payout.toFixed(2) + '×.'); return; }
     }
     if (trades.some((t) => t.ticker === line.ticker && t.side === side)) return;
     setBusy(true); setError('');
@@ -445,7 +444,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       {progress && <div className="notice"><RefreshCw size={16}/><b>{progress}</b></div>}
       <section className="panel">
         <div className="panel-heading"><div><h2>AI prediction entries · {predictions.length}</h2><p>NFL/NBA/MLB entries are populated automatically. The active season piece's strategy filters the entries shown here.</p></div></div>
-        <div className="piece-instruction-box"><label htmlFor="active-season-piece">Active season piece</label><select id="active-season-piece" value={selectedPieceId} onChange={(e) => setSelectedPieceId(e.target.value)}>{seasonProfiles.filter((profile) => profile.activePlayer !== false).map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.selectionStrategy || "standard"}</option>)}</select><div className="piece-instruction-current"><b>Saved piece instruction</b><span>{piecePrompt || 'No instruction saved. Open the piece avatar on Dashboard or Game Day to send it a message.'}</span></div><button className="secondary-btn" disabled={busy || !piecePrompt.trim() || !predictions.length || !statsByKey[(predictions.find((p) => p.key === reassessPredictionKey) || predictions[0])?.key]} onClick={() => { const target = predictions.find((p) => p.key === reassessPredictionKey) || predictions[0]; if (target) reassessSelectedLine(target, target.lines[idxFor(target)]); }}>Reassess selected line for this piece</button></div>
+        <div className="piece-instruction-box"><label htmlFor="active-season-piece">Active season piece</label><select id="active-season-piece" value={selectedPieceId} onChange={(e) => setSelectedPieceId(e.target.value)}>{seasonProfiles.filter((profile) => profile.activePlayer !== false).map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.selectionStrategy || "standard"}</option>)}</select><div className="piece-instruction-current"><b>Saved piece instruction</b><span>{piecePrompt || 'No instruction saved. Open the piece avatar on Dashboard or Game Day to send it a message.'}</span></div><button className="secondary-btn" disabled={busy || !piecePrompt.trim() || !predictions.length || !statsByKey[(predictions.find((p) => p.key === reassessPredictionKey) || predictions[0])?.key] || !analyses[(predictions.find((p) => p.key === reassessPredictionKey) || predictions[0])?.lines[idxFor(predictions.find((p) => p.key === reassessPredictionKey) || predictions[0])]?.ticker]} onClick={() => { const target = predictions.find((p) => p.key === reassessPredictionKey) || predictions[0]; if (target) reassessSelectedLine(target, target.lines[idxFor(target)]); }}>Reassess selected line for this piece</button></div>
         {!predictions.length ? (
           <div className="empty-state"><div className="empty-icon"><AlertCircle size={22}/></div><b>No AI prediction entries selected</b><span>Open Live Market Scanner and use Add ladder on a team-total market.</span></div>
         ) : (
