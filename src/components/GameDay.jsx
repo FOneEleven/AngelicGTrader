@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Trophy, RefreshCw, X, Users, CalendarDays } from 'lucide-react';
-import SeasonToken from './SeasonToken';
+import { Trophy, RefreshCw, Users, CalendarDays } from 'lucide-react';
+import SeasonPieceEntry from './SeasonPieceEntry';
 import { listSeasonProfiles, readSeasonTrades, updateSeasonProfile, advanceSeasonWeek } from '../lib/dataModel';
 
 const FILTERS = [{ id: 'active', label: 'Active' }, { id: 'all', label: 'All' }, { id: 'winners', label: 'Highest winners' }];
@@ -52,7 +52,7 @@ function EarningsGraph({ pieces }) {
   </div>;
 }
 
-export default function GameDay({ dataFolder, onActivity }) {
+export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigate }) {
   const root = dataFolder?.handle;
   const [profiles, setProfiles] = useState([]);
   const [tradesByPiece, setTradesByPiece] = useState({});
@@ -106,10 +106,15 @@ export default function GameDay({ dataFolder, onActivity }) {
   async function startNextWeek(profile) {
     setBusyId(profile.id);
     try {
-      const updated = await advanceSeasonWeek(root, profile);
-      setProfiles((old) => old.map((p) => p.id === updated.id ? updated : p));
-      onActivity?.('WEEK_START', updated.name + ' scheduled for ' + updated.nextScheduledWeek);
-    } catch (e) { setError(e.message || 'Could not schedule next week'); }
+      if (onStartWeek) {
+        await onStartWeek(profile);
+        await load();
+      } else {
+        const updated = await advanceSeasonWeek(root, profile);
+        setProfiles((old) => old.map((p) => p.id === updated.id ? updated : p));
+        onActivity?.('WEEK_START', updated.name + ' scheduled for ' + updated.nextScheduledWeek);
+      }
+    } catch (e) { setError(e.message || 'Could not start next week'); }
     finally { setBusyId(''); }
   }
 
@@ -123,16 +128,17 @@ export default function GameDay({ dataFolder, onActivity }) {
       <EarningsGraph pieces={visiblePieces}/>
       <div className="game-day-chart-foot"><span>{visiblePieces.length} pieces shown</span><button className="text-btn" onClick={() => { setHiddenIds([]); setFilter('all'); }}>Show all pieces</button></div>
       <div className="game-day-piece-list">
-        {visiblePieces.map((piece) => <article className="game-day-piece" key={piece.id}>
-          <SeasonToken pieceType={piece.pieceType} baseColor={piece.baseColor} size={76}/>
-          <div className="game-day-piece-main"><b>{piece.name}</b><span>{piece.activePlayer === false ? 'Inactive' : 'Active'} · {piece.paperMode ? 'Paper' : 'Live'} · {piece.strategy || 'midpoint'}</span><strong>$ {piece.earnings.toFixed(2)} earned</strong><small>Next week: {piece.nextScheduledWeek || 'week1'} · {piece.trades.length} records</small>
-            {piece.activePlayer !== false && <div className="season-piece-controls">
-              <button className="secondary-btn" disabled={busyId === piece.id} onClick={() => startNextWeek(piece)}>Start next week</button>
-              <label className={`auto-switch ${piece.auto ? 'enabled' : ''}`}><input type="checkbox" checked={!!piece.auto} onChange={(e) => updatePiece(piece, { auto: e.target.checked })}/><span className="auto-switch-track"></span><b>Auto</b></label>
-            </div>}
-          </div>
-          <button className="remove-piece-btn" title="Remove piece from this graph" onClick={() => setHiddenIds((old) => [...new Set([...old,piece.id])])}><X size={14}/></button>
-        </article>)}
+        {visiblePieces.map((piece) => <SeasonPieceEntry
+          key={piece.id}
+          profile={piece}
+          earnings={piece.earnings}
+          showEarnings
+          compact
+          busy={busyId === piece.id}
+          onUpdate={updatePiece}
+          onStartWeek={startNextWeek}
+          onNavigate={onNavigate}
+        />)}
       </div>
     </section>
     <section className="panel game-day-schedule">
