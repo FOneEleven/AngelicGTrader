@@ -24,8 +24,8 @@ function closeDate(iso) {
   return iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 }
 function marketTeamName(m) {
-  const text = (m.subtitle || m.title || '').replace(/^Will\\s+(?:the\\s+)?/i, '').replace(/\\s+score\\s+over\\s+/i, ' over ');
-  const match = text.match(/^(.+?)\\s+over\\s+[\\d.]+/i);
+  const text = (m.subtitle || m.title || '').replace(/^Will\s+(?:the\s+)?/i, '').replace(/\s+score\s+over\s+/i, ' over ');
+  const match = text.match(/^(.+?)\s+over\s+[\d.]+/i);
   return match ? match[1].trim() : text.trim();
 }
 function leagueFor(p) {
