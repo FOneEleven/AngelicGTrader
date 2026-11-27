@@ -1,0 +1,176 @@
+import React, { useEffect, useState } from 'react';
+import { KeyRound, ShieldCheck, Wallet, RefreshCw, ChevronDown, Link2, Unlink, AlertCircle } from 'lucide-react';
+
+const API = 'https://angelicgtrader-dvhgf4dhc6hahqhs.westus3-01.azurewebsites.net/api/KalshiAccount';
+const META_FILE = 'kalshi-connection.json';
+
+function pemBytes(pem) {
+  const body = pem.replace(/-----BEGIN [^-]+-----|-----END [^-]+-----|\s/g, '');
+  const raw = atob(body);
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+}
+function toBase64(bytes) {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+async function encryptCredential(publicPem, privateKeyPem) {
+  const publicKey = await crypto.subtle.importKey(
+    'spki', pemBytes(publicPem), { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt']
+  );
+  const aesKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt']);
+  const rawAesKey = await crypto.subtle.exportKey('raw', aesKey);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, new TextEncoder().encode(privateKeyPem.trim()));
+  const encryptedKey = await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, publicKey, rawAesKey);
+  return {
+    encryptedKey: toBase64(new Uint8Array(encryptedKey)),
+    iv: toBase64(iv),
+    ciphertext: toBase64(new Uint8Array(ciphertext)),
+  };
+}
+async function readConnection(root) {
+  if (!root) return null;
+  try {
+    const dir = await root.getDirectoryHandle('meta');
+    const file = await dir.getFileHandle(META_FILE);
+    return JSON.parse(await (await file.getFile()).text());
+  } catch { return null; }
+}
+async function saveConnection(root, value) {
+  const dir = await root.getDirectoryHandle('meta', { create: true });
+  const file = await dir.getFileHandle(META_FILE, { create: true });
+  const writable = await file.createWritable();
+  await writable.write(JSON.stringify(value, null, 2));
+  await writable.close();
+}
+async function removeConnection(root) {
+  const dir = await root.getDirectoryHandle('meta');
+  await dir.removeEntry(META_FILE).catch(() => {});
+}
+
+export default function KalshiConnect({ dataFolderHandle }) {
+  const [saved, setSaved] = useState(null);
+  const [keyId, setKeyId] = useState('');
+  const [privateKey, setPrivateKey] = useState('');
+  const [nickname, setNickname] = useState('Kalshi Account');
+  const [showForm, setShowForm] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [balance, setBalance] = useState(null);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const connection = await readConnection(dataFolderHandle);
+      if (!cancelled) {
+        setSaved(connection);
+        if (connection?.nickname) setNickname(connection.nickname);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [dataFolderHandle]);
+
+  async function verifyAndLoad(connection) {
+    const response = await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ keyId: connection.keyId, envelope: connection.envelope }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.connected) throw new Error(result.error || 'Kalshi account verification failed.');
+    setBalance(result);
+    return result;
+  }
+
+  async function connect() {
+    setError('');
+    setNotice('');
+    if (!dataFolderHandle) { setError('Connect your local data folder first.'); return; }
+    if (!keyId.trim() || !privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
+      setError('Enter the API Key ID and the complete Ed25519 private key PEM.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const publicResponse = await fetch(API + '?action=publicKey', { headers: { Accept: 'application/json' } });
+      const publicResult = await publicResponse.json().catch(() => ({}));
+      if (!publicResponse.ok || !publicResult.publicKey) throw new Error(publicResult.error || 'Could not retrieve Azure encryption public key.');
+      const envelope = await encryptCredential(publicResult.publicKey, privateKey);
+      const connection = {
+        keyId: keyId.trim(),
+        envelope,
+        nickname: nickname.trim() || 'Kalshi Account',
+        environment: 'production',
+        connectedAt: new Date().toISOString(),
+        encryption: 'RSA-OAEP-SHA256 + AES-256-GCM',
+      };
+      const result = await verifyAndLoad(connection);
+      await saveConnection(dataFolderHandle, connection);
+      setSaved(connection);
+      setPrivateKey('');
+      setKeyId('');
+      setShowForm(false);
+      setNotice('Kalshi account verified. Encrypted credentials saved in your local meta folder.');
+      setBalance(result);
+    } catch (e) {
+      setError(e.message || 'Could not connect to Kalshi.');
+    } finally { setBusy(false); }
+  }
+
+  async function refresh() {
+    if (!saved) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const result = await verifyAndLoad(saved);
+      setNotice('Balance refreshed from Kalshi.');
+    } catch (e) { setError(e.message || 'Could not refresh Kalshi balance.'); }
+    finally { setBusy(false); }
+  }
+
+  async function disconnect() {
+    if (!dataFolderHandle) return;
+    await removeConnection(dataFolderHandle);
+    setSaved(null); setBalance(null); setError(''); setNotice('Local Kalshi connection removed. You can also revoke the API key in Kalshi settings.');
+  }
+
+  return <section className="kalshi-connect panel">
+    <div className="kalshi-connect-head">
+      <div className="kalshi-connect-title"><span className="kalshi-connect-icon"><Wallet size={19}/></span><div><h2>Kalshi account</h2><p>{saved ? 'Encrypted local credentials · live account connection' : 'Connect your Kalshi account to display its available balance'}</p></div></div>
+      {saved ? <span className="kalshi-connected"><i/> Connected</span> : <span className="kalshi-disconnected">Not connected</span>}
+    </div>
+    {saved && balance ? <div className="kalshi-account-summary">
+      <div><small>ACCOUNT</small><b>{saved.nickname || 'Kalshi Account'}</b><span>Key ····{saved.keyId.slice(-6)} · {balance.environment === 'demo' ? 'Demo' : 'Production'}</span></div>
+      <div className="kalshi-balance"><small>AVAILABLE BALANCE</small><strong>${Number(balance.balanceDollars || 0).toFixed(2)}</strong><span>Portfolio value: ${Number(balance.portfolioValueDollars || 0).toFixed(2)}</span></div>
+      <button className="secondary-btn" onClick={refresh} disabled={busy}><RefreshCw size={14}/> Refresh</button>
+      <button className="text-btn" onClick={disconnect}><Unlink size={14}/> Disconnect</button>
+    </div> : saved ? <div className="kalshi-saved-row"><ShieldCheck size={17}/> Credentials are saved encrypted locally. Refresh to verify the account and load its balance.<button className="secondary-btn" onClick={refresh} disabled={busy}>{busy ? 'Checking…' : 'Load balance'}</button></div> : <div className="kalshi-connect-actions">
+      <button className="primary-btn" onClick={() => { setShowForm((v) => !v); setShowGuide(true); }} disabled={!dataFolderHandle}><Link2 size={15}/> Connect Kalshi</button>
+      {!dataFolderHandle && <span>Connect the data folder first to save encrypted credentials locally.</span>}
+      <button className="text-btn" onClick={() => setShowGuide((v) => !v)}><ChevronDown size={15}/> API key setup tutorial</button>
+    </div>}
+    {showGuide && <div className="kalshi-guide">
+      <b>Creating the Kalshi API key</b>
+      <ol>
+        <li>Open <a href="https://kalshi.com/account/profile" target="_blank" rel="noreferrer">Kalshi account settings</a> and scroll to API Keys.</li>
+        <li>Select <b>Create key</b>. Name it <b>AngelicGTrader</b>.</li>
+        <li>Choose <b>Ed25519</b>. This is the key type this integration expects and the recommended signing algorithm.</li>
+        <li>Use permissions that include account reads (balance) and, when we enable order placement, <b>trade write</b>.</li>
+        <li>Save the Key ID and download the private key PEM. Kalshi only displays the private key once.</li>
+      </ol>
+      <p><b>Important:</b> Never send the private key through chat or put it in a screenshot. This connection encrypts it in your browser before transmission.</p>
+    </div>}
+    {showForm && <div className="kalshi-form">
+      <label>Account label<input value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="Kalshi Account"/></label>
+      <label>API Key ID<input value={keyId} onChange={(e) => setKeyId(e.target.value)} placeholder="Paste the Kalshi API Key ID"/></label>
+      <label>Ed25519 private key<textarea value={privateKey} onChange={(e) => setPrivateKey(e.target.value)} rows={5} placeholder="-----BEGIN PRIVATE KEY-----&#10;…&#10;-----END PRIVATE KEY-----" spellCheck="false"/></label>
+      <div className="kalshi-security-note"><ShieldCheck size={16}/> Private key is encrypted in-browser using Azure's RSA public key. Azure decrypts it in memory only to sign the balance request; it is not saved on the server.</div>
+      <div className="kalshi-form-actions"><button className="primary-btn" onClick={connect} disabled={busy}>{busy ? 'Verifying…' : 'Verify and save connection'}</button><button className="secondary-btn" onClick={() => { setShowForm(false); setPrivateKey(''); }}>Cancel</button></div>
+    </div>}
+    {error && <div className="kalshi-error"><AlertCircle size={15}/>{error}</div>}
+    {notice && <div className="kalshi-notice"><ShieldCheck size={15}/>{notice}</div>}
+    <div className="kalshi-footnote">Your Kalshi display name is not returned by the balance API, so the account label above is stored locally and can be customized.</div>
+  </section>;
+}
