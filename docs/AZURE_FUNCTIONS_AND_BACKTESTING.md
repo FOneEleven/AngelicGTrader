@@ -17,7 +17,7 @@ Create a second HTTP-triggered Azure Function with this exact function name and 
 
 - Function name: `GetTeamStatistics`
 - Route: `GET /api/GetTeamStatistics`
-- Auth level in the supplied Node v4 example: `function`
+- Auth level in the supplied Node v4 example: `anonymous` (public sports stats response; restrict with Azure CORS/API Management or add application authentication before production use)
 - Query parameters:
   - `league`: `NFL` or `NBA` (required)
   - `team`: provider team name or ID (required)
@@ -54,9 +54,9 @@ Deploy the supplied Node.js v4 handler as `GetTeamStatistics`. Configure these F
 
 **Provider adapter still required:** this repo does not contain the Azure source for `GetKalshiMarkets`, and the frontend search did not show an ESPN integration. We have not verified which ESPN endpoints or provider credentials the existing backend uses. The new handler deliberately normalizes a configured provider response rather than inventing an undocumented ESPN URL or fabricating statistics. Once you provide the existing Azure Function project/source or identify the upstream provider, wire that adapter to return the documented fields. Missing required PPG fields produce HTTP 422 rather than made-up numbers.
 
-Example browser request (use your actual function host and function key):
+Example browser request (the sample function is anonymous; no function key is required):
 ```
-GET https://<your-function-app>.azurewebsites.net/api/GetTeamStatistics?code=<function-key>&league=NFL&team=Buffalo%20Bills&opponent=Kansas%20City%20Chiefs&season=2026&window=season
+GET https://<your-function-app>.azurewebsites.net/api/GetTeamStatistics?league=NFL&team=Buffalo%20Bills&opponent=Kansas%20City%20Chiefs&season=2026&window=season
 ```
 
 ## Function 3 (next): AnalyzeMarket
