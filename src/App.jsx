@@ -12,6 +12,9 @@ import Recommendations from './components/Recommendations';
 import LiveMarketScanner from './components/LiveMarketScanner';
 import AIPredictions from './components/AIPredictions';
 import { readSettings, writeSettings, readTrades } from './lib/dataModel';
+import { WEEKS } from './lib/dataFolder';
+import { readCache, isCacheFresh, appendCacheBatch } from './lib/marketCache';
+import { fetchSportsMarkets } from './lib/kalshi';
 
 const nav = [
   { label: 'Dashboard', icon: LayoutDashboard, group: 'WORKSPACE' },
@@ -47,12 +50,26 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
     let cancelled = false;
     (async () => {
       const season = dataFolder?.season || 1;
-      const all = (await Promise.all(['week1', 'week2', 'week3'].map((week) => readTrades(root, season, week)))).flat();
+      const all = (await Promise.all(WEEKS.map((week) => readTrades(root, season, week)))).flat();
       all.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
       if (!cancelled) setRecords(all);
     })().catch(() => { if (!cancelled) setRecords([]); });
     return () => { cancelled = true; };
   }, [dataFolder, refreshKey]);
+
+  // Warm the local market cache when Dashboard opens; the scanner viewer stays collapsed.
+  useEffect(() => {
+    const root = dataFolder?.handle;
+    if (!root) return;
+    let cancelled = false;
+    (async () => {
+      const fresh = await isCacheFresh(root);
+      if (fresh) return;
+      const markets = await fetchSportsMarkets();
+      if (!cancelled && markets.length) await appendCacheBatch(root, markets);
+    })().catch(() => {});
+    return () => { cancelled = true; };
+  }, [dataFolder]);
   return <>
     <div className="page-heading">
       <div><div className="eyebrow">OVERVIEW</div><h1>Dashboard</h1><p>Your sports-market intelligence at a glance.</p></div>
