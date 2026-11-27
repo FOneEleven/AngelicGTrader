@@ -234,7 +234,11 @@ export async function createSeasonProfile(root, profile) {
   profiles.push(saved);
   const metaDir = await root.getDirectoryHandle(META, { create: true });
   await writeText(metaDir, SEASON_PROFILES_FILE, JSON.stringify(profiles, null, 2) + '\n');
-  await appendActivity(root, 'SEASON_START', saved.name + ' created · ' + (saved.paperMode ? 'Paper' : 'Live') + ' season · balance 
+  await appendActivity(root, 'SEASON_START', saved.name + ' created · ' + (saved.paperMode ? 'Paper' : 'Live') + ' season');
+  return saved;
+}
+
+export async function readTrades(root, season, week) {
   const seasonDir = await root.getDirectoryHandle(`${SEASON_PREFIX}${season}`, { create: true });
   const weekDir = await seasonDir.getDirectoryHandle(week, { create: true });
   const text = await readText(weekDir, 'trades.txt');
