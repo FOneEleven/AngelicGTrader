@@ -183,7 +183,7 @@ export default function App() {
     if (dataFolder?.handle) {
       try { await writeSettings(dataFolder.handle, { paperMode: next }); } catch {}
     }
-  }, [dataFolder]);
+  }, [dataFolder, kalshiAccount]);
 
   const handleActivity = useCallback(() => {
     setRefreshKey((k) => k + 1);
