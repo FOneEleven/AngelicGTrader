@@ -351,6 +351,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
               if (analysis.mlbEligibility?.eligible !== true || probability < 0.90 || confidence < 85) continue;
             } else {
               if (mode === 'value' && (!pieceQuotaFilled || seasonProfile.safe === true)) continue;
+              if (mode === 'value') { const knownPPG = Math.min(Number(stats.team?.pointsPerGame) || Infinity, Number(stats.team?.recent5PPG) || Number(stats.team?.pointsPerGame) || Infinity); if (!Number.isFinite(knownPPG) || Number(line.line) > knownPPG * 0.9) continue; }
               if (mode === 'highroller') {
                 const teamPPG = Number(stats.team?.pointsPerGame) || 0;
                 const opponentPA = Number(stats.opponent?.pointsAllowedPerGame) || 0;
@@ -395,6 +396,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       const confidence = Number(analysis?.prediction?.confidence) || 0;
       const payout = ask > 0 ? 1 / ask : 0;
       if (mode === 'value' && (!pieceQuotaFilled || seasonProfile?.safe === true)) { setError('Value strategy requires this piece to have filled its monetary quota and not be marked Safe.'); return; }
+      if (mode === 'value') { const stats = statsByKey[p.key]; const knownPPG = Math.min(Number(stats?.team?.pointsPerGame) || Infinity, Number(stats?.team?.recent5PPG) || Number(stats?.team?.pointsPerGame) || Infinity); if (!Number.isFinite(knownPPG) || Number(line.line) > knownPPG * 0.9) { setError('Value strategy requires a line at least 10% below the team's season and recent scoring average.'); return; } }
       if (['avoid-overlap', 'split'].includes(seasonProfile?.diversityMode) && otherPieceTickers.includes(line.ticker)) { setError('This game is already selected by another active season piece. Diversity mode blocks overlap.'); return; }
       if (mode === 'highroller') {
         const stats = statsByKey[p.key];
@@ -486,7 +488,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
                 </td>
                 <td><select value={side} onChange={(e)=>setSide(p,e.target.value)} aria-label={p.team + ' position side'}>{leagueFor(p) === 'MLB' ? <option value="NO">NO</option> : <><option value="YES">YES</option><option value="NO">NO</option></>}</select></td>
                 <td>{cents(ask)}</td>
-                <td><b className="prob">{probability == null ? '—' : Math.round(probability*100) + '%'}</b><small style={{display:'block'}}>{probability == null ? 'Awaiting analysis' : 'Confidence ' + (analysis?.prediction?.confidence ?? '—') + '%'}</small>{analysis?.reassessment && <small>Original {Math.round(analysis.reassessment.baselineProbabilityYes * (side === 'NO' ? 100 : 100))}% → reassessed {Math.round(probability * 100)}%</small>}</td>
+                <td><b className="prob">{probability == null ? '—' : Math.round(probability*100) + '%'}</b><small style={{display:'block'}}>{probability == null ? 'Awaiting analysis' : 'Confidence ' + (analysis?.prediction?.confidence ?? '—') + '%'}</small>{analysis?.reassessment && <small>Original {Math.round((side === 'NO' ? 1 - analysis.reassessment.baselineProbabilityYes : analysis.reassessment.baselineProbabilityYes) * 100)}% → reassessed {Math.round(probability * 100)}%</small>}</td>
                 <td>{edge == null ? '—' : (edge >= 0 ? '+' : '') + Math.round(edge*100) + '¢'}</td>
                 <td><b className="prob">{payout ? payout.toFixed(2) + '×' : '—'}</b></td>
                 <td>{analysis ? <span className="status-pill strat-cliff">Ready</span> : <span className="status-pill">Pending</span>}</td>
