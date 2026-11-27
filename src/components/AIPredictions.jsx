@@ -201,6 +201,12 @@ export default function AIPredictions({ dataFolder, onActivity }) {
     return recommendedIndex(p);
   }
 
+  function commitSliderSelection(p, value) {
+    const next = Math.max(0, Math.min(Number(value) || 0, p.lines.length - 1));
+    setSliderIdx((old) => ({ ...old, [p.key]: next }));
+    analyzeSelectedLine(p, p.lines[next]);
+  }
+
   async function analyzeSelectedLine(p, line) {
     const stats = statsByKey[p.key];
     if (!root || !stats || !line || analyses[line.ticker]) return;
@@ -289,7 +295,24 @@ export default function AIPredictions({ dataFolder, onActivity }) {
                 <td><b>{closesIn(p.gameTime || p.expectedExpiration || p.closeTime)}</b><small style={{display:'block',marginTop:2}}>{closeDate(p.closeTime)}</small></td>
                 <td><span className="status-pill">{p.league}</span></td>
                 <td><b>{p.team}</b><small style={{display:'block',marginTop:3}}>{p.event}</small>{rowError && <small className="negative">{rowError}</small>}</td>
-                <td><div className="line-slider"><input type="range" disabled={busy} min="0" max={Math.max(0,p.lines.length-1)} step="1" value={idx} onChange={(e)=>{const next=Number(e.target.value);setSliderIdx((old)=>({...old,[p.key]:next}));analyzeSelectedLine(p,p.lines[next]);}}/><span className="line-value">{chosen?.line ?? '—'}</span></div><small className="line-range">{p.lines[0]?.line} – {p.lines[p.lines.length-1]?.line}</small></td>
+                <td style={{minWidth:190,width:190}}>
+                  <div className="line-slider" style={{display:'flex',alignItems:'center',gap:10,width:190,minWidth:190}}>
+                    <input
+                      type="range"
+                      disabled={busy}
+                      min="0"
+                      max={Math.max(0,p.lines.length-1)}
+                      step="1"
+                      value={idx}
+                      style={{flex:'1 1 auto',width:130,minWidth:0,margin:0}}
+                      onChange={(e)=>setSliderIdx((old)=>({...old,[p.key]:Number(e.target.value)}))}
+                      onPointerUp={(e)=>commitSliderSelection(p,e.currentTarget.value)}
+                      onKeyUp={(e)=>{if(['ArrowLeft','ArrowRight','Home','End','PageUp','PageDown'].includes(e.key))commitSliderSelection(p,e.currentTarget.value);}}
+                    />
+                    <span className="line-value" style={{display:'inline-block',width:48,minWidth:48,textAlign:'right',fontVariantNumeric:'tabular-nums',flexShrink:0}}>{chosen?.line ?? '—'}</span>
+                  </div>
+                  <small className="line-range" style={{display:'block',whiteSpace:'nowrap'}}>{p.lines[0]?.line} – {p.lines[p.lines.length-1]?.line}</small>
+                </td>
                 <td><select value={side} onChange={(e)=>setSide(p,e.target.value)} aria-label={p.team + ' position side'}><option value="YES">YES</option><option value="NO">NO</option></select></td>
                 <td>{cents(ask)}</td>
                 <td><b className="prob">{probability == null ? '—' : Math.round(probability*100) + '%'}</b><small style={{display:'block'}}>{probability == null ? 'Awaiting analysis' : 'Selected line'}</small></td>
