@@ -72,7 +72,7 @@ function chooseAutoIndex(p, side, analyses) {
   const candidates = p.lines.map((line, index) => ({
     index, probability: probabilityFor(analyses[line.ticker], side), ask: askFor(line, side),
   })).filter((x) => x.probability != null && x.ask != null && x.ask > 0 && x.ask < 1);
-  if (!candidates.length) return p.targetIdx || 0;
+  if (!candidates.length) return Math.floor((p.lines.length - 1) / 2);
   const qualified = candidates.filter((x) => x.probability >= TARGET_PROBABILITY);
   const pool = qualified.length ? qualified : candidates;
   pool.sort((a, b) => a.ask - b.ask || b.probability - a.probability);
