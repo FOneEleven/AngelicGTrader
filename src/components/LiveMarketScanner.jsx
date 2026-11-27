@@ -108,7 +108,11 @@ export default function LiveMarketScanner({ dataFolder, onActivity, onNavigate }
     await fetchFresh();
   }
 
-  useEffect(() => { if (root) readAIPredictionSelections(root).then(setSelections).catch(() => {}); }, [root]);
+  useEffect(() => {
+    if (!root) { ensureData(); return; }
+    readAIPredictionSelections(root).then(setSelections).catch(() => {});
+    ensureData();
+  }, [root]);
 
   async function addLadderToPredictions(market) {
     if (!root) { setError('Connect a data folder before adding AI Prediction entries.'); return; }
@@ -240,8 +244,8 @@ export default function LiveMarketScanner({ dataFolder, onActivity, onNavigate }
         </>
       )}
 
-      <details className="technical-market-box" onToggle={handleMarketsToggle}>
-        <summary className="technical-market-summary"><span><b>Technical market data</b><small>{markets.length ? markets.length + ' cached contracts · ' + rows.length + ' matching filters' : 'Collapsed · open to load market contracts'}</small></span><span className="status-pill">Market scanner</span></summary>
+      <details className="technical-market-box">
+        <summary className="technical-market-summary"><span><b>Show ladders of market data</b><small>{markets.length ? markets.length + ' cached contracts · ' + rows.length + ' matching filters' : 'Market data loads automatically; open to inspect ladders'}</small></span><span className="status-pill">Market scanner</span></summary>
       <section className="panel">
         <div className="panel-heading">
           <div><h2>Sports markets</h2><p>Kalshi public market data</p></div>
