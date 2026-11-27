@@ -213,7 +213,7 @@ export default function App() {
           <AIPredictions dataFolder={dataFolder} onActivity={handleActivity} />
         )}
         {active === 'Season Manager' && (
-          <Recommendations dataFolder={dataFolder} onActivity={handleActivity} />
+          <Recommendations dataFolder={dataFolder} paperMode={paperMode} onActivity={handleActivity} />
         )}
         {active !== 'Dashboard'
           && active !== 'Live Market Scanner'
