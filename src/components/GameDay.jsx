@@ -138,6 +138,7 @@ export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigat
           onUpdate={updatePiece}
           onStartWeek={startNextWeek}
           onNavigate={onNavigate}
+          onHide={(item) => setHiddenIds((old) => [...new Set([...old, item.id])])}
         />)}
       </div>
     </section>
