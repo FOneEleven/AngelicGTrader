@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BrainCircuit, ExternalLink, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { readCache } from '../lib/marketCache';
-import { readSettings, appendTrade, readTrades } from '../lib/dataModel';
+import { readSettings, appendTrade, readTrades, readAIPredictionSelections } from '../lib/dataModel';
 import { computePredictions } from '../lib/predictions';
 import { fetchTeamStatistics } from '../lib/sportsStats';
 import { analyzeMarket } from '../lib/analyzeMarket';
@@ -94,6 +94,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
   const [analysisErrors, setAnalysisErrors] = useState({});
   const [sideByKey, setSideByKey] = useState({});
   const [sliderIdx, setSliderIdx] = useState({});
+  const [selectedEntries, setSelectedEntries] = useState([]);
   const root = dataFolder?.handle;
 
   useEffect(() => {
@@ -101,13 +102,14 @@ export default function AIPredictions({ dataFolder, onActivity }) {
     (async () => {
       const cached = await readCache(root);
       setMarkets(cached.markets);
+      setSelectedEntries(await readAIPredictionSelections(root));
       const settings = await readSettings(root);
       setPaperMode(!!settings.paperMode);
       setTrades(await readTrades(root, season, week));
     })().catch((e) => setError(e.message));
   }, [root, season, week]);
 
-  const { predictions } = useMemo(() => computePredictions(markets), [markets]);
+  const { predictions } = useMemo(() => ({ predictions: computePredictions(markets).predictions.filter((p) => selectedEntries.includes(p.key)) }), [markets, selectedEntries]);
 
   useEffect(() => {
     if (!root || !markets.length || !predictions.length) return;
@@ -271,16 +273,16 @@ export default function AIPredictions({ dataFolder, onActivity }) {
   return (
     <div className="page-shell">
       <div className="page-heading">
-        <div><div className="eyebrow">WORKSPACE</div><h1>AI Predictions</h1><p>Existing market entries enriched with cached ESPN statistics and OpenAI probability analysis.</p></div>
+        <div><div className="eyebrow">WORKSPACE</div><h1>AI Predictions</h1><p>Scanner-selected team-total ladders enriched with cached ESPN statistics and OpenAI probability analysis.</p></div>
         <div className="status-pill">{busy ? 'Analyzing markets' : 'Analysis ready'}</div>
       </div>
       {!root && <div className="notice"><div className="notice-icon"><BrainCircuit size={18}/></div><div><b>Connect a data folder</b><span>ESPN and OpenAI results are cached in its meta folder.</span></div></div>}
       {error && <div className="notice error-notice"><b>{error}</b></div>}
       {progress && <div className="notice"><RefreshCw size={16}/><b>{progress}</b></div>}
       <section className="panel">
-        <div className="panel-heading"><div><h2>AI prediction entries · {predictions.length}</h2><p>One strategy-selected market line analyzed per entry; alternate lines are analyzed only when selected here.</p></div></div>
+        <div className="panel-heading"><div><h2>AI prediction entries · {predictions.length}</h2><p>Only ladders added from Live Market Scanner appear here. One strategy-selected line is analyzed per entry.</p></div></div>
         {!predictions.length ? (
-          <div className="empty-state"><div className="empty-icon"><AlertCircle size={22}/></div><b>No team-total market entries</b><span>Run Live Market Scanner to populate the existing market cache.</span></div>
+          <div className="empty-state"><div className="empty-icon"><AlertCircle size={22}/></div><b>No AI prediction entries selected</b><span>Open Live Market Scanner and use Add ladder on a team-total market.</span></div>
         ) : (
           <div className="table-wrap"><table>
             <thead><tr><th>CLOSES</th><th>LEAGUE</th><th>TEAM / EVENT</th><th>LINE</th><th>SIDE</th><th>ASK</th><th>MODEL PROB.</th><th>EDGE</th><th>PAYOUT</th><th>AI</th><th>ACTION</th></tr></thead>
