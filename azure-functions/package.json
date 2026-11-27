@@ -12,5 +12,5 @@
   "dependencies": {
     "@azure/functions": "^4.7.2"
   },
-  "main": "GetTeamStatistics/index.js"
+  "main": "*/index.js"
 }
