@@ -1427,3 +1427,44 @@ tr.row-mid td {
   .game-day-piece-list{grid-template-columns:1fr;padding:10px}
   .game-day-chart-foot{flex-wrap:wrap;gap:8px}
 }
+
+
+/* Kalshi account connection */
+.kalshi-connect { margin: 14px 0 22px; padding: 18px 20px; }
+.kalshi-connect-head,.kalshi-connect-title,.kalshi-connect-actions,.kalshi-account-summary,.kalshi-form-actions,.kalshi-connect-title > div { display:flex; align-items:center; }
+.kalshi-connect-head { justify-content:space-between; gap:16px; }
+.kalshi-connect-title { gap:12px; }
+.kalshi-connect-title h2 { margin:0; font-size:16px; }
+.kalshi-connect-title p { margin:4px 0 0; color:var(--muted,#8d929c); font-size:12px; }
+.kalshi-connect-icon { display:grid; place-items:center; width:38px; height:38px; border-radius:11px; color:#d5ad55; background:rgba(213,173,85,.12); }
+.kalshi-connected,.kalshi-disconnected { font-size:11px; font-weight:700; }
+.kalshi-connected { color:#49b987; }
+.kalshi-connected i { display:inline-block; width:7px; height:7px; border-radius:50%; background:#49b987; margin-right:6px; }
+.kalshi-disconnected { color:var(--muted,#8d929c); }
+.kalshi-account-summary { gap:24px; margin-top:18px; padding-top:16px; border-top:1px solid var(--border,#30333a); flex-wrap:wrap; }
+.kalshi-account-summary > div { display:flex; flex-direction:column; gap:4px; }
+.kalshi-account-summary small,.kalshi-balance small { color:var(--muted,#8d929c); font-size:10px; letter-spacing:.08em; }
+.kalshi-account-summary b { font-size:14px; }
+.kalshi-account-summary span { color:var(--muted,#8d929c); font-size:11px; }
+.kalshi-balance { margin-right:auto; }
+.kalshi-balance strong { font-size:24px; color:#e4c477; }
+.kalshi-connect-actions { gap:14px; margin-top:16px; flex-wrap:wrap; }
+.kalshi-connect-actions > span,.kalshi-footnote { color:var(--muted,#8d929c); font-size:11px; }
+.kalshi-guide { margin-top:16px; padding:14px 16px; border-radius:10px; background:rgba(255,255,255,.035); font-size:12px; line-height:1.65; }
+.kalshi-guide ol { margin:8px 0; padding-left:20px; }
+.kalshi-guide a { color:#e4c477; }
+.kalshi-guide p { margin:8px 0 0; }
+.kalshi-form { display:grid; gap:12px; margin-top:16px; }
+.kalshi-form label { display:grid; gap:6px; font-size:12px; font-weight:600; }
+.kalshi-form input,.kalshi-form textarea { width:100%; border:1px solid var(--border,#383b43); border-radius:8px; padding:10px 12px; background:rgba(0,0,0,.18); color:inherit; font:inherit; }
+.kalshi-form textarea { resize:vertical; font-family:ui-monospace,monospace; font-size:11px; }
+.kalshi-security-note,.kalshi-saved-row,.kalshi-error,.kalshi-notice { display:flex; align-items:center; gap:9px; font-size:11px; line-height:1.5; }
+.kalshi-security-note { color:#49b987; padding:10px 12px; background:rgba(73,185,135,.08); border-radius:8px; }
+.kalshi-form-actions { gap:10px; }
+.kalshi-saved-row { margin-top:16px; color:var(--muted,#8d929c); flex-wrap:wrap; }
+.kalshi-saved-row button { margin-left:auto; }
+.kalshi-error,.kalshi-notice { margin-top:12px; padding:9px 11px; border-radius:8px; }
+.kalshi-error { color:#ed8b82; background:rgba(237,139,130,.08); }
+.kalshi-notice { color:#49b987; background:rgba(73,185,135,.08); }
+.kalshi-footnote { margin-top:14px; }
+@media(max-width:700px) { .kalshi-connect-head,.kalshi-account-summary { align-items:flex-start; } .kalshi-account-summary { gap:14px; } .kalshi-balance { width:100%; } .kalshi-connect-actions { align-items:flex-start; flex-direction:column; } }
