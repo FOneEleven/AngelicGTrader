@@ -31,7 +31,7 @@ export default function SeasonPieceEntry({ profile, earnings = 0, onUpdate, onSt
   const [expanded, setExpanded] = useState(false);
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
-  const currentWorth = Math.max(0, (Number(profile.balance) || 0) + (Number(earnings) || 0));
+  const currentWorth = Math.max(0, Number(earnings) || 0);
   const worth = getWorthState(profile, currentWorth);
   const strategiesByCondition = profile.strategiesByWorthCondition || {};
   const riskByCondition = profile.riskByWorthCondition || {};
@@ -68,7 +68,7 @@ export default function SeasonPieceEntry({ profile, earnings = 0, onUpdate, onSt
       <b>{profile.name}</b>
       <span>Season {profile.season} · {profile.paperMode ? 'Paper' : 'Live'} · {profile.activePlayer === false ? 'Inactive' : 'Active'}</span>
       <strong>{money(currentWorth)} current worth</strong>
-      <small>Original {money(worth.original)} · {money(earnings)} earned · {worth.ratio.toFixed(2)}×</small>
+      <small>Original allocation {money(worth.original)} · {money(currentWorth)} confirmed wallet returns · {worth.ratio.toFixed(2)}×</small>
       <small>{profile.pieceType} · {profile.baseName} base · {profile.strategy || 'midpoint'} ladder</small>
       <small>Next scheduled: {profile.nextScheduledWeek || 'week1'}</small>
       {!ready && <div className="piece-not-ready" role="status">NOT READY FOR PLAY · SET STRATEGY AND RISK FOR {WORTH_CONDITIONS.find((x) => x.id === worth.condition)?.label.toUpperCase()}</div>}
