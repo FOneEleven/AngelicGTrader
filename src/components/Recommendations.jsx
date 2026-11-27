@@ -3,7 +3,7 @@ import { RefreshCw, PlusCircle, WalletCards } from 'lucide-react';
 import { createSeasonProfile, listSeasonProfiles, updateSeasonProfile, advanceSeasonWeek } from '../lib/dataModel';
 import SeasonToken from './SeasonToken';
 
-const PIECES = ['Quarterback', 'Running Back', 'Receiver', 'Lineman', 'Slam Dunk', 'Posterizer', 'Dribbler', '3Pt Shooter', 'Baseball Slugger', 'Baseball Heater', 'Baseball Catcher', 'Baseball Runner'];
+const PIECES = ['Quarterback', 'Running Back', 'Receiver', 'Lineman', 'Slam Dunk', 'Posterizer', 'Dribbler', '3Pt Shooter', 'Baseball a Slugger', 'Baseball a Heater', 'Baseball a Catcher', 'Baseball a Runner'];
 const BASES = [
   { name: 'Royal Gold', color: '#c69d4e' }, { name: 'Sapphire', color: '#477fc5' },
   { name: 'Emerald', color: '#42966f' }, { name: 'Crimson', color: '#b94e55' },
