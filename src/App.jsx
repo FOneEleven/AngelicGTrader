@@ -11,6 +11,7 @@ import PaperModeToggle from './components/PaperModeToggle';
 import Recommendations from './components/Recommendations';
 import LiveMarketScanner from './components/LiveMarketScanner';
 import AIPredictions from './components/AIPredictions';
+import GameDay from './components/GameDay';
 import SeasonToken from './components/SeasonToken';
 import { readSettings, writeSettings, readTrades, readAllRecords, deleteTrade, listSeasonProfiles } from './lib/dataModel';
 import { WEEKS } from './lib/dataFolder';
@@ -212,13 +213,13 @@ export default function App() {
         {active === 'AI Predictions' && (
           <AIPredictions dataFolder={dataFolder} onActivity={handleActivity} />
         )}
-        {active === 'Season Manager' && (
+        {active === 'Game Day' && (\n          <GameDay dataFolder={dataFolder} onActivity={handleActivity} />\n        )}\n        {active === 'Season Manager' && (
           <Recommendations dataFolder={dataFolder} paperMode={paperMode} onActivity={handleActivity} />
         )}
         {active !== 'Dashboard'
           && active !== 'Live Market Scanner'
           && active !== 'AI Predictions'
-          && active !== 'Season Manager'
+          && active !== 'Season Manager'\n          && active !== 'Game Day'
           && <Placeholder page={active} />}
       </div>
       <footer>
