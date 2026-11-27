@@ -117,6 +117,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
   const [reassessPredictionKey, setReassessPredictionKey] = useState('');
   const [otherPieceTickers, setOtherPieceTickers] = useState([]);
   const handledScanRef = useRef(null);
+  const lastStatsRefreshRef = useRef(null);
   const root = dataFolder?.handle;
 
   useEffect(() => {
@@ -148,7 +149,6 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       if (activeProfile && selectedPieceId !== activeProfile.id) setSelectedPieceId(activeProfile.id);
       if (activeProfile && activeProfile.season !== season) setSeason(activeProfile.season);
       setSeasonProfile(activeProfile);
-      setStatsByKey({}); setStatsResolved(false);
       setPiecePrompt(activeProfile?.piecePrompt || activeProfile?.pieceMessages?.filter((item) => item.role === 'user').slice(-1)[0]?.content || '');
       const otherProfiles = profiles.filter((profile) => profile.id !== activeProfile?.id && profile.activePlayer !== false);
       const otherTrades = (await Promise.all(otherProfiles.map((profile) => readSeasonTrades(root, profile)))).flat();
@@ -170,8 +170,19 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
   }), [markets, selectedEntries, seasonProfile?.strategy]);
 
   useEffect(() => {
-    if (!root || !seasonProfile || !markets.length || !predictions.length) return;
+    if (!root || !seasonProfile) return;
+    const datasetSignature = JSON.stringify(predictions.map((p) => ({ key: p.key, event: p.event, gameTime: p.gameTime || p.expectedExpiration || p.closeTime || null, lines: p.lines.map((line) => [line.ticker, line.line, line.yesAsk, line.noAsk]), recommended: p.recommended?.ticker || null })));
+    const previousRefresh = lastStatsRefreshRef.current;
+    if (previousRefresh && previousRefresh.root === root && previousRefresh.profileId === seasonProfile.id && previousRefresh.signature === datasetSignature) return;
+    lastStatsRefreshRef.current = { root, profileId: seasonProfile.id, signature: datasetSignature };
     let cancelled = false;
+    if (!markets.length || !predictions.length) {
+      setStatsByKey({}); setAnalyses({}); setAnalysisErrors({}); setStatsResolved(true);
+      setProgress('No upcoming games found in the current market dataset.');
+      setDebugEntries([{ time: new Date().toLocaleTimeString(), message: 'DATASET EMPTY · market entries=' + markets.length + ' · eligible prediction entries=' + predictions.length + ' · no statistics requests started.' }]);
+      setBusy(false);
+      return () => { cancelled = true; };
+    }
     async function run() {
       setBusy(true); setError(''); setProgress('Resolving league statistics and MLB weather…');
       setStatsResolved(false);
@@ -378,7 +389,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
     if (scanRequest?.requestId && seasonProfile?.id !== scanRequest.profileId) return;
     const attemptKey = (scanRequest?.requestId || ('auto-' + seasonProfile?.id)) + ':' + autoRetryCount;
     if (handledScanRef.current === attemptKey) return;
-    if (!seasonProfile || !predictions.length || !statsResolved) return;
+    if (!seasonProfile || !statsResolved) return;
     handledScanRef.current = attemptKey;
     if (autoRetryTimerRef.current) { window.clearTimeout(autoRetryTimerRef.current); autoRetryTimerRef.current = null; }
     setAutoRetryAt(null); setAutoRetrySeconds(0);
@@ -446,7 +457,9 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       setSliderIdx((old) => ({ ...old, ...Object.fromEntries(orderedSelections.map((item) => [item.predictionKey, item.index])) }));
       setSideByKey((old) => ({ ...old, ...Object.fromEntries(orderedSelections.map((item) => [item.predictionKey, item.side])) }));
       const selectedLines = orderedSelections.map(({ predictionKey, ticker, event, team, league, line, side }) => ({ predictionKey, ticker, event, team, league, line, side }));
-      try { const updatedProfile = await updateSeasonProfile(root, seasonProfile.id, { selectedLines }); setSeasonProfile(updatedProfile); } catch (e) { setError(e.message || 'Could not save piece selections'); }
+      const resolvedAt = new Date().toISOString();
+      const selectionResolution = { status: orderedSelections.length ? 'selected' : 'none', resolvedAt, checkedGames: orderedPredictions.length, selectedGames: orderedSelections.length, message: orderedSelections.length ? orderedSelections.length + ' qualifying game(s) found.' : 'No qualifying game found in the current dataset.' };
+      try { const updatedProfile = await updateSeasonProfile(root, seasonProfile.id, { selectedLines, selectionResolution }); setSeasonProfile(updatedProfile); } catch (e) { setError(e.message || 'Could not save piece selections'); }
       if (orderedSelections.length) {
         setProgress('Selection resolved · ' + orderedSelections.length + ' qualifying game(s) found. Earliest upcoming game is first.');
         setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SELECTION RESOLVED · ' + orderedSelections.length + ' qualifying game(s) saved to this piece.' }].slice(-40));
