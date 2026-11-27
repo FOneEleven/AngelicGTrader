@@ -5,6 +5,7 @@ const SEASON_PREFIX = 'season-';
 const INDEX_FILE = 'index.txt';
 const ACTIVITY_FILE = 'activity.txt';
 const SETTINGS_FILE = 'settings.txt';
+const AI_SELECTIONS_FILE = 'ai-prediction-selections.txt';
 
 // --- Season discovery ---
 
@@ -211,4 +212,20 @@ export async function bootstrapDataFolder(root) {
     await appendActivity(root, 'SEASON_START', `Season ${season} started`);
   }
   return { season, created };
+}
+
+// Persist ladders explicitly added from Live Market Scanner.
+export async function readAIPredictionSelections(root) {
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  const text = await readText(metaDir, AI_SELECTIONS_FILE);
+  if (!text) return [];
+  try { const parsed = JSON.parse(text); return Array.isArray(parsed) ? parsed.filter((v) => typeof v === 'string') : []; }
+  catch { return []; }
+}
+
+export async function writeAIPredictionSelections(root, selections) {
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  const unique = [...new Set((selections || []).filter((v) => typeof v === 'string'))];
+  await writeText(metaDir, AI_SELECTIONS_FILE, JSON.stringify(unique, null, 2) + '\n');
+  return unique;
 }
