@@ -40,7 +40,14 @@ export function computePredictions(markets, opts = {}) {
   const now = Date.now();
   const closeCutoff = now + cfg.maxHoursToClose * 3_600_000;
 
-  const teamTotals = markets.filter((m) => TEAM_TOTAL.test(m.ticker));
+  const teamTotals = markets.filter((m) => {
+    if (!TEAM_TOTAL.test(m.ticker || '')) return false;
+    const status = String(m.status || '').toLowerCase();
+    if (['closed', 'settled', 'finalized', 'resolved'].includes(status) || m.isClosed === true) return false;
+    const closeAt = m.expectedExpiration || m.closeTime;
+    if (closeAt) { const closeMs = new Date(closeAt).getTime(); if (Number.isFinite(closeMs) && closeMs <= now) return false; }
+    return true;
+  });
 
   const ladders = new Map();
   for (const m of teamTotals) {
