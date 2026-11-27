@@ -153,7 +153,12 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       const statsForPrediction = new Map();
       try {
         const currentSeason = new Date().getFullYear();
-        for (const p of predictions) {
+        const orderedPredictions = [...predictions].sort((a, b) => {
+        const at = Date.parse(a.gameTime || a.expectedExpiration || a.closeTime || '') || Infinity;
+        const bt = Date.parse(b.gameTime || b.expectedExpiration || b.closeTime || '') || Infinity;
+        return at - bt;
+      });
+      for (const p of orderedPredictions) {
           if (cancelled) return;
           const league = leagueFor(p);
           const opponent = eventOpponent(markets, p.event, p.team);
@@ -318,9 +323,9 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       setError('');
       setProgress('Start next week: scanning upcoming games and every slider line…');
       const selected = {};
-      let bestOverall = null;
-      const mode = seasonProfile.selectionStrategy || 'standard';
+      const mode = seasonProfile.selectionStrategy || '';
       const gates = { standard: { probability: 0.92, payout: 1.2 }, value: { probability: 0.84, payout: 1.4 }, highroller: { probability: 0.70, payout: 1.75 } };
+      if (!mode) { setProgress('Piece is not ready for play: select a strategy in its piece entry.'); return; }
       const gate = { ...(gates[mode] || gates.standard) };
       if (seasonProfile.riskPreference === 'probability') { gate.probability += 0.02; }
       if (seasonProfile.riskPreference === 'value') { gate.probability = Math.max(0.5, gate.probability - 0.02); gate.payout += 0.1; }
@@ -333,17 +338,20 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
           setProgress('Scanning ' + p.team + ' line ' + line.line + ' · ' + p.league);
           const analysis = await analyzeSelectedLine(p, line);
           if (!analysis?.prediction) continue;
-          const sides = leagueFor(p) === 'MLB' ? ['NO'] : ['YES', 'NO'];
+          const isBaseball = leagueFor(p) === 'MLB';
+          const useBaseballNo = isBaseball;
+          const sides = isBaseball ? ['NO'] : ['YES', 'NO'];
           for (const side of sides) {
             const probability = probabilityFor(analysis, side);
             const ask = askFor(line, side);
             const payout = ask > 0 ? 1 / ask : 0;
             if (probability == null || ask == null) continue;
-            if (['avoid-overlap', 'split'].includes(seasonProfile.diversityMode) && otherPieceTickers.includes(line.ticker)) continue;
+            
             if (leagueFor(p) === 'MLB') {
               if (analysis.mlbEligibility?.eligible !== true || probability < 0.90) continue;
             } else {
-              if (mode === 'value' && (!pieceQuotaFilled || seasonProfile.safe === true)) continue;
+              if (mode === 'baseball-no') continue;
+              if (mode === 'value' && !pieceQuotaFilled) continue;
               if (mode === 'value') { const knownPPG = Math.min(Number(stats.team?.pointsPerGame) || Infinity, Number(stats.team?.recent5PPG) || Number(stats.team?.pointsPerGame) || Infinity); if (!Number.isFinite(knownPPG) || Number(line.line) > knownPPG * 0.9) continue; }
               if (mode === 'highroller') {
                 const teamPPG = Number(stats.team?.pointsPerGame) || 0;
@@ -355,16 +363,21 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
               if (probability < gate.probability || payout <= gate.payout) continue;
             }
             const value = probability - ask;
-            if (!bestOverall || value > bestOverall.value) bestOverall = { predictionKey: p.key, index: p.lines.findIndex((item) => item.ticker === line.ticker), ticker: line.ticker, event: p.event, team: p.team, league: p.league, line: line.line, side, value };
+            if (!selected[p.key] || value > selected[p.key].value) selected[p.key] = { predictionKey: p.key, index: p.lines.findIndex((item) => item.ticker === line.ticker), ticker: line.ticker, event: p.event, team: p.team, league: p.league, line: line.line, side, value };
           }
         }
       }
-      if (bestOverall) selected[bestOverall.predictionKey] = bestOverall;
-      setSliderIdx((old) => ({ ...old, ...Object.fromEntries(Object.entries(selected).map(([key, item]) => [key, item.index])) }));
-      setSideByKey((old) => ({ ...old, ...Object.fromEntries(Object.entries(selected).map(([key, item]) => [key, item.side])) }));
-      const selectedLines = Object.entries(selected).map(([predictionKey, item]) => ({ predictionKey, ticker: item.ticker, event: item.event, team: item.team, league: item.league, line: item.line, side: item.side }));
+      const orderedSelections = Object.values(selected).sort((a, b) => {
+        const pa = orderedPredictions.find((p) => p.key === a.predictionKey);
+        const pb = orderedPredictions.find((p) => p.key === b.predictionKey);
+        return (Date.parse(pa?.gameTime || pa?.expectedExpiration || pa?.closeTime || '') || Infinity) - (Date.parse(pb?.gameTime || pb?.expectedExpiration || pb?.closeTime || '') || Infinity);
+      });
+      const firstSelection = orderedSelections[0];
+      setSliderIdx((old) => ({ ...old, ...Object.fromEntries(orderedSelections.map((item) => [item.predictionKey, item.index])) }));
+      setSideByKey((old) => ({ ...old, ...Object.fromEntries(orderedSelections.map((item) => [item.predictionKey, item.side])) }));
+      const selectedLines = orderedSelections.map(({ predictionKey, ticker, event, team, league, line, side }) => ({ predictionKey, ticker, event, team, league, line, side }));
       try { const updatedProfile = await updateSeasonProfile(root, seasonProfile.id, { selectedLines }); setSeasonProfile(updatedProfile); } catch (e) { setError(e.message || 'Could not save piece selections'); }
-      setProgress('Weekly scan complete · ' + Object.keys(selected).length + ' strategy-selected game found. No trade was placed automatically.');
+      setProgress('Weekly scan complete · ' + orderedSelections.length + ' strategy-game(s) selected. Earliest upcoming game is first. No trade was placed automatically.');
       onActivity?.('WEEK_SCAN_COMPLETE', Object.keys(selected).length + ' qualifying selections found for ' + seasonProfile.name);
     })().catch((e) => setError(e.message || 'Weekly scan failed'));
   }, [scanRequest, seasonProfile, predictions, statsByKey]);
@@ -444,7 +457,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       {progress && <div className="notice"><RefreshCw size={16}/><b>{progress}</b></div>}
       <section className="panel">
         <div className="panel-heading"><div><h2>AI prediction entries · {predictions.length}</h2><p>NFL/NBA/MLB entries are populated automatically. The active season piece's strategy filters the entries shown here.</p></div></div>
-        <div className="piece-instruction-box"><label htmlFor="active-season-piece">Active season piece</label><select id="active-season-piece" value={selectedPieceId} onChange={(e) => setSelectedPieceId(e.target.value)}>{seasonProfiles.filter((profile) => profile.activePlayer !== false).map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.selectionStrategy || "standard"}</option>)}</select><div className="piece-instruction-current"><b>Saved piece instruction</b><span>{piecePrompt || 'No instruction saved. Open the piece avatar on Dashboard or Game Day to send it a message.'}</span></div><button className="secondary-btn" disabled={busy || !piecePrompt.trim() || !predictions.length || !statsByKey[(predictions.find((p) => p.key === reassessPredictionKey) || predictions[0])?.key] || !analyses[(predictions.find((p) => p.key === reassessPredictionKey) || predictions[0])?.lines[idxFor(predictions.find((p) => p.key === reassessPredictionKey) || predictions[0])]?.ticker]} onClick={() => { const target = predictions.find((p) => p.key === reassessPredictionKey) || predictions[0]; if (target) reassessSelectedLine(target, target.lines[idxFor(target)]); }}>Reassess selected line for this piece</button></div>
+        <div className="piece-instruction-box"><label htmlFor="active-season-piece">Active season piece</label><select id="active-season-piece" value={selectedPieceId} onChange={(e) => setSelectedPieceId(e.target.value)}>{seasonProfiles.filter((profile) => profile.activePlayer !== false).map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.selectionStrategy || "standard"}</option>)}</select><div className="piece-instruction-current"><b>Saved piece instruction</b><span>{piecePrompt || 'No instruction saved. Open the piece avatar on Dashboard or Game Day to send it a message.'}</span></div></div>
         {!predictions.length ? (
           <div className="empty-state"><div className="empty-icon"><AlertCircle size={22}/></div><b>No AI prediction entries selected</b><span>Open Live Market Scanner and use Add ladder on a team-total market.</span></div>
         ) : (
