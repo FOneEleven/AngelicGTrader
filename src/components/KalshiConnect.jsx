@@ -3,6 +3,17 @@ import { ShieldCheck, Wallet, RefreshCw, ChevronDown, Link2, Unlink, AlertCircle
 
 const API = 'https://angelicgtrader-dvhgf4dhc6hahqhs.westus3-01.azurewebsites.net/api/KalshiAccount';
 const META_FILE = 'kalshi-connection.json';
+const AZURE_ENCRYPTION_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAstJrdd1Kke675amS/3WH
+9snfIt9DD3ob6kJ8wybKg5YlgaBOcZOSsjAgCRi7VYgwTdE1FvSoLeOtNJxcZw96
+r3qrost4cuJCsz9Gk/JXt5+Ugp7VFx8R7G2OE8xAI/iZjRxbjT/yvUvVXGEeG2p6
+7712AakX0c67hYmv+4ynOMqrtd/KI61o4wGJGOww5/oPverNJKe7xU2ET0Pm6lH0
+jbZlPFz2C2XRD09YAeqaeKlntNQI7w8Gyaz1AxfXrsCx5GqTX9KJVSkoyI+Kgpu1
+jwT3qnPlpGTQ8NPeklrlWT8CP0CH81mLOeI6S3i8Tu/fApFstozsnUg1LQ3PyJG9
+wv6OtUBRp+yQe04/WD9x29l9uUP2TNlaAa1FuP2bUS6sYptXRyyN6PmhF7JLHvka
+4VwgoNOhzzHg8mV7UHEiAspZ26JYFLtKtMkB0aEDx0auYqQM6QPxpV38jHILOdZM
+dteNKgGzXHSsDYNMkik+61Nv2doavPOMkwu8K8Me70a3AgMBAAE=
+-----END PUBLIC KEY-----`;
 
 function pemBytes(pem) {
   const body = pem.replace(/-----BEGIN [^-]+-----|-----END [^-]+-----|\s/g, '');
@@ -99,10 +110,7 @@ export default function KalshiConnect({ dataFolderHandle }) {
     }
     setBusy(true);
     try {
-      const publicResponse = await fetch(API + '?action=publicKey', { headers: { Accept: 'application/json' } });
-      const publicResult = await publicResponse.json().catch(() => ({}));
-      if (!publicResponse.ok || !publicResult.publicKey) throw new Error(publicResult.error || 'Could not retrieve Azure encryption public key.');
-      const envelope = await encryptCredential(publicResult.publicKey, privateKey);
+      const envelope = await encryptCredential(AZURE_ENCRYPTION_PUBLIC_KEY, privateKey);
       const connection = {
         keyId: keyId.trim(),
         envelope,
@@ -164,13 +172,11 @@ export default function KalshiConnect({ dataFolderHandle }) {
         <li>Use permissions that include account reads (balance) and, when we enable order placement, <b>trade write</b>.</li>
         <li>Save the Key ID and download the private key PEM. Kalshi only displays the private key once.</li>
       </ol>
-      <p><b>Important:</b> Never send the private key through chat or put it in a screenshot. This connection encrypts it in your browser before transmission.</p>
     </div>}
     {showForm && <div className="kalshi-form">
       <label>Account label<input value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="Kalshi Account"/></label>
       <label>API Key ID<input value={keyId} onChange={(e) => setKeyId(e.target.value)} placeholder="Paste the Kalshi API Key ID"/></label>
       <label>Ed25519 private key<textarea value={privateKey} onChange={(e) => setPrivateKey(e.target.value)} rows={5} placeholder="-----BEGIN PRIVATE KEY-----&#10;…&#10;-----END PRIVATE KEY-----" spellCheck="false"/></label>
-      <div className="kalshi-security-note"><ShieldCheck size={16}/> Private key is encrypted in-browser using Azure's RSA public key. Azure decrypts it in memory only to sign the balance request; it is not saved on the server.</div>
       <div className="kalshi-form-actions"><button className="primary-btn" onClick={connect} disabled={busy}>{busy ? 'Verifying…' : 'Verify and save connection'}</button><button className="secondary-btn" onClick={() => { setShowForm(false); setPrivateKey(''); }}>Cancel</button></div>
     </div>}
     {error && <div className="kalshi-error"><AlertCircle size={15}/>{error}</div>}
