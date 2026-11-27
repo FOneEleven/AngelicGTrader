@@ -355,14 +355,14 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
               if (probability < gate.probability || payout <= gate.payout) continue;
             }
             const value = probability - ask;
-            if (!bestOverall || value > bestOverall.value) bestOverall = { predictionKey: p.key, index: p.lines.findIndex((item) => item.ticker === line.ticker), ticker: line.ticker, event: p.event, side, value };
+            if (!bestOverall || value > bestOverall.value) bestOverall = { predictionKey: p.key, index: p.lines.findIndex((item) => item.ticker === line.ticker), ticker: line.ticker, event: p.event, team: p.team, league: p.league, line: line.line, side, value };
           }
         }
       }
       if (bestOverall) selected[bestOverall.predictionKey] = bestOverall;
       setSliderIdx((old) => ({ ...old, ...Object.fromEntries(Object.entries(selected).map(([key, item]) => [key, item.index])) }));
       setSideByKey((old) => ({ ...old, ...Object.fromEntries(Object.entries(selected).map(([key, item]) => [key, item.side])) }));
-      const selectedLines = Object.entries(selected).map(([predictionKey, item]) => ({ predictionKey, ticker: item.ticker, event: item.event, side: item.side }));
+      const selectedLines = Object.entries(selected).map(([predictionKey, item]) => ({ predictionKey, ticker: item.ticker, event: item.event, team: item.team, league: item.league, line: item.line, side: item.side }));
       try { const updatedProfile = await updateSeasonProfile(root, seasonProfile.id, { selectedLines }); setSeasonProfile(updatedProfile); } catch (e) { setError(e.message || 'Could not save piece selections'); }
       setProgress('Weekly scan complete · ' + Object.keys(selected).length + ' qualifying game selections found. Nothing was placed automatically.');
       onActivity?.('WEEK_SCAN_COMPLETE', Object.keys(selected).length + ' qualifying selections found for ' + seasonProfile.name);
