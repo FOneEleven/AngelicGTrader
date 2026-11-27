@@ -220,14 +220,14 @@ export async function listSeasonProfiles(root) {
   const metaDir = await root.getDirectoryHandle(META, { create: true });
   const text = await readText(metaDir, SEASON_PROFILES_FILE);
   if (!text) return [];
-  try { const parsed = JSON.parse(text); return Array.isArray(parsed) ? parsed.map((profile) => ({ activePlayer: true, auto: false, strategy: 'midpoint', nextScheduledWeek: 'week1', ...profile })).sort((a, b) => Number(a.season) - Number(b.season)) : []; } catch { return []; }
+  try { const parsed = JSON.parse(text); return Array.isArray(parsed) ? parsed.map((profile) => ({ activePlayer: true, auto: false, strategy: 'midpoint', selectionStrategy: 'standard', quotaValue: Number(profile.balance) || 0, gridBand: 'pre-even', riskPreference: 'probability', diversityMode: 'allow-overlap', splitCount: 2, piecePrompt: '', nextScheduledWeek: 'week1', ...profile })).sort((a, b) => Number(a.season) - Number(b.season)) : []; } catch { return []; }
 }
 
 export async function createSeasonProfile(root, profile) {
   const season = (await latestSeason(root)) + 1;
   await createSeason(root, season);
   const createdAt = new Date().toISOString();
-  const saved = { ...profile, season, id: 'season-' + season, createdAt, status: 'active', activePlayer: true, auto: false, strategy: profile.strategy || 'midpoint', nextScheduledWeek: 'week1', name: profile.name || ('Season ' + season + '-' + profile.nonce) };
+  const saved = { ...profile, season, id: 'season-' + season, createdAt, status: 'active', activePlayer: true, auto: false, strategy: profile.strategy || 'midpoint', selectionStrategy: profile.selectionStrategy || 'standard', quotaValue: Number(profile.quotaValue ?? profile.balance) || 0, gridBand: profile.gridBand || 'pre-even', riskPreference: profile.riskPreference || 'probability', diversityMode: profile.diversityMode || 'allow-overlap', splitCount: Number(profile.splitCount) || 2, piecePrompt: profile.piecePrompt || '', nextScheduledWeek: 'week1', name: profile.name || ('Season ' + season + '-' + profile.nonce) };
   const seasonDir = await root.getDirectoryHandle(SEASON_PREFIX + season, { create: false });
   await writeText(seasonDir, 'season-profile.json', JSON.stringify(saved, null, 2) + '\n');
   const profiles = await listSeasonProfiles(root);
@@ -262,6 +262,55 @@ export async function readSeasonTrades(root, profile) {
     }
   }
   return trades.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+}
+
+
+export async function splitSeasonPiece(root, profile, requestedCount) {
+  const count = Math.max(2, Math.min(20, Math.floor(Number(requestedCount) || 0)));
+  if (!profile?.id || !Number.isFinite(Number(profile.balance)) || Number(profile.balance) <= 0) {
+    throw new Error('This piece has no available value to split.');
+  }
+  if (profile.splitInto?.length || profile.activePlayer === false) {
+    throw new Error('This piece is already inactive or has already been split.');
+  }
+
+  const totalValue = Math.round(Number(profile.balance) * 100) / 100;
+  const baseCents = Math.floor(totalValue * 100 / count);
+  const remainder = Math.round(totalValue * 100) - baseCents * count;
+  const children = [];
+
+  for (let i = 0; i < count; i += 1) {
+    const childCents = baseCents + (i < remainder ? 1 : 0);
+    const childValue = childCents / 100;
+    const child = await createSeasonProfile(root, {
+      ...profile,
+      id: undefined,
+      season: undefined,
+      balance: childValue,
+      quotaValue: childValue,
+      parentPieceId: profile.id,
+      parentSeason: profile.season,
+      splitIndex: i + 1,
+      splitCount: count,
+      splitInto: undefined,
+      activePlayer: true,
+      status: 'active',
+      createdFromSplitAt: new Date().toISOString(),
+      name: profile.name + ' · ' + (i + 1) + '/' + count,
+    });
+    children.push(child);
+  }
+
+  const updatedParent = await updateSeasonProfile(root, profile.id, {
+    balance: 0,
+    activePlayer: false,
+    status: 'split',
+    splitCount: count,
+    splitInto: children.map((child) => child.id),
+    splitAt: new Date().toISOString(),
+  });
+
+  return { parent: updatedParent, children };
 }
 
 export async function advanceSeasonWeek(root, profile) {
