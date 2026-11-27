@@ -173,14 +173,16 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
     if (!root || !seasonProfile) return;
     const datasetSignature = JSON.stringify(predictions.map((p) => ({ key: p.key, event: p.event, gameTime: p.gameTime || p.expectedExpiration || p.closeTime || null, lines: p.lines.map((line) => [line.ticker, line.line, line.yesAsk, line.noAsk]), recommended: p.recommended?.ticker || null })));
     const previousRefresh = lastStatsRefreshRef.current;
-    if (previousRefresh && previousRefresh.root === root && previousRefresh.profileId === seasonProfile.id && previousRefresh.signature === datasetSignature) return;
-    lastStatsRefreshRef.current = { root, profileId: seasonProfile.id, signature: datasetSignature };
+    if (previousRefresh && !previousRefresh.cancelled && previousRefresh.root === root && previousRefresh.profileId === seasonProfile.id && previousRefresh.signature === datasetSignature) return;
+    const refreshRecord = { root, profileId: seasonProfile.id, signature: datasetSignature, cancelled: false, completed: false };
+    lastStatsRefreshRef.current = refreshRecord;
     let cancelled = false;
     if (!markets.length || !predictions.length) {
       setStatsByKey({}); setAnalyses({}); setAnalysisErrors({}); setStatsResolved(true);
       setProgress('No upcoming games found in the current market dataset.');
       setDebugEntries([{ time: new Date().toLocaleTimeString(), message: 'DATASET EMPTY · market entries=' + markets.length + ' · eligible prediction entries=' + predictions.length + ' · no statistics requests started.' }]);
       setBusy(false);
+      refreshRecord.completed = true;
       return () => { cancelled = true; };
     }
     async function run() {
@@ -293,11 +295,12 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
           setError(e.message || 'Prediction analysis failed'); setProgress('');
         }
       } finally {
+        refreshRecord.completed = true;
         if (!cancelled) setBusy(false);
       }
     }
     run();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; if (!refreshRecord.completed) refreshRecord.cancelled = true; };
   }, [root, markets, predictions, seasonProfile?.id]);
 
   useEffect(() => {
