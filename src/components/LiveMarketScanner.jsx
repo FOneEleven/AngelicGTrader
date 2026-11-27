@@ -116,8 +116,8 @@ export default function LiveMarketScanner({ dataFolder, onActivity, onNavigate }
 
   async function addLadderToPredictions(market) {
     if (!root) { setError('Connect a data folder before adding AI Prediction entries.'); return; }
-    const text = market.subtitle || market.title || '';
-    const match = text.match(/^(.+?)\s+over\s+[\d.]+/i);
+    const text = (market.subtitle || market.title || '').replace(/^Will\\s+(?:the\\s+)?/i, '').replace(/\\s+score\\s+over\\s+/i, ' over ');
+    const match = text.match(/^(.+?)\\s+over\\s+[\\d.]+/i);
     if (!match) { setError('Could not identify the team for this team-total market.'); return; }
     const key = (market.eventTicker || market.ticker) + '::' + match[1].trim();
     const next = [...new Set([...selections, key])];
