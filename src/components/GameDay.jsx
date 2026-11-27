@@ -83,7 +83,8 @@ export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigat
 
   const pieces = useMemo(() => profiles.map((profile) => {
     const trades = tradesByPiece[profile.id] || [];
-    return { ...profile, trades, earnings: earningsFor(trades), walletReturned: confirmedWalletReturns(trades) };
+    const walletReturned = confirmedWalletReturns(trades);
+    return { ...profile, trades, earnings: walletReturned, walletReturned };
   }), [profiles, tradesByPiece]);
 
   const visiblePieces = useMemo(() => {
