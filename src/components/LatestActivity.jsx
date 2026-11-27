@@ -3,7 +3,7 @@ import { Clock3 } from 'lucide-react';
 import { readActivity } from '../lib/dataModel';
 
 const TONE = { SEASON_START: 'ok', WEEK_START: 'ok', TRADE_RECORDED: 'wait', ERROR: 'bad' };
-const VISIBLE_TYPES = new Set(['SEASON_START', 'WEEK_START', 'TRADE_RECORDED', 'ERROR']);
+const VISIBLE_TYPES = new Set(['SEASON_START', 'WEEK_START', 'TRADE_RECORDED', 'ERROR', 'KALSHI_FILL']);
 
 export default function LatestActivity({ dataFolder, filter, onFilterChange }) {
   const [events, setEvents] = useState([]);
@@ -29,8 +29,8 @@ export default function LatestActivity({ dataFolder, filter, onFilterChange }) {
 
   const shown = useMemo(() => {
     if (!filter || filter === 'all') return events;
-    if (filter === 'paper') return events.filter((ev) => ev.type !== 'TRADE_RECORDED' || /paper/i.test(ev.message));
-    if (filter === 'live') return events.filter((ev) => ev.type !== 'TRADE_RECORDED' || /live/i.test(ev.message));
+    if (filter === 'paper') return events.filter((ev) => ev.type !== 'KALSHI_FILL' && (ev.type !== 'TRADE_RECORDED' || /paper/i.test(ev.message)));
+    if (filter === 'live') return events.filter((ev) => ev.type === 'KALSHI_FILL' || ev.type !== 'TRADE_RECORDED' || /live/i.test(ev.message));
     return events;
   }, [events, filter]);
 
