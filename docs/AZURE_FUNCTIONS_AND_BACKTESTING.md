@@ -1,4 +1,4 @@
-# Azure Functions and backtesting contract
+# Azure Functions and AI Predictions integration
 
 ## Deployed Azure Function App
 
@@ -7,85 +7,84 @@ Function App: `angelicgtrader-dvhgf4dhc6hahqhs`
 Base URL:
 `https://angelicgtrader-dvhgf4dhc6hahqhs.westus3-01.azurewebsites.net`
 
-### 1. GetKalshiMarkets
+### GetKalshiMarkets
 
 - Route: `GET /api/GetKalshiMarkets`
 - Status: deployed and previously tested.
-- Purpose: fetches current Kalshi market snapshots through the existing Azure proxy.
-- The original Azure source is maintained outside this repository.
+- Purpose: fetch current Kalshi market snapshots through the existing Azure proxy.
 
-### 2. GetTeamStatistics
+### GetTeamStatistics
 
 - Route: `GET /api/GetTeamStatistics`
-- Status: deployed and tested by the developer against NBA data.
-- Upstream: free ESPN public site API; no ESPN API key or paid data provider is required.
-- Runtime: the deployed function is Azure Functions v3 CommonJS using `module.exports = async function (context, req)` and `context.res`. Keep this runtime style when updating the deployed function. Do not replace it with Node.js v4 `app.http()` syntax in this Function App.
+- Status: deployed and tested against ESPN NBA data.
+- Runtime: deployed Azure Functions v3 CommonJS. Preserve `module.exports = async function (context, req)` and `context.res`; do not replace it with v4 `app.http()` syntax.
+- Query parameters: `league`, `team`, optional `opponent`, `season`, and `seasontype`.
+- Upstream: free ESPN public API; no ESPN key required.
 
-Query parameters:
-- `league`: `NFL` or `NBA`.
-- `team`: team name or ESPN team ID.
-- `opponent`: optional team name or ESPN team ID.
-- `season`: optional ESPN season year.
-- `seasontype`: optional ESPN season type (for example `2` for regular season).
-
-ESPN public endpoints used:
-- NFL teams: `https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams`
-- NFL team schedule: `https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/{teamId}/schedule`
-- NBA teams: `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams`
-- NBA team schedule: `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/{teamId}/schedule`
-
-**Repository source parity warning:** the checked-in `azure-functions/GetTeamStatistics/index.js` is an older Node.js v4 provider-normalizing scaffold and is not the v3 ESPN implementation currently deployed and tested. Do not deploy that scaffold over the working Azure function. The next backend task is to port the verified deployed v3 ESPN source into this repository (including its `function.json`) and remove the obsolete v4 scaffold. The frontend client has been aligned to the tested query parameter names.\n\nThe tested response includes provider/league/season metadata; team and opponent identity; games played; season PPG and points allowed; recent-five and recent-ten PPG/PA; home/away scoring splits; wins/losses; recent game records; model inputs; and data-quality metadata.
+The verified response shape is:
+- `provider`, `league`, `season`, `seasonType`, `fetchedAt`, `durationMs`
+- `team` and `opponent` objects with `name`, `id`, `gamesPlayed`, `pointsPerGame`, `pointsAllowedPerGame`, `recent5PPG`, `recent5PointsAllowed`, `recent10PPG`, `recent10PointsAllowed`, `homePPG`, `awayPPG`, `wins`, `losses`, and `ties`
+- `modelInputs`: `teamPointsPerGame`, `teamPointsAllowedPerGame`, `recentTeamPPG`, `recentTeamPointsAllowed`, `opponentPointsAllowedPerGame`, and `opponentRecentPointsAllowed`
+- `recentGames`: event ID, date, opponent, opponent ID, home/away, points scored/allowed, and result
+- `dataQuality`: source, completed games, opponent-data availability, and missing-value behavior
 
 Example:
 ```
-GET https://angelicgtrader-dvhgf4dhc6hahqhs.westus3-01.azurewebsites.net/api/GetTeamStatistics?league=NBA&team=Los%20Angeles%20Lakers&opponent=Boston%20Celtics&season=2026&seasontype=2
+GET /api/GetTeamStatistics?league=NBA&team=Los%20Angeles%20Lakers&opponent=Boston%20Celtics&season=2026&seasontype=2
 ```
 
-Important season rule: an explicitly requested season must be preserved. A completed season must not be labeled as the current live season. Backtests must use the season and games that were available as of the prediction timestamp.
+The checked-in `azure-functions/GetTeamStatistics/index.js` remains an older v4 scaffold and is not the verified deployed v3 ESPN implementation. Do not deploy it over the working Azure function. Porting the deployed v3 source and its `function.json` into the repository remains a separate backend parity task.
 
-### 3. AnalyzeMarket
+### AnalyzeMarket
 
 - Route: `POST /api/AnalyzeMarket`
-- Status: deployed and successfully tested end-to-end.
-- Provider: OpenAI Responses API.
-- Model currently configured in Azure: `gpt-6.2-sol`.
-- Azure Function App settings:
-  - `OPENAI_API_KEY`: secret API key.
-  - `OPENAI_MODEL`: model name.
-- The function key is required by the current HTTP trigger. The key is not source code and must not be committed to GitHub or placed in a public Vite environment variable.
-- OpenAI API billing is separate from a ChatGPT subscription.
+- Status: deployed and tested end-to-end with OpenAI Responses API.
+- Azure app settings: `OPENAI_API_KEY` (secret) and `OPENAI_MODEL` (currently `gpt-6.2-sol`).
+- The supplied `function.json` is configured as an anonymous HTTP trigger. No Function key is required by the frontend request.
+- The OpenAI key remains server-side in Azure and must never be included in frontend code, Vite environment variables, or Git.
 
-The response observed in testing includes:
-- provider/model, response ID, analyzed timestamp and duration;
-- market snapshot;
-- estimated YES probability and expected team points;
-- recommendation and confidence;
-- reasoning and historical-performance notes;
-- market-value/expected-value section;
-- audit metadata indicating whether probability was estimated independently from market price.
+Request body:
+```json
+{
+  "market": {
+    "ticker": "market ticker",
+    "title": "market title",
+    "league": "NBA",
+    "team": "team name",
+    "opponent": "opponent name",
+    "line": 110.5,
+    "yesAsk": 0.52,
+    "noAsk": 0.50,
+    "closeTime": "ISO timestamp"
+  },
+  "teamStats": {},
+  "opponentStats": {},
+  "context": {}
+}
+```
 
-The LLM's estimate is contextual analysis, not a calibrated probability. If standard deviation, sample size, or historical hit rate is missing, the response must disclose that limitation. Do not treat an assumed score standard deviation as measured historical data.
+The response exposes `prediction.probabilityYes` (0–1), expected team points, recommendation, confidence, reasoning, advantages, risks, missing data, market value, and audit metadata. NO probability is always derived as `1 - probabilityYes`; do not ask OpenAI to return an independent, contradictory NO probability.
 
-**Frontend security:** do not send the Function key from browser code. The next secure integration step is a server-side authenticated proxy (or API Management) that calls AnalyzeMarket with the Function key kept server-side. No OpenAI key or Azure Function key needs to be added to GitHub.
+Because the trigger is anonymous, it is publicly callable. Add Azure rate limiting/monitoring and appropriate CORS/origin restrictions before broad deployment. OpenAI billing is separate from a ChatGPT subscription.
 
-## Frontend integration contract
+## Frontend implementation in this PR update
 
-- Kalshi client: `src/lib/kalshi.js`.
-- ESPN client: `src/lib/sportsStats.js`.
-- Hybrid quantitative baseline: `src/lib/hybridModel.js`.
-- Prediction screen: `src/components/AIPredictions.jsx`.
+- `src/components/AIPredictions.jsx`: retains the existing AI Predictions market entries, automatically finds the opponent from the same event's team-total markets, requests ESPN data, analyzes every line, removes manual PPG/PA controls, and shows model probability for the selected YES/NO side.
+- `src/lib/sportsStats.js`: calls the deployed GetTeamStatistics query contract, including `seasontype`.
+- `src/lib/analyzeMarket.js`: calls the anonymous AnalyzeMarket endpoint and validates `prediction.probabilityYes`.
+- `src/lib/teamStatsCache.js`: persistent ESPN cache in `meta/team-stats-cache.txt`, keyed by league/team/opponent/season/seasonType, six-hour TTL.
+- `src/lib/analysisCache.js`: persistent OpenAI cache in `meta/ai-analysis-cache.txt`, twelve-hour TTL.
+- `src/lib/marketCache.js`: preserves absent asks as null rather than converting them to zero.
 
-The prediction screen currently exposes manual team PPG and opponent points-allowed fields. The next integration task is to map each Kalshi event/team to ESPN team IDs, fetch the matching season statistics automatically, and preserve the exact season type. Only after this data path is reliable should the screen call the secured AnalyzeMarket proxy.
+The YES/NO selector is per entry. The probability shown for NO is the complement of OpenAI's YES probability. The slider selects the lowest executable ask among lines whose selected-side model probability is at least 90%; if none qualify, it selects the highest-probability available line and visibly remains below the target. The user can manually move the slider.
 
-## Backtesting rules
+## Backtesting rules (not part of this UI change)
 
-- Every season round risks the original starting stake. Prior winnings do not compound.
-- The first settled loss stops that season only.
-- Independent bets and separate seasons may allocate to the same market and side.
-- Keep each allocation and settlement separate; aggregate shared market exposure for portfolio risk reporting.
-- Record prediction timestamp, market ticker, executable entry ask, side, fees, model version, input statistics, source timestamps, and scheduled event start before the event.
-- Store verified final results and settlement source/time separately.
-- A prediction must never use information from after its event start.
-- Do not treat current ESPN season averages or current Kalshi prices as historical pre-event snapshots.
+- Each season round risks the original fixed stake; winnings do not compound.
+- A season stops at its first settled loss.
+- Independent positions and multiple seasons may overlap one market.
+- Keep each position's accounting separate while aggregating market exposure for risk.
+- Store pre-event model inputs, prices, prediction timestamp, model version, fees, result, and settlement source.
+- Never leak post-event information into a historical prediction.
 
-The code in `src/lib/backtesting.js` is a simulation foundation, not a completed historical dataset or live trading engine.
+The existing backtesting module is a calculation foundation. A full historical backtesting UI and verified historical data pipeline remain pending.
