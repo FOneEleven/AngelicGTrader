@@ -22,8 +22,9 @@ function leagueOf(ticker = '') {
   return m ? m[1] : null;
 }
 function teamName(subtitle = '') {
-  const m = subtitle.match(/^(.+?)\s+over\s+/i);
-  return m ? m[1].trim() : subtitle;
+  const cleaned = String(subtitle || '').replace(/^Will\s+(?:the\s+)?/i, '').replace(/\s+score\s+over\s+/i, ' over ');
+  const m = cleaned.match(/^(.+?)\s+over\s+/i);
+  return m ? m[1].trim() : cleaned;
 }
 function parseLine(subtitle = '') {
   const m = subtitle.match(/over\s+([\d.]+)/i);
@@ -32,7 +33,7 @@ function parseLine(subtitle = '') {
 
 // Prefer expected_expiration_time; fall back to close_time for legacy cache rows.
 function resolveGameTime(m) {
-  return m.expectedExpiration || m.closeTime || '';
+  return m.occurrenceTime || m.expectedExpiration || m.closeTime || '';
 }
 
 export function computePredictions(markets, opts = {}) {
@@ -40,7 +41,14 @@ export function computePredictions(markets, opts = {}) {
   const now = Date.now();
   const closeCutoff = now + cfg.maxHoursToClose * 3_600_000;
 
-  const teamTotals = markets.filter((m) => TEAM_TOTAL.test(m.ticker));
+  const teamTotals = markets.filter((m) => {
+    if (!TEAM_TOTAL.test(m.ticker || '')) return false;
+    const status = String(m.status || '').toLowerCase();
+    if (['closed', 'settled', 'finalized', 'resolved'].includes(status) || m.isClosed === true) return false;
+    const closeAt = m.expectedExpiration || m.closeTime;
+    if (closeAt) { const closeMs = new Date(closeAt).getTime(); if (Number.isFinite(closeMs) && closeMs <= now) return false; }
+    return true;
+  });
 
   const ladders = new Map();
   for (const m of teamTotals) {
@@ -55,6 +63,7 @@ export function computePredictions(markets, opts = {}) {
         league: leagueOf(m.ticker),
         closeTime: m.closeTime,
         expectedExpiration: m.expectedExpiration,
+        occurrenceTime: m.occurrenceTime || '',
         gameTime: resolveGameTime(m),
         lines: [],
       });
@@ -161,8 +170,8 @@ export function computePredictions(markets, opts = {}) {
   }
 
   const sortWithin = (rows) => rows.sort((a, b) => {
-    const aNfl = a.league === 'NFL' ? 0 : 1;
-    const bNfl = b.league === 'NFL' ? 0 : 1;
+    const priority = (league) => league === 'NFL' ? 0 : league === 'MLB' ? 1 : league === 'NBA' ? 2 : 3;
+    const aNfl = priority(a.league), bNfl = priority(b.league);
     if (aNfl !== bNfl) return aNfl - bNfl;
     return b.payout - a.payout;
   });

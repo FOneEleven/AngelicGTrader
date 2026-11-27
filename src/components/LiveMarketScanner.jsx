@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Radar, RefreshCw, ExternalLink, Search, Trash2 } from 'lucide-react';
+import { Radar, RefreshCw, ExternalLink, Search, Trash2, BrainCircuit, Plus, CheckCircle2 } from 'lucide-react';
 import { fetchSportsMarkets } from '../lib/kalshi';
 import {
   readCache, isCacheFresh, appendCacheBatch, clearCache, listCacheBatches,
 } from '../lib/marketCache';
+import { readAIPredictionSelections, writeAIPredictionSelections } from '../lib/dataModel';
 
 const LEAGUES = [
   { key: 'ALL', label: 'All' },
@@ -48,7 +49,7 @@ function fmtBatch(iso) {
   return `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 }
 
-export default function LiveMarketScanner({ dataFolder, onActivity }) {
+export default function LiveMarketScanner({ dataFolder, onActivity, onNavigate }) {
   const [markets, setMarkets] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -59,12 +60,15 @@ export default function LiveMarketScanner({ dataFolder, onActivity }) {
   const [batches, setBatches] = useState([]);
   const [batch, setBatch] = useState('LATEST');
   const [lastFetchedAt, setLastFetchedAt] = useState(null);
+  const [selections, setSelections] = useState([]);
+  const [hasAttemptedLoad, setHasAttemptedLoad] = useState(false);
 
   const root = dataFolder?.handle;
 
   async function loadFromCache() {
     if (!root) return false;
     const { markets: cached, fetchedAt } = await readCache(root);
+    setSelections(await readAIPredictionSelections(root));
     if (!cached.length) return false;
     const batchList = await listCacheBatches(root);
     setBatches(batchList);
@@ -74,9 +78,11 @@ export default function LiveMarketScanner({ dataFolder, onActivity }) {
   }
 
   async function fetchFresh() {
+    setHasAttemptedLoad(true);
     setLoading(true); setError('');
     try {
       const list = await fetchSportsMarkets();
+      setHasAttemptedLoad(true);
       if (root && list.length) {
         const at = await appendCacheBatch(root, list);
         setLastFetchedAt(at);
@@ -102,9 +108,32 @@ export default function LiveMarketScanner({ dataFolder, onActivity }) {
     await fetchFresh();
   }
 
-  useEffect(() => { ensureData(); }, [root]);
+  useEffect(() => {
+    if (!root) { ensureData(); return; }
+    readAIPredictionSelections(root).then(setSelections).catch(() => {});
+    ensureData();
+  }, [root]);
 
-  async function handleRefresh() { await ensureData({ force: true }); }
+  async function addLadderToPredictions(market) {
+    if (!root) { setError('Connect a data folder before adding AI Prediction entries.'); return; }
+    const text = (market.subtitle || market.title || '').replace(/^Will\s+(?:the\s+)?/i, '').replace(/\s+score\s+over\s+/i, ' over ');
+    const match = text.match(/^(.+?)\s+over\s+[\d.]+/i);
+    if (!match) { setError('Could not identify the team for this team-total market.'); return; }
+    const key = (market.eventTicker || market.ticker) + '::' + match[1].trim();
+    const next = [...new Set([...selections, key])];
+    await writeAIPredictionSelections(root, next);
+    setSelections(next);
+    onActivity?.('AI_PREDICTION_ADDED', 'Added ' + match[1].trim() + ' ladder to AI Predictions');
+  }
+
+  function handleMarketsToggle(event) {
+    if (event.currentTarget.open && !hasAttemptedLoad && markets.length === 0) {
+      setHasAttemptedLoad(true);
+      ensureData();
+    }
+  }
+
+  async function handleRefresh() { setHasAttemptedLoad(true); await ensureData({ force: true }); }
 
   async function handleClearCache() {
     if (!root) return;
@@ -146,9 +175,10 @@ export default function LiveMarketScanner({ dataFolder, onActivity }) {
         <div>
           <div className="eyebrow">WORKSPACE</div>
           <h1>Live Market Scanner</h1>
-          <p>Upcoming sports markets from Kalshi. Cached locally per fetch.</p>
+          <p>Technical market data from Kalshi. Expand the data box only when you need to inspect or select contracts.</p>
         </div>
         <div className="scanner-heading-actions">
+          <button className="secondary-btn" onClick={() => onNavigate?.('AI Predictions')}><BrainCircuit size={15}/> AI Predictions</button>
           {root && (
             <button className="secondary-btn" onClick={handleClearCache} title="Clear cached markets">
               <Trash2 size={15} /> Clear cache
@@ -214,6 +244,8 @@ export default function LiveMarketScanner({ dataFolder, onActivity }) {
         </>
       )}
 
+      <details className="technical-market-box">
+        <summary className="technical-market-summary"><span><b>Show ladders of market data</b><small>{markets.length ? markets.length + ' cached contracts · ' + rows.length + ' matching filters' : 'Market data loads automatically; open to inspect ladders'}</small></span><span className="status-pill">Market scanner</span></summary>
       <section className="panel">
         <div className="panel-heading">
           <div><h2>Sports markets</h2><p>Kalshi public market data</p></div>
@@ -241,6 +273,7 @@ export default function LiveMarketScanner({ dataFolder, onActivity }) {
                   <th>OPEN INTEREST</th>
                   <th>24H VOL</th>
                   <th>CLOSES</th>
+                  <th>AI PREDICTIONS</th>
                   <th></th>
                 </tr>
               </thead>
@@ -267,6 +300,13 @@ export default function LiveMarketScanner({ dataFolder, onActivity }) {
                       <td>{compact(m.volume24h)}</td>
                       <td>{closesIn(gameTime(m))}</td>
                       <td>
+                        {/^KX[A-Z0-9]+?TEAMTOTAL-/.test(m.ticker || '') ? (
+                          <button className="secondary-btn" disabled={!root} onClick={() => addLadderToPredictions(m)} title="Add the complete team-total ladder to AI Predictions">
+                            {selections.includes((m.eventTicker || m.ticker) + '::' + ((m.subtitle || m.title || '').match(/^(.+?)\s+over\s+[\d.]+/i)?.[1]?.trim() || '')) ? <><CheckCircle2 size={13}/> Added</> : <><Plus size={13}/> Add ladder</>}
+                          </button>
+                        ) : <span className="muted">—</span>}
+                      </td>
+                      <td>
                         <a
                           className="icon-btn"
                           href={`https://kalshi.com/markets/${(m.eventTicker || m.ticker).toLowerCase()}`}
@@ -290,6 +330,7 @@ export default function LiveMarketScanner({ dataFolder, onActivity }) {
           <span>{rows.length} rows</span>
         </div>
       </section>
+      </details>
     </div>
   );
 }

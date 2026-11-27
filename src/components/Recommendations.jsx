@@ -1,316 +1,109 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ClipboardList, ExternalLink, CheckCircle2 } from 'lucide-react';
-import { readSettings, writeSettings, appendTrade, readTrades } from '../lib/dataModel';
-import { readCache } from '../lib/marketCache';
+import React, { useEffect, useState } from 'react';
+import { RefreshCw, PlusCircle, WalletCards } from 'lucide-react';
+import { createSeasonProfile, listSeasonProfiles, updateSeasonProfile, advanceSeasonWeek } from '../lib/dataModel';
+import SeasonToken from './SeasonToken';
 
-const TEAM_TOTAL = /^KX([A-Z0-9]+?)TEAMTOTAL-/;
-
-function leagueOf(ticker = '') {
-  const m = ticker.match(TEAM_TOTAL);
-  return m ? m[1] : null;
-}
-function parseLine(subtitle = '') {
-  const m = subtitle.match(/over\s+([\d.]+)/i);
-  return m ? Number(m[1]) : null;
-}
-function teamName(subtitle = '') {
-  const m = subtitle.match(/^(.+?)\s+over\s+/i);
-  return m ? m[1].trim() : subtitle;
-}
-function gameTime(m) {
-  return m.expectedExpiration || m.closeTime || '';
-}
-function cents(v) { return v == null || Number.isNaN(v) ? '—' : `${Math.round(v * 100)}¢`; }
-function closesIn(iso) {
-  if (!iso) return '—';
-  const ms = new Date(iso).getTime() - Date.now();
-  if (Number.isNaN(ms)) return '—';
-  if (ms < 0) return 'closed';
-  const h = Math.floor(ms / 3_600_000);
-  if (h < 1) return `${Math.floor(ms / 60_000)}m`;
-  if (h < 48) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
-}
-function closeDate(iso) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+const PIECES = ['Quarterback', 'Running Back', 'Receiver', 'Lineman', 'Slam Dunk', 'Posterizer', 'Dribbler', '3Pt Shooter', 'Baseball a Slugger', 'Baseball a Heater', 'Baseball a Catcher', 'Baseball a Runner'];
+const BASES = [
+  { name: 'Royal Gold', color: '#c69d4e' }, { name: 'Sapphire', color: '#477fc5' },
+  { name: 'Emerald', color: '#42966f' }, { name: 'Crimson', color: '#b94e55' },
+  { name: 'Amethyst', color: '#8865bd' }, { name: 'Obsidian', color: '#777d8b' },
+];
+const EPITHETS = ['Golden', 'Rising', 'Iron', 'Velocity', 'Crowned', 'Untamed', 'Starlight', 'Victory'];
+function randomFrom(items) { return items[Math.floor(Math.random() * items.length)]; }
+function makeToken() {
+  const pieceType = randomFrom(PIECES), base = randomFrom(BASES), nonce = Math.floor(1000 + Math.random() * 9000);
+  return { pieceType, baseColor: base.color, baseName: base.name, nonce, name: randomFrom(EPITHETS) + ' ' + pieceType + ' · ' + nonce };
 }
 
-export default function Recommendations({ dataFolder, onActivity }) {
-  const [paperMode, setPaperMode] = useState(true);
-  const [season, setSeason] = useState(dataFolder?.season || 1);
-  const [week, setWeek] = useState('week1');
-  const [markets, setMarkets] = useState([]);
-  const [trades, setTrades] = useState([]);
+export default function Recommendations({ dataFolder, paperMode: currentPaperMode = true, onActivity }) {
+  const root = dataFolder?.handle;
+  const [balance, setBalance] = useState('100');
+  const paperMode = currentPaperMode;
+  const [token, setToken] = useState(makeToken);
+  const [seasons, setSeasons] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [batch, setBatch] = useState('LATEST');
-  const [lineIndex, setLineIndex] = useState({});
-
-  const root = dataFolder?.handle;
+  const [created, setCreated] = useState(null);
 
   useEffect(() => {
     if (!root) return;
-    (async () => {
-      const s = await readSettings(root);
-      setPaperMode(!!s.paperMode);
-      const cached = await readCache(root);
-      setMarkets(cached.markets);
-      setTrades(await readTrades(root, season, week));
-    })().catch((e) => setError(e.message));
-  }, [root, season, week]);
+    listSeasonProfiles(root).then(setSeasons).catch((e) => setError(e.message || 'Could not load seasons'));
+  }, [root]);
 
-  const teams = useMemo(() => {
-    const scoped = batch === 'LATEST'
-      ? markets
-      : markets.filter((m) => m.fetchedAt === batch);
+  function cyclePiece() { setToken(makeToken()); setCreated(null); }
 
-    const buckets = new Map();
-    for (const m of scoped) {
-      if (!TEAM_TOTAL.test(m.ticker)) continue;
-      const line = parseLine(m.subtitle || m.title);
-      if (line == null) continue;
-      const team = teamName(m.subtitle || m.title);
-      const event = m.eventTicker || m.ticker;
-      const gt = gameTime(m);
-      const key = `${event}::${team}::${gt}`;
-      if (!buckets.has(key)) {
-        buckets.set(key, {
-          key, event,
-          league: leagueOf(m.ticker),
-          team,
-          closeTime: m.closeTime || '',
-          expectedExpiration: m.expectedExpiration || '',
-          gameTime: gt,
-          openInterest: m.openInterest,
-          lines: [],
-        });
-      }
-      const entry = buckets.get(key);
-      entry.lines.push({
-        ticker: m.ticker,
-        line,
-        yesAsk: m.yesAsk,
-        yesBid: m.yesBid,
-        noAsk: m.noAsk ?? (m.yesAsk == null ? null : 1 - m.yesBid),
-        noBid: m.noBid ?? (m.yesBid == null ? null : 1 - m.yesAsk),
-        openInterest: m.openInterest,
-        closeTime: m.closeTime || '',
-        expectedExpiration: m.expectedExpiration || '',
-      });
-      if (m.openInterest > entry.openInterest) entry.openInterest = m.openInterest;
-    }
-
-    return [...buckets.values()]
-      .map((e) => ({ ...e, lines: e.lines.sort((a, b) => a.line - b.line) }))
-      .sort((a, b) => {
-        const at = a.gameTime ? new Date(a.gameTime).getTime() : Infinity;
-        const bt = b.gameTime ? new Date(b.gameTime).getTime() : Infinity;
-        return at - bt;
-      });
-  }, [markets, batch]);
-
-  function chosenIndex(entry) {
-    const raw = lineIndex[entry.key];
-    if (raw == null) return Math.floor(entry.lines.length / 2);
-    return Math.min(raw, entry.lines.length - 1);
+  async function updatePiece(profile, patch) {
+    try {
+      const updated = await updateSeasonProfile(root, profile.id, patch);
+      setSeasons((old) => old.map((item) => item.id === updated.id ? updated : item));
+    } catch (e) { setError(e.message || 'Could not update season piece'); }
   }
-  function setChosen(entry, idx) {
-    setLineIndex((prev) => ({ ...prev, [entry.key]: Math.min(idx, entry.lines.length - 1) }));
+
+  async function startNextWeek(profile) {
+    try {
+      const updated = await advanceSeasonWeek(root, profile);
+      setSeasons((old) => old.map((item) => item.id === updated.id ? updated : item));
+      onActivity?.('WEEK_START', updated.name + ' scheduled for ' + updated.nextScheduledWeek);
+    } catch (e) { setError(e.message || 'Could not schedule next week'); }
   }
-  async function togglePaper(next) {
-    setPaperMode(next);
-    if (root) await writeSettings(root, { paperMode: next });
-  }
-  async function recordTrade(entry) {
-    if (!paperMode) { setError('Paper mode must be ON to record recommendations.'); return; }
+
+  async function commitSeason() {
+    const amount = Number(balance);
     if (!root) { setError('Connect a data folder first.'); return; }
-    const idx = chosenIndex(entry);
-    const line = entry.lines[idx];
-    if (!line) return;
+    if (!Number.isFinite(amount) || amount <= 0) { setError('Enter a season balance greater than zero.'); return; }
     setBusy(true); setError('');
     try {
-      const trade = {
-        id: `${line.ticker}-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        matchup: `${entry.team} · ${entry.event} · ${closeDate(entry.closeTime)}`,
-        market: `${entry.team} over ${line.line} pts`,
-        side: 'YES',
-        price: Math.round((line.yesAsk || 0) * 100),
-        probability: Math.round((line.yesAsk || 0) * 100),
-        stake: 1,
-        paper: true,
-        status: 'open',
-      };
-      await appendTrade(root, season, week, trade);
-      setTrades(await readTrades(root, season, week));
-      onActivity?.('TRADE_RECORDED', `Trade recorded · ${trade.market} · paper`);
-    } catch (e) {
-      setError(e.message || 'Could not record trade');
-    } finally {
-      setBusy(false);
-    }
+      const profile = await createSeasonProfile(root, {
+        balance: amount, paperMode, pieceType: token.pieceType, baseColor: token.baseColor,
+        baseName: token.baseName, nonce: token.nonce, name: token.name,
+      });
+      setSeasons((old) => [...old, profile]);
+      setCreated(profile);
+      setToken(makeToken());
+      onActivity?.('SEASON_START', profile.name + ' created');
+    } catch (e) { setError(e.message || 'Could not create season'); }
+    finally { setBusy(false); }
   }
 
-  return (
-    <div className="page-shell">
-      <div className="page-heading">
-        <div>
-          <div className="eyebrow">WORKSPACE</div>
-          <h1>Betting Recommendations</h1>
-          <p>One row per team per expected resolution time. Use each row's slider to pick a line.</p>
+  return <div className="page-shell season-manager">
+    <div className="page-heading"><div><div className="eyebrow">WORKSPACE</div><h1>Season Manager</h1><p>Create a season, allocate its starting balance, and mint its collectible season piece.</p></div></div>
+    {!root && <div className="notice"><div className="notice-icon"><WalletCards size={18}/></div><div><b>Connect a data folder</b><span>Season profiles and balances are saved locally.</span></div></div>}
+    {error && <div className="notice error-notice"><b>{error}</b></div>}
+    <section className="panel season-create-panel">
+      <div className="panel-heading"><div><h2>Create a season</h2><p>Randomize the statue and base until you find the piece you want.</p></div><span className="status-pill">{paperMode ? 'PAPER SEASON' : 'LIVE SEASON'}</span></div>
+      <div className="season-create-layout">
+        <div className="season-token-preview">
+          <div className="eyebrow">PREVIEW TOKEN</div>
+          <SeasonToken pieceType={token.pieceType} baseColor={token.baseColor} size={176}/>
+          <b>{token.name}</b><span>{token.baseName} base · nonce {token.nonce}</span>
+          <button className="secondary-btn" onClick={cyclePiece} disabled={busy}><RefreshCw size={14}/> Cycle to another piece</button>
+        </div>
+        <div className="season-create-controls">
+          <label htmlFor="season-balance">Starting season balance</label>
+          <div className="season-balance-input"><span>$</span><input id="season-balance" type="number" min="0.01" step="0.01" value={balance} onChange={(e) => setBalance(e.target.value)} placeholder="100.00"/></div>
+          <div className="season-mode-card"><span className={paperMode ? 'live-dot' : 'live-dot live'}></span><div><b>{paperMode ? 'Paper season' : 'Live season'}</b><small>Uses the current Paper/Live mode setting from the app header.</small></div></div>
+          <div className="season-name-preview"><small>GENERATED SEASON NAME</small><b>{token.name}</b><span>Piece: {token.pieceType} · Base: {token.baseName}</span></div>
+          <button className="primary-btn season-commit" disabled={!root || busy} onClick={commitSeason}><PlusCircle size={16}/>{busy ? 'Creating season…' : 'Commit season'}</button>
+          {created && <div className="season-success">Created {created.name} · Season {created.season}</div>}
         </div>
       </div>
-
-      {!root && (
-        <div className="notice">
-          <div className="notice-icon"><ClipboardList size={18} /></div>
-          <div><b>Connect a data folder</b><span>Recommendations read from the local market cache.</span></div>
-        </div>
-      )}
-
-      {error && <div className="notice error-notice"><b>{error}</b></div>}
-
-      <div className="rec-filters">
-        <div className="rec-filter-field">
-          <label>Batch</label>
-          <select className="scanner-select" value={batch} onChange={(e) => setBatch(e.target.value)}>
-            <option value="LATEST">Latest cache</option>
-            {[...new Set(markets.map((m) => m.fetchedAt))].sort().reverse().map((b) => (
-              <option key={b} value={b}>{new Date(b).toLocaleString()}</option>
-            ))}
-          </select>
-        </div>
-        <div className="rec-filter-field">
-          <label>Paper mode</label>
-          <button className={`paper-toggle ${paperMode ? 'on' : 'off'}`} onClick={() => togglePaper(!paperMode)}>
-            {paperMode ? 'ON' : 'OFF'}
-          </button>
-        </div>
-      </div>
-
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <h2>Team totals · {teams.length} entries</h2>
-            <p>Sorted by expected resolution. Slide to pick a line per entry.</p>
+    </section>
+    <section className="panel">
+      <div className="panel-heading"><div><h2>Season pieces · {seasons.length}</h2><p>Control each piece's weekly schedule, automation flag and strategy.</p></div></div>
+      {seasons.length ? <div className="season-manager-list">{seasons.map((s) => <article className={`season-manager-row ${s.activePlayer === false ? 'season-inactive' : ''}`} key={s.id}>
+        <SeasonToken pieceType={s.pieceType} baseColor={s.baseColor} size={68}/>
+        <div className="season-manager-main">
+          <b>{s.name}</b><span>Season {s.season} · $ {Number(s.balance).toFixed(2)} · {s.paperMode ? 'Paper' : 'Live'}</span>
+          <small>{s.pieceType} · {s.baseName} base · {s.activePlayer === false ? 'Inactive' : 'Active'}</small>
+          <div className="season-piece-controls">
+            <button className="secondary-btn" onClick={() => startNextWeek(s)} disabled={busy || s.activePlayer === false}>Start next week</button>
+            <label className={`auto-switch ${s.auto ? 'enabled' : ''}`}><input type="checkbox" checked={!!s.auto} onChange={(e) => updatePiece(s, { auto: e.target.checked })}/><span className="auto-switch-track"></span><b>Auto</b></label>
+            <select value={s.strategy || 'midpoint'} onChange={(e) => updatePiece(s, { strategy: e.target.value })} aria-label={s.name + ' strategy'}><option value="midpoint">Midpoint</option><option value="cliff">Cliff</option></select>
           </div>
+          <small>Next scheduled: {s.nextScheduledWeek || 'week1'}</small>
         </div>
-
-        {teams.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-icon"><ClipboardList size={22} /></div>
-            <b>No team-total markets cached</b>
-            <span>Run the Live Market Scanner once to populate the cache.</span>
-          </div>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>CLOSES</th>
-                  <th>LEAGUE</th>
-                  <th>TEAM</th>
-                  <th style={{ minWidth: 220 }}>LINE</th>
-                  <th>YES ASK</th>
-                  <th>NO ASK</th>
-                  <th>OI</th>
-                  <th>EVENT</th>
-                  <th>ACTION</th>
-                </tr>
-              </thead>
-              <tbody>
-                {teams.map((entry) => {
-                  const idx = chosenIndex(entry);
-                  const line = entry.lines[idx];
-                  const already = trades.some((t) => t.market === `${entry.team} over ${line?.line} pts`);
-                  return (
-                    <tr key={entry.key}>
-                      <td>
-                        <b>{closesIn(entry.gameTime)}</b>
-                        <small style={{ display: 'block', marginTop: 2 }}>{closeDate(entry.closeTime)}</small>
-                      </td>
-                      <td><span className="status-pill">{entry.league}</span></td>
-                      <td><b>{entry.team}</b></td>
-                      <td>
-                        <div className="line-slider">
-                          <input
-                            type="range"
-                            min={0}
-                            max={entry.lines.length - 1}
-                            step={1}
-                            value={idx}
-                            onChange={(e) => setChosen(entry, Number(e.target.value))}
-                            title={`Line ${line?.line} · YES ${cents(line?.yesAsk)}`}
-                          />
-                          <span className="line-value">{line?.line ?? '—'}</span>
-                        </div>
-                        <small className="line-range">
-                          {entry.lines[0]?.line} – {entry.lines[entry.lines.length - 1]?.line}
-                        </small>
-                      </td>
-                      <td>{cents(line?.yesAsk)}</td>
-                      <td>{cents(line?.noAsk)}</td>
-                      <td>{Math.round(entry.openInterest).toLocaleString()}</td>
-                      <td><small>{entry.event}</small></td>
-                      <td>
-                        <button
-                          className="secondary-btn"
-                          disabled={busy || !root || !paperMode || already || !line}
-                          onClick={() => recordTrade(entry)}
-                        >
-                          {already ? <><CheckCircle2 size={14} /> Done</> : 'Record'}
-                        </button>
-                        <a
-                          className="icon-btn"
-                          href={`https://kalshi.com/markets/${(entry.event || line?.ticker || '').toLowerCase()}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          title="Open on Kalshi"
-                          style={{ marginLeft: 6 }}
-                        >
-                          <ExternalLink size={14} />
-                        </a>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <div className="table-foot">
-          <span>Source: cached Kalshi scan · team-total markets only</span>
-          <span>{teams.length} entries</span>
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-heading"><div><h2>Recorded trades · season {season}/{week}</h2></div></div>
-        {trades.length === 0 ? (
-          <div className="empty-state"><b>No trades recorded yet</b><span>Record a recommendation above to see it here.</span></div>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>TIME</th><th>MATCHUP</th><th>MARKET</th><th>SIDE</th><th>PRICE</th><th>PAPER</th><th>STATUS</th></tr></thead>
-              <tbody>
-                {trades.map((t) => (
-                  <tr key={t.id}>
-                    <td>{new Date(t.timestamp).toLocaleTimeString()}</td>
-                    <td>{t.matchup}</td>
-                    <td>{t.market}</td>
-                    <td>{t.side}</td>
-                    <td>{t.price}¢</td>
-                    <td><span className={`status-pill ${t.paper ? 'paper' : 'live'}`}>{t.paper ? 'Paper' : 'Live'}</span></td>
-                    <td>{t.status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </div>
-  );
+      </article>)}</div> : <div className="empty-state"><b>No seasons created yet</b><span>Your committed season tokens will be listed here.</span></div>}
+    </section>
+  </div>;
 }

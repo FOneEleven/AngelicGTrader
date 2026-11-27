@@ -1,34 +1,72 @@
-# Kalshi AI Dashboard — starter
+# AngelicGTrader
 
-This is the first runnable browser dashboard shell. It is intentionally in **paper mode** and does not connect to Kalshi or place trades.
-
-## Requirements
-- Node.js 18 or newer
-- npm
+Local-first Kalshi sports-market research dashboard. The application is paper-only: it does not place live orders.
 
 ## Run locally
-1. Extract this folder.
-2. Open a terminal in the project folder.
-3. Run `npm install`
-4. Run `npm run dev`
-5. Open the local URL printed by Vite (usually http://localhost:5173).
 
-## Build check
-Run `npm run build`.
+- Node.js 18+
+- `npm install`
+- `npm run dev`
+- `npm test`
+- `npm run build`
 
-## Current state
-- Responsive React dashboard and navigation
-- Dashboard overview and illustrative opportunity pipeline
-- Placeholder pages for each planned module
-- Paper-mode indicator
-- No API keys, live data, or real-money trading
+## Live data services
 
-## Next implementation steps
-1. Connect Kalshi market discovery (read-only).
-2. Add sports schedules, standings, team scoring and injury data.
-3. Implement stakes qualification and probability estimates.
-4. Write immutable timestamped prediction records to TXT files.
-5. Add paper-trading settlement and performance reports.
-6. Generate manual betting recommendations with direct market links.
+Azure Function App: `angelicgtrader-dvhgf4dhc6hahqhs`
 
-Do not treat sample rows or displayed probabilities as real predictions.
+| Function | Status | Purpose |
+|---|---|---|
+| `GET /api/GetKalshiMarkets` | Deployed and previously working | Reads current Kalshi sports markets through the existing Azure proxy. |
+| `GET /api/GetTeamStatistics` | Deployed and tested | Retrieves NFL/NBA team and opponent statistics from free ESPN public endpoints. |
+| `POST /api/AnalyzeMarket` | Deployed and tested | Sends market/statistics context to OpenAI Responses API and returns structured analysis. |
+
+OpenAI uses model `gpt-6.2-sol` in the current Azure configuration. The OpenAI API key is stored only in Azure Function App settings as `OPENAI_API_KEY`; the model is configured by `OPENAI_MODEL`. Never put either secret in this repository or a Vite `VITE_*` variable.
+
+### Team statistics request
+
+```
+GET /api/GetTeamStatistics?league=NBA&team=Los%20Angeles%20Lakers&opponent=Boston%20Celtics&season=2026&seasontype=2
+```
+
+The tested v3 ESPN response includes `provider`, `league`, `season`, `seasonType`, `fetchedAt`, `team`, `opponent`, `modelInputs`, `recentGames`, and `dataQuality`. Team/opponent objects include identifiers, games played, PPG, points allowed, recent-five/recent-ten scoring, home/away splits, and wins/losses. Missing values remain null.
+
+### AnalyzeMarket request
+
+`POST /api/AnalyzeMarket` accepts `market`, `teamStats`, optional `opponentStats`, and optional `context`. It returns `prediction.probabilityYes`, expected team points, recommendation, confidence, reasoning, risks, missing-data notes, market-value calculations, and audit metadata.
+
+The HTTP trigger's `function.json` is configured with `authLevel: "anonymous"`; the browser client therefore calls the function directly. The OpenAI API key remains server-side in Azure settings and is never sent to the browser. Because the endpoint is anonymous, protect it against abuse with Azure rate limits, usage monitoring, and an origin restriction before broad public deployment.
+
+## AI Predictions pipeline
+
+The AI Predictions screen uses the market entries already loaded into the existing market cache. It resolves the opposing team from the same event's team-total markets, then:
+
+1. Checks `meta/team-stats-cache.txt` before requesting ESPN. Cache keys include league, team, opponent, season, and season type; entries expire after six hours.
+2. Supplies the cached/fetched ESPN team and opponent statistics to `POST /api/AnalyzeMarket` for every market line in each displayed entry.
+3. Stores OpenAI responses in `meta/ai-analysis-cache.txt` for twelve hours. The cache key includes ticker, line, YES/NO asks, and the statistics timestamp.
+4. Displays only the model probability and selected-side ask; raw team PPG and opponent PA remain internal model inputs.
+5. Provides a per-entry YES/NO selector. YES displays `probabilityYes`; NO displays `1 - probabilityYes`. The slider automatically selects the lowest executable ask among lines at or above the 90% probability target. If no line reaches 90%, it selects the highest-probability available line and shows that it is below target. The slider remains manually adjustable.
+6. Records paper predictions with the selected side, ask, model probability, source statistics, and AI reasoning.
+
+The two caches are plain JSON text files under the user's connected data folder's `meta/` directory. Cache reads occur before network requests, so revisiting the page does not repeat fresh ESPN/OpenAI calls for unchanged inputs.
+
+The 90% threshold is a selection target, not a guarantee of accuracy. OpenAI's estimate is contextual analysis and is not yet statistically calibrated. Model probability must be validated against historical, timestamp-correct outcomes before being used for stake sizing.
+
+## Backtesting foundation
+
+`src/lib/backtesting.js` is a calculation foundation, not a completed historical backtesting product. Required rules:
+- Fixed original stake every round; winnings tracked separately and never compounded.
+- Each season ends on its first settled loss.
+- Independent bets and multiple seasons may overlap the same market while retaining separate accounting.
+- Aggregate shared market exposure for portfolio risk without merging the underlying positions.
+- Store pre-event prediction timestamps, market asks, side, fees, model version, input statistics, source timestamps, verified results, and settlements.
+- Never use data published after the event start in a historical prediction.
+
+## Current development stage
+
+1. **Connected services — working:** Kalshi, ESPN, and OpenAI endpoints have been manually tested.
+2. **AI Predictions automatic data path — implemented in this PR update:** per-entry ESPN lookup, persistent metadata caching, per-line OpenAI analysis, YES/NO probability display, and 90% slider selection.
+3. **Validation — next:** run the frontend against the deployed Azure functions; verify opponent matching, response fields, probabilities, cache hits, and failures on real NBA/NFL markets.
+4. **Probability calibration and strategy — pending:** historical score distributions, calibrated probabilities, fee-aware EV, and out-of-sample tests.
+5. **Backtesting and portfolio UI — pending:** historical replay, seasons, independent positions, settlement ingestion, exposure aggregation, ROI, and calibration reports.
+
+No live order execution is implemented.

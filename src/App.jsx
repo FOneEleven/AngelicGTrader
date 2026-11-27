@@ -11,14 +11,19 @@ import PaperModeToggle from './components/PaperModeToggle';
 import Recommendations from './components/Recommendations';
 import LiveMarketScanner from './components/LiveMarketScanner';
 import AIPredictions from './components/AIPredictions';
-import { readSettings, writeSettings } from './lib/dataModel';
+import GameDay from './components/GameDay';
+import SeasonToken from './components/SeasonToken';
+import { readSettings, writeSettings, readTrades, readAllRecords, deleteTrade, listSeasonProfiles, updateSeasonProfile, advanceSeasonWeek } from './lib/dataModel';
+import { WEEKS } from './lib/dataFolder';
+import { readCache, isCacheFresh, appendCacheBatch } from './lib/marketCache';
+import { fetchSportsMarkets } from './lib/kalshi';
 
 const nav = [
   { label: 'Dashboard', icon: LayoutDashboard, group: 'WORKSPACE' },
   { label: 'Live Market Scanner', icon: Radar, group: 'WORKSPACE' },
   { label: 'AI Predictions', icon: BrainCircuit, group: 'WORKSPACE' },
-  { label: 'Betting Recommendations', icon: ClipboardList, group: 'WORKSPACE' },
-  { label: 'Competition Stakes', icon: Trophy, group: 'WORKSPACE' },
+  { label: 'Season Manager', icon: ClipboardList, group: 'WORKSPACE' },
+  { label: 'Game Day', icon: Trophy, group: 'WORKSPACE' },
   { label: 'Performance Analytics', icon: ChartNoAxesCombined, group: 'INSIGHTS' },
   { label: 'Prediction History', icon: History, group: 'INSIGHTS' },
   { label: 'Configuration', icon: Settings, group: 'SYSTEM' },
@@ -39,7 +44,56 @@ function StatCard({ title, value, note, icon: Icon, tone = 'gold', trend }) {
   </div>;
 }
 
-function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, paperMode }) {
+function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, paperMode, onNavigate, onActivity }) {
+  const [records, setRecords] = useState([]);
+  const [seasonProfiles, setSeasonProfiles] = useState([]);
+  useEffect(() => {
+    const root = dataFolder?.handle;
+    if (!root) { setRecords([]); setSeasonProfiles([]); return; }
+    let cancelled = false;
+    (async () => {
+      const season = dataFolder?.season || 1;
+      const all = await readAllRecords(root);
+      const profiles = await listSeasonProfiles(root);
+      if (!cancelled) setSeasonProfiles(profiles);
+      if (!all.length) {
+        const legacy = (await Promise.all(WEEKS.map((week) => readTrades(root, season, week)))).flat();
+        legacy.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        all.push(...legacy);
+      }
+      if (!cancelled) setRecords(all);
+    })().catch(() => { if (!cancelled) setRecords([]); });
+    return () => { cancelled = true; };
+  }, [dataFolder, refreshKey]);
+
+  async function updateDashboardPiece(profile, patch) {
+    try {
+      const updated = await updateSeasonProfile(dataFolder.handle, profile.id, patch);
+      setSeasonProfiles((old) => old.map((item) => item.id === updated.id ? updated : item));
+      onActivity?.('SEASON_UPDATE', updated.name + ' updated');
+    } catch (e) { console.error(e); }
+  }
+  async function startDashboardWeek(profile) {
+    try {
+      const updated = await advanceSeasonWeek(dataFolder.handle, profile);
+      setSeasonProfiles((old) => old.map((item) => item.id === updated.id ? updated : item));
+      onActivity?.('WEEK_START', updated.name + ' scheduled for ' + updated.nextScheduledWeek);
+    } catch (e) { console.error(e); }
+  }
+
+  // Warm the local market cache when Dashboard opens; the scanner viewer stays collapsed.
+  useEffect(() => {
+    const root = dataFolder?.handle;
+    if (!root) return;
+    let cancelled = false;
+    (async () => {
+      const fresh = await isCacheFresh(root);
+      if (fresh) return;
+      const markets = await fetchSportsMarkets();
+      if (!cancelled && markets.length) await appendCacheBatch(root, markets);
+    })().catch(() => {});
+    return () => { cancelled = true; };
+  }, [dataFolder]);
   return <>
     <div className="page-heading">
       <div><div className="eyebrow">OVERVIEW</div><h1>Dashboard</h1><p>Your sports-market intelligence at a glance.</p></div>
@@ -58,11 +112,13 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
     </div>
     <div className="content-grid">
       <section className="panel opportunities-panel">
-        <div className="panel-heading"><div><h2>Opportunity pipeline</h2><p>Illustrative layout · not live market data</p></div><button className="text-btn">View scanner <ChevronRight size={15}/></button></div>
-        <div className="table-wrap"><table><thead><tr><th>SPORT / MATCHUP</th><th>TEAM SCORING MARKET</th><th>MODEL PROB.</th><th>PRICE</th><th>STATUS</th></tr></thead><tbody>
-          {opportunities.map((o) => <tr key={o.matchup}><td><div className="match-sport"><span className={`sport-badge ${o.color}`}>{o.sport}</span><div><b>{o.matchup}</b><small>{o.league} · {o.time}</small></div></div></td><td>{o.market}</td><td><b className="prob">{o.probability}%</b></td><td>{o.price}</td><td><span className="status-pill">{o.status}</span></td></tr>)}
-        </tbody></table></div>
-        <div className="table-foot"><span>Sample rows demonstrate the interface only.</span><span>Live discovery not connected</span></div>
+        <div className="panel-heading"><div><h2>Records</h2><p>Predictions and recommendations saved using Record</p></div><button className="text-btn" onClick={() => onNavigate?.('AI Predictions')}>AI Predictions <ChevronRight size={15}/></button></div>
+        {records.length ? (
+          <div className="table-wrap"><table><thead><tr><th>RECORDED</th><th>MATCHUP</th><th>MARKET</th><th>SIDE</th><th>MODEL PROB.</th><th>PRICE</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>
+            {records.map((r) => <tr key={r.id}><td>{new Date(r.timestamp).toLocaleString()}</td><td>{r.matchup}</td><td>{r.market}</td><td>{r.side}</td><td>{r.modelProbability == null ? (r.probability + '%') : Math.round(Number(r.modelProbability) * 100) + '%'}</td><td>{r.price}¢</td><td><span className="status-pill">{r.status || 'open'}</span></td><td><button className="danger-text-btn" onClick={async () => { await deleteTrade(dataFolder.handle, r.id); setRecords((old) => old.filter((item) => item.id !== r.id)); onActivity?.('RECORD_REMOVED', 'Record removed · ' + r.market); }}>Remove</button></td></tr>)}
+          </tbody></table></div>
+        ) : <div className="empty-state"><div className="empty-icon"><ClipboardList size={22}/></div><b>No records yet</b><span>Use Record in AI Predictions to add an entry here.</span></div>}
+        <div className="table-foot"><span>Saved locally in your season/week records</span><span>{records.length} records</span></div>
       </section>
       <section className="panel side-panel">
         <div className="panel-heading"><div><h2>System checks</h2><p>Integration status</p></div><span className="check-ring"><ShieldCheck size={17}/></span></div>
@@ -76,6 +132,20 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
         <div className="side-tip"><Zap size={16}/><span>Next: connect market discovery and sports data, then start recording timestamped paper predictions.</span></div>
       </section>
     </div>
+    <section className="season-pieces-section">
+      <div className="season-pieces-heading"><div><h2>Season pieces</h2><p>Each committed token represents an individual season.</p></div><span>{seasonProfiles.length} active</span></div>
+      {seasonProfiles.length ? <div className="season-pieces-grid">{seasonProfiles.map((season) => <article className={`season-piece-card ${season.activePlayer === false ? 'season-inactive' : ''}`} key={season.id}>
+        <div className="season-piece-art"><SeasonToken pieceType={season.pieceType} baseColor={season.baseColor} size={104}/></div>
+        <div className="season-piece-info"><b>{season.name}</b><span>Season {season.season} · {season.paperMode ? 'Paper' : 'Live'} · {season.activePlayer === false ? 'Inactive' : 'Active'}</span><strong>$ {Number(season.balance).toFixed(2)}</strong><small>{season.pieceType} · {season.baseName} base · {season.strategy || 'midpoint'}</small>
+          <small>Next scheduled: {season.nextScheduledWeek || 'week1'}</small>
+          {season.activePlayer !== false && <div className="season-piece-controls">
+            <button className="secondary-btn" onClick={() => startDashboardWeek(season)}>Start next week</button>
+            <label className={`auto-switch ${season.auto ? 'enabled' : ''}`}><input type="checkbox" checked={!!season.auto} onChange={(e) => updateDashboardPiece(season, { auto: e.target.checked })}/><span className="auto-switch-track"></span><b>Auto</b></label>
+            <select value={season.strategy || 'midpoint'} onChange={(e) => updateDashboardPiece(season, { strategy: e.target.value })} aria-label={season.name + ' strategy'}><option value="midpoint">Midpoint</option><option value="cliff">Cliff</option></select>
+          </div>}
+        </div>
+      </article>)}</div> : <div className="season-pieces-empty">No season pieces yet. Create your first one in Season Manager.</div>}
+    </section>
     <LatestActivity dataFolder={dataFolder} filter={activityFilter} onFilterChange={onActivityFilter} key={refreshKey} />
   </>;
 }
@@ -84,7 +154,7 @@ function Placeholder({ page }) {
   const item = nav.find(n => n.label === page);
   const Icon = item?.icon || Activity;
   const descriptions = {
-    'Competition Stakes': 'Filter for games where teams have meaningful playoff or tournament incentives.',
+    'Game Day': 'Track season-piece earnings, active players, scheduled games and weekly starts.',
     'Performance Analytics': 'Measure prediction accuracy, simulated returns and performance by sport.',
     'Prediction History': 'Inspect the append-only TXT prediction and results history.',
     'Configuration': 'Configure probability thresholds, payout targets, data sources and risk limits.',
@@ -156,22 +226,26 @@ export default function App() {
         {active === 'Dashboard' && (
           <>
             <DataFolderConnect onFolderReady={setDataFolder} />
-            <Dashboard dataFolder={dataFolder} activityFilter={activityFilter} onActivityFilter={setActivityFilter} refreshKey={refreshKey} paperMode={paperMode} />
+            <Dashboard dataFolder={dataFolder} activityFilter={activityFilter} onActivityFilter={setActivityFilter} refreshKey={refreshKey} paperMode={paperMode} onNavigate={setActive} onActivity={handleActivity} />
           </>
         )}
         {active === 'Live Market Scanner' && (
-          <LiveMarketScanner dataFolder={dataFolder} onActivity={handleActivity} />
+          <LiveMarketScanner dataFolder={dataFolder} onActivity={handleActivity} onNavigate={setActive} />
         )}
         {active === 'AI Predictions' && (
           <AIPredictions dataFolder={dataFolder} onActivity={handleActivity} />
         )}
-        {active === 'Betting Recommendations' && (
-          <Recommendations dataFolder={dataFolder} onActivity={handleActivity} />
+        {active === 'Game Day' && (
+          <GameDay dataFolder={dataFolder} onActivity={handleActivity} />
+        )}
+        {active === 'Season Manager' && (
+          <Recommendations dataFolder={dataFolder} paperMode={paperMode} onActivity={handleActivity} />
         )}
         {active !== 'Dashboard'
           && active !== 'Live Market Scanner'
           && active !== 'AI Predictions'
-          && active !== 'Betting Recommendations'
+          && active !== 'Season Manager'
+          && active !== 'Game Day'
           && <Placeholder page={active} />}
       </div>
       <footer>
