@@ -13,8 +13,8 @@ function keyName(value) {
 }
 function findTeam(teams, name) {
   const key = keyName(name);
-  return teams.find((t) => keyName(t.name) === key)
-    || teams.find((t) => keyName(t.name).includes(key) || key.includes(keyName(t.name)));
+  return teams.find((t) => keyName(t.name) === key || keyName(t.abbreviation) === key)
+    || teams.find((t) => keyName(t.name).includes(key) || key.includes(keyName(t.name)) || keyName(t.abbreviation).includes(key));
 }
 function statSplit(payload, type) {
   const rows = payload?.stats || [];
@@ -58,7 +58,7 @@ async function fetchWeather(latitude, longitude, date, gameDateTime) {
   url.searchParams.set('temperature_unit', 'fahrenheit');
   url.searchParams.set('wind_speed_unit', 'mph');
   url.searchParams.set('precipitation_unit', 'mm');
-  url.searchParams.set('timezone', 'auto');
+  url.searchParams.set('timezone', 'UTC');
   url.searchParams.set('start_date', date);
   url.searchParams.set('end_date', date);
   const data = await getJson(url.toString(), 'MLB weather forecast');
@@ -108,13 +108,19 @@ export async function fetchMLBTeamStatistics({ team, opponent, gameTime }) {
   const opponentRow = findTeam(teams, opponent);
   if (!teamRow || !opponentRow) throw new Error('Could not match both MLB teams to official MLB team IDs.');
 
-  const scheduleUrl = new URL(MLB_API + '/schedule');
-  scheduleUrl.searchParams.set('sportId', '1');
-  scheduleUrl.searchParams.set('date', date);
-  scheduleUrl.searchParams.set('hydrate', 'team,venue,probablePitcher');
-  const schedule = await getJson(scheduleUrl.toString(), 'MLB schedule');
-  const games = (schedule.dates || []).flatMap((row) => row.games || []);
-  const game = games.find((row) => sameMatch(row, team, opponent));
+  const dateOffsets = [0, -1, 1];
+  let game = null;
+  for (const offset of dateOffsets) {
+    const scheduleDate = new Date(new Date(date + 'T12:00:00Z').getTime() + offset * 86400000).toISOString().slice(0, 10);
+    const scheduleUrl = new URL(MLB_API + '/schedule');
+    scheduleUrl.searchParams.set('sportId', '1');
+    scheduleUrl.searchParams.set('date', scheduleDate);
+    scheduleUrl.searchParams.set('hydrate', 'team,venue,probablePitcher');
+    const schedule = await getJson(scheduleUrl.toString(), 'MLB schedule');
+    const games = (schedule.dates || []).flatMap((row) => row.games || []);
+    game = games.find((row) => sameMatch(row, team, opponent));
+    if (game) break;
+  }
   if (!game) throw new Error('MLB schedule has no matching game on ' + date + '.');
 
   const [hitting, recentHitting, opponentPitching, recentOpponentPitching] = await Promise.all([
