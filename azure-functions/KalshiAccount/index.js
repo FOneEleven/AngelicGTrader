@@ -1,7 +1,8 @@
 // Kalshi account proxy. Credentials are decrypted and used only in memory.
+// DEBUG BUILD: returns a stage identifier and logs stack traces without logging secrets.
 // Azure settings:
 // KALSHI_ENCRYPTION_PRIVATE_KEY = matching RSA private key (PEM)
-// KALSHI_ENCRYPTION_PUBLIC_KEY  = matching RSA public key (PEM; GET tutorial only)
+// KALSHI_ENCRYPTION_PUBLIC_KEY  = matching RSA public key (PEM)
 // KALSHI_ENVIRONMENT            = production (default) or demo
 const { app } = require('@azure/functions');
 const crypto = require('node:crypto');
@@ -22,7 +23,6 @@ function response(status, jsonBody) {
   return { status, headers: cors, jsonBody };
 }
 
-// Azure App Settings sometimes store PEM line breaks as literal "\\n".
 function normalizePem(value, settingName) {
   if (typeof value !== 'string' || !value.trim()) {
     throw new Error(settingName + ' is missing.');
@@ -34,20 +34,21 @@ function normalizePem(value, settingName) {
   return pem;
 }
 
-function decryptCredential(envelope) {
-  // Parse the RSA key separately so PEM/configuration failures are distinguishable
-  // from envelope/decryption failures.
+function decryptCredential(envelope, setStage) {
+  setStage('parse Azure RSA private key');
   let rsaPrivateKey;
   try {
     const pem = normalizePem(process.env.KALSHI_ENCRYPTION_PRIVATE_KEY, 'KALSHI_ENCRYPTION_PRIVATE_KEY');
     rsaPrivateKey = crypto.createPrivateKey({ key: pem, format: 'pem' });
     if (rsaPrivateKey.asymmetricKeyType !== 'rsa' && rsaPrivateKey.asymmetricKeyType !== 'rsa-pss') {
-      throw new Error('Expected an RSA private key.');
+      throw new Error('Expected an RSA private key; received ' + rsaPrivateKey.asymmetricKeyType + '.');
     }
   } catch (error) {
-    throw new Error('Azure RSA private-key configuration is invalid: ' + error.message);
+    error.message = 'Azure RSA private-key configuration is invalid: ' + error.message;
+    throw error;
   }
 
+  setStage('validate encrypted credential envelope');
   const encryptedKey = Buffer.from(envelope.encryptedKey, 'base64');
   const iv = Buffer.from(envelope.iv, 'base64');
   const ciphertext = Buffer.from(envelope.ciphertext, 'base64');
@@ -55,6 +56,7 @@ function decryptCredential(envelope) {
     throw new Error('Encrypted credential envelope is malformed.');
   }
 
+  setStage('unwrap AES encryption key with Azure RSA key');
   let aesKey;
   try {
     aesKey = crypto.privateDecrypt({
@@ -62,12 +64,17 @@ function decryptCredential(envelope) {
       padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
       oaepHash: 'sha256',
     }, encryptedKey);
-  } catch {
-    throw new Error('Could not unwrap the encrypted credential. The browser public key and Azure RSA private key do not match, or the envelope is invalid.');
+  } catch (error) {
+    error.message = 'RSA-OAEP key unwrap failed: ' + error.message;
+    throw error;
   }
-  if (aesKey.length !== 32) throw new Error('Decrypted AES key has an invalid length.');
+  if (aesKey.length !== 32) {
+    aesKey.fill(0);
+    throw new Error('Decrypted AES key has an invalid length.');
+  }
 
   try {
+    setStage('decrypt Kalshi signing-key PEM with AES-256-GCM');
     const tag = ciphertext.subarray(ciphertext.length - 16);
     const data = ciphertext.subarray(0, ciphertext.length - 16);
     const decipher = crypto.createDecipheriv('aes-256-gcm', aesKey, iv);
@@ -75,23 +82,27 @@ function decryptCredential(envelope) {
     const plaintext = Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
     return normalizePem(plaintext, 'Decrypted Kalshi signing key');
   } catch (error) {
-    throw new Error('Could not decrypt the Kalshi signing key. Check that the browser and Azure encryption keys match. ' + error.message);
+    error.message = 'AES-GCM signing-key decryption failed: ' + error.message;
+    throw error;
   } finally {
     aesKey.fill(0);
   }
 }
 
-function signRequest(keyId, privatePem, method, path) {
+function signRequest(keyId, privatePem, method, path, setStage) {
+  setStage('parse decrypted Kalshi Ed25519 signing key');
   let signingKey;
   try {
     signingKey = crypto.createPrivateKey({ key: privatePem, format: 'pem' });
   } catch (error) {
-    throw new Error('The decrypted Kalshi signing key is not a valid PEM private key: ' + error.message);
+    error.message = 'Decrypted Kalshi signing key PEM parse failed: ' + error.message;
+    throw error;
   }
   if (signingKey.asymmetricKeyType !== 'ed25519') {
-    throw new Error('The Kalshi signing key must be Ed25519; received ' + signingKey.asymmetricKeyType + '.');
+    throw new Error('Kalshi signing key must be Ed25519; received ' + signingKey.asymmetricKeyType + '.');
   }
 
+  setStage('sign Kalshi balance request');
   const timestamp = String(Date.now());
   const message = Buffer.from(timestamp + method.toUpperCase() + path.split('?')[0], 'utf8');
   const signature = crypto.sign(null, message, signingKey);
@@ -109,8 +120,13 @@ app.http('KalshiAccount', {
   authLevel: 'anonymous',
   handler: async (request, context) => {
     if (request.method === 'OPTIONS') return { status: 204, headers: cors };
+
+    let stage = 'initialize request';
+    const setStage = (value) => { stage = value; };
+
     try {
       if (request.method === 'GET') {
+        stage = 'load Azure RSA public key';
         if (request.query.get('action') !== 'publicKey') {
           return response(400, { error: 'Use ?action=publicKey.' });
         }
@@ -118,6 +134,7 @@ app.http('KalshiAccount', {
         return response(200, { publicKey });
       }
 
+      stage = 'parse POST body';
       const body = await request.json();
       const keyId = String(body?.keyId || '').trim();
       if (!keyId || keyId.length > 128) return response(400, { error: 'A valid Kalshi API Key ID is required.' });
@@ -125,20 +142,26 @@ app.http('KalshiAccount', {
         return response(400, { error: 'Encrypted credential envelope is incomplete.' });
       }
 
-      const signingPem = decryptCredential(body.envelope);
+      const signingPem = decryptCredential(body.envelope, setStage);
+      setStage('select Kalshi environment and balance endpoint');
       const environment = process.env.KALSHI_ENVIRONMENT === 'demo' ? 'demo' : 'production';
       const path = PREFIX + '/portfolio/balance';
-      const headers = signRequest(keyId, signingPem, 'GET', path);
+      const headers = signRequest(keyId, signingPem, 'GET', path, setStage);
+
+      setStage('send signed request to Kalshi');
       const upstream = await fetch(HOSTS[environment] + path, {
         method: 'GET',
         headers,
         signal: AbortSignal.timeout(15000),
       });
+
+      setStage('read Kalshi balance response');
       const payload = await upstream.json().catch(() => ({}));
       if (!upstream.ok) {
         context.warn('Kalshi balance request failed with HTTP ' + upstream.status);
         return response(upstream.status === 401 ? 401 : 502, {
           error: 'Kalshi account verification failed.',
+          stage,
           kalshiStatus: upstream.status,
           detail: payload?.error?.details || payload?.error?.message || null,
         });
@@ -155,8 +178,14 @@ app.http('KalshiAccount', {
         accountNameAvailable: false,
       });
     } catch (error) {
-      context.error('Kalshi account proxy error: ' + error.message);
-      return response(500, { error: error.message || 'Kalshi account request failed.' });
+      const diagnostic = {
+        error: error.message || 'Kalshi account request failed.',
+        stage,
+        errorCode: error.code || error.library || null,
+        stack: error.stack || null,
+      };
+      context.error('KalshiAccount DEBUG failure: ' + JSON.stringify(diagnostic));
+      return response(500, diagnostic);
     }
   },
 });
