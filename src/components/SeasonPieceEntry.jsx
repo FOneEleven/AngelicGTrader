@@ -37,7 +37,7 @@ export default function SeasonPieceEntry({ profile, earnings = 0, onUpdate, onSt
   const riskByCondition = profile.riskByWorthCondition || {};
   const activeStrategy = strategiesByCondition[worth.condition] || (profile.selectionStrategy && profile.selectionStrategy !== 'baseball-no' ? profile.selectionStrategy : '');
   const baseballEnabled = profile.baseballNoStrategy === true || profile.selectionStrategy === 'baseball-no';
-  const activeRisk = riskByCondition[worth.condition] || profile.riskPreference || '';
+  const activeRisk = riskByCondition[worth.condition] || '';
   const ready = Boolean(activeStrategy && activeRisk);
   const messages = Array.isArray(profile.pieceMessages) ? profile.pieceMessages : [];
 
