@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ShieldCheck, Wallet, RefreshCw, ChevronDown, Link2, Unlink, AlertCircle } from 'lucide-react';
+import { ShieldCheck, Wallet, RefreshCw, Link2, Unlink, AlertCircle } from 'lucide-react';
 
 const API = 'https://angelicgtrader-dvhgf4dhc6hahqhs.westus3-01.azurewebsites.net/api/KalshiAccount';
 const META_FILE = 'kalshi-connection.json';
@@ -60,7 +60,7 @@ async function removeConnection(root) {
   await dir.removeEntry(META_FILE).catch(() => {});
 }
 
-export default function KalshiConnect({ dataFolderHandle }) {
+export default function KalshiConnect({ dataFolderHandle, onAccountChange }) {
   const [saved, setSaved] = useState(null);
   const [keyId, setKeyId] = useState('');
   const [privateKey, setPrivateKey] = useState('');
@@ -97,6 +97,7 @@ export default function KalshiConnect({ dataFolderHandle }) {
     const result = await response.json().catch(() => ({}));
     if (!response.ok || !result.connected) throw new Error(result.error || 'Kalshi account verification failed.');
     setBalance(result);
+    onAccountChange?.({ accountName: connection.nickname || 'Kalshi Account', balanceDollars: result.balanceDollars, portfolioValueDollars: result.portfolioValueDollars });
     return result;
   }
 
@@ -125,7 +126,8 @@ export default function KalshiConnect({ dataFolderHandle }) {
       setPrivateKey('');
       setKeyId('');
       setShowForm(false);
-      setNotice('Kalshi account verified. Encrypted credentials saved in your local meta folder.');
+      setShowGuide(false);
+      setNotice('Kalshi account connected.');
       setBalance(result);
     } catch (e) {
       setError(e.message || 'Could not connect to Kalshi.');
@@ -148,20 +150,20 @@ export default function KalshiConnect({ dataFolderHandle }) {
     setSaved(null); setBalance(null); setError(''); setNotice('Local Kalshi connection removed. You can also revoke the API key in Kalshi settings.');
   }
 
-  return <section className="kalshi-connect panel">
+  return <section className="kalshi-connect">
     <div className="kalshi-connect-head">
-      <div className="kalshi-connect-title"><span className="kalshi-connect-icon"><Wallet size={19}/></span><div><h2>Kalshi account</h2><p>{saved ? 'Encrypted local credentials · live account connection' : 'Connect your Kalshi account to display its available balance'}</p></div></div>
+      <div className="kalshi-connect-title"><span className="kalshi-connect-icon"><Wallet size={19}/></span><div><h2>Kalshi account</h2><p>{saved ? 'Connected account' : 'Connect your Kalshi account'}</p></div></div>
       {saved ? <span className="kalshi-connected"><i/> Connected</span> : <span className="kalshi-disconnected">Not connected</span>}
     </div>
     {saved && balance ? <div className="kalshi-account-summary">
-      <div><small>ACCOUNT</small><b>{saved.nickname || 'Kalshi Account'}</b><span>Key ····{saved.keyId.slice(-6)} · {balance.environment === 'demo' ? 'Demo' : 'Production'}</span></div>
+      <div><small>ACCOUNT</small><b>{saved.nickname || 'Kalshi Account'}</b><span>{balance.environment === 'demo' ? 'Demo account' : 'Production account'}</span></div>
       <div className="kalshi-balance"><small>AVAILABLE BALANCE</small><strong>${Number(balance.balanceDollars || 0).toFixed(2)}</strong><span>Portfolio value: ${Number(balance.portfolioValueDollars || 0).toFixed(2)}</span></div>
       <button className="secondary-btn" onClick={refresh} disabled={busy}><RefreshCw size={14}/> Refresh</button>
       <button className="text-btn" onClick={disconnect}><Unlink size={14}/> Disconnect</button>
     </div> : saved ? <div className="kalshi-saved-row"><ShieldCheck size={17}/> Credentials are saved encrypted locally. Refresh to verify the account and load its balance.<button className="secondary-btn" onClick={refresh} disabled={busy}>{busy ? 'Checking…' : 'Load balance'}</button></div> : <div className="kalshi-connect-actions">
       <button className="primary-btn" onClick={() => { setShowForm((v) => !v); setShowGuide(true); }} disabled={!dataFolderHandle}><Link2 size={15}/> Connect Kalshi</button>
       {!dataFolderHandle && <span>Connect the data folder first to save encrypted credentials locally.</span>}
-      <button className="text-btn" onClick={() => setShowGuide((v) => !v)}><ChevronDown size={15}/> API key setup tutorial</button>
+      <button className="text-btn" onClick={() => setShowGuide((v) => !v)}>API key setup tutorial</button>
     </div>}
     {showGuide && <div className="kalshi-guide">
       <b>Creating the Kalshi API key</b>
@@ -181,6 +183,6 @@ export default function KalshiConnect({ dataFolderHandle }) {
     </div>}
     {error && <div className="kalshi-error"><AlertCircle size={15}/>{error}</div>}
     {notice && <div className="kalshi-notice"><ShieldCheck size={15}/>{notice}</div>}
-    <div className="kalshi-footnote">Your Kalshi display name is not returned by the balance API, so the account label above is stored locally and can be customized.</div>
+
   </section>;
 }
