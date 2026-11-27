@@ -6,7 +6,6 @@ import {
   Clock3, Target, Zap, Menu, X, RefreshCw, Filter, ExternalLink
 } from 'lucide-react';
 import DataFolderConnect from './components/DataFolderConnect';
-import { FileText } from 'lucide-react';
 import LatestActivity from './components/LatestActivity';
 import PaperModeToggle from './components/PaperModeToggle';
 import Recommendations from './components/Recommendations';
