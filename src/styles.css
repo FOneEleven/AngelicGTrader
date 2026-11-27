@@ -1634,3 +1634,15 @@ tr.row-mid td {
 .season-piece-selected-game{color:#e1c47d!important;padding:5px 7px;border-left:2px solid #c69d4e;background:rgba(198,157,78,.07);line-height:1.45}
 
 .season-piece-card{position:relative}
+
+/* Season piece strategy graph controls */
+.piece-strategy-buttons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.piece-strategy-button{min-height:36px;padding:8px 9px;border:1px solid #713b42;border-radius:7px;background:#2a171b;color:#e7a0a5;font-size:10px;font-weight:700}
+.piece-strategy-button.is-selected{border-color:#397e50;background:#173322;color:#9ce0ad;box-shadow:inset 0 0 0 1px #397e5066}
+.piece-baseball-button{width:100%;margin-top:7px}
+.piece-grid-horizontal{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.piece-grid-band-button{min-height:34px;padding:6px 5px;border:1px solid #343c49;border-radius:7px;background:#111720;color:#9aa4b3;font-size:10px}
+.piece-grid-band-button.active{border-color:#c69d4e;background:#332918;color:#f1d18c}
+.piece-not-ready{display:inline-flex;width:max-content;max-width:100%;padding:5px 8px;border:1px solid #85434b;border-radius:6px;background:#301a1e;color:#f0a0a5;font-size:9px;font-weight:800;letter-spacing:.04em}
+.piece-strategy-note{font-size:9px;color:#8490a1}
+@media(max-width:700px){.piece-strategy-buttons{grid-template-columns:1fr}.piece-grid-horizontal{grid-template-columns:repeat(2,minmax(0,1fr))}}
