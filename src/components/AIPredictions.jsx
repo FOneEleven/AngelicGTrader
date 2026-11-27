@@ -109,7 +109,11 @@ export default function AIPredictions({ dataFolder, onActivity }) {
     })().catch((e) => setError(e.message));
   }, [root, season, week]);
 
-  const { predictions } = useMemo(() => ({ predictions: computePredictions(markets).predictions.filter((p) => selectedEntries.includes(p.key)) }), [markets, selectedEntries]);
+  const { predictions } = useMemo(() => ({
+    predictions: computePredictions(markets).predictions.filter((p) =>
+      ['NFL', 'NBA'].includes(String(p.league).toUpperCase()) || selectedEntries.includes(p.key)
+    ),
+  }), [markets, selectedEntries]);
 
   useEffect(() => {
     if (!root || !markets.length || !predictions.length) return;
