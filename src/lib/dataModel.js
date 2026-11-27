@@ -167,7 +167,7 @@ export async function appendTrade(root, season, week, trade) {
     trade.stake,
     trade.paper ? 'paper' : 'live',
     trade.status || 'open',
-    JSON.stringify({ strategy: trade.strategy ?? null, ticker: trade.ticker ?? null, line: trade.line ?? null, marketProbability: trade.marketProbability ?? null, modelProbability: trade.modelProbability ?? null, edge: trade.edge ?? null, modelVersion: trade.modelVersion ?? null, context: trade.context ?? null, reasoning: trade.reasoning ?? null }),
+    JSON.stringify({ strategy: trade.strategy ?? null, ticker: trade.ticker ?? null, line: trade.line ?? null, marketProbability: trade.marketProbability ?? null, modelProbability: trade.modelProbability ?? null, edge: trade.edge ?? null, modelVersion: trade.modelVersion ?? null, context: trade.context ?? null, reasoning: trade.reasoning ?? null, seasonPieceId: trade.seasonPieceId ?? null, week: trade.week ?? week, earnings: trade.earnings ?? null, profit: trade.profit ?? null, outcome: trade.outcome ?? null }),
   ].join('\t') + '\n';
   const w = await file.createWritable();
   await w.write(existing + header + row);
@@ -227,7 +227,7 @@ export async function createSeasonProfile(root, profile) {
   const season = (await latestSeason(root)) + 1;
   await createSeason(root, season);
   const createdAt = new Date().toISOString();
-  const saved = { ...profile, season, id: 'season-' + season, createdAt, status: 'active', name: profile.name || ('Season ' + season + '-' + profile.nonce) };
+  const saved = { ...profile, season, id: 'season-' + season, createdAt, status: 'active', activePlayer: true, auto: false, strategy: profile.strategy || 'midpoint', nextScheduledWeek: 'week1', name: profile.name || ('Season ' + season + '-' + profile.nonce) };
   const seasonDir = await root.getDirectoryHandle(SEASON_PREFIX + season, { create: false });
   await writeText(seasonDir, 'season-profile.json', JSON.stringify(saved, null, 2) + '\n');
   const profiles = await listSeasonProfiles(root);
@@ -236,6 +236,38 @@ export async function createSeasonProfile(root, profile) {
   await writeText(metaDir, SEASON_PROFILES_FILE, JSON.stringify(profiles, null, 2) + '\n');
   await appendActivity(root, 'SEASON_START', saved.name + ' created · ' + (saved.paperMode ? 'Paper' : 'Live') + ' season');
   return saved;
+}
+
+
+export async function updateSeasonProfile(root, profileId, patch) {
+  const profiles = await listSeasonProfiles(root);
+  const index = profiles.findIndex((profile) => profile.id === profileId);
+  if (index < 0) throw new Error('Season piece not found: ' + profileId);
+  const updated = { ...profiles[index], ...patch, updatedAt: new Date().toISOString() };
+  profiles[index] = updated;
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  await writeText(metaDir, SEASON_PROFILES_FILE, JSON.stringify(profiles, null, 2) + '\n');
+  const seasonDir = await root.getDirectoryHandle(SEASON_PREFIX + updated.season, { create: true });
+  await writeText(seasonDir, 'season-profile.json', JSON.stringify(updated, null, 2) + '\n');
+  return updated;
+}
+
+export async function readSeasonTrades(root, profile) {
+  if (!profile) return [];
+  const trades = [];
+  for (const week of WEEKS) {
+    const rows = await readTrades(root, profile.season, week);
+    for (const trade of rows) {
+      if (trade.seasonPieceId === profile.id) trades.push({ ...trade, week });
+    }
+  }
+  return trades.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+}
+
+export async function advanceSeasonWeek(root, profile) {
+  const index = Math.max(0, WEEKS.indexOf(profile?.nextScheduledWeek || 'week1'));
+  const nextScheduledWeek = WEEKS[Math.min(index + 1, WEEKS.length - 1)];
+  return updateSeasonProfile(root, profile.id, { nextScheduledWeek });
 }
 
 export async function readTrades(root, season, week) {
