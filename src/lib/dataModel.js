@@ -266,7 +266,7 @@ export async function readSeasonTrades(root, profile) {
 
 export async function advanceSeasonWeek(root, profile) {
   const index = Math.max(0, WEEKS.indexOf(profile?.nextScheduledWeek || 'week1'));
-  const nextScheduledWeek = WEEKS[Math.min(index + 1, WEEKS.length - 1)];
+  const nextScheduledWeek = WEEKS[(index + 1) % WEEKS.length];
   return updateSeasonProfile(root, profile.id, { nextScheduledWeek });
 }
 
