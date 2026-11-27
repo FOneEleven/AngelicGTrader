@@ -99,6 +99,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
   const [selectedEntries, setSelectedEntries] = useState([]);
   const [piecePrompt, setPiecePrompt] = useState('');
   const [pieceQuotaFilled, setPieceQuotaFilled] = useState(false);
+  const [otherPieceTickers, setOtherPieceTickers] = useState([]);
   const root = dataFolder?.handle;
 
   useEffect(() => {
@@ -115,6 +116,9 @@ export default function AIPredictions({ dataFolder, onActivity }) {
       const activeProfile = profiles.find((profile) => profile.id === 'season-' + (activeSeason || season)) || null;
       setSeasonProfile(activeProfile);
       setPiecePrompt(activeProfile?.piecePrompt || '');
+      const otherProfiles = profiles.filter((profile) => profile.id !== activeProfile?.id && profile.activePlayer !== false);
+      const otherTrades = (await Promise.all(otherProfiles.map((profile) => readSeasonTrades(root, profile)))).flat();
+      setOtherPieceTickers(otherTrades.map((trade) => trade.ticker).filter(Boolean));
       const profileTrades = activeProfile ? await readSeasonTrades(root, activeProfile) : [];
       const accruedProfit = profileTrades.reduce((sum, trade) => sum + (Number(trade.profit) || 0), 0);
       setPieceQuotaFilled(!!activeProfile && accruedProfit >= (Number(activeProfile.quotaValue ?? activeProfile.balance) || 0));
@@ -317,10 +321,21 @@ export default function AIPredictions({ dataFolder, onActivity }) {
     if (leagueFor(p) !== 'MLB') {
       const mode = seasonProfile?.selectionStrategy || 'standard';
       const gates = { standard: { probability: 0.92, confidence: 90, payout: 1.2 }, value: { probability: 0.84, confidence: 84, payout: 1.4 }, highroller: { probability: 0.70, confidence: 70, payout: 1.75 } };
-      const gate = gates[mode] || gates.standard;
+      const gate = { ...(gates[mode] || gates.standard) };
+      if (seasonProfile?.riskPreference === 'probability') { gate.probability += 0.02; gate.confidence += 2; }
+      if (seasonProfile?.riskPreference === 'value') { gate.probability = Math.max(0.5, gate.probability - 0.02); gate.confidence = Math.max(50, gate.confidence - 2); gate.payout += 0.1; }
       const confidence = Number(analysis?.prediction?.confidence) || 0;
       const payout = ask > 0 ? 1 / ask : 0;
       if (mode === 'value' && (!pieceQuotaFilled || seasonProfile?.safe === true)) { setError('Value strategy requires this piece to have filled its monetary quota and not be marked Safe.'); return; }
+      if (seasonProfile?.diversityMode === 'avoid-overlap' && otherPieceTickers.includes(line.ticker)) { setError('This game is already selected by another active season piece. Diversity mode blocks overlap.'); return; }
+      if (mode === 'highroller') {
+        const stats = statsByKey[p.key];
+        const teamPPG = Number(stats?.team?.pointsPerGame) || 0;
+        const opponentPA = Number(stats?.opponent?.pointsAllowedPerGame) || 0;
+        const shootoutProfile = leagueFor(p) === 'NFL' ? teamPPG >= 22 && opponentPA >= 22
+          : leagueFor(p) === 'NBA' ? teamPPG >= 110 && opponentPA >= 110 : false;
+        if (!shootoutProfile) { setError('High Roller requires a high-scoring team profile against a weaker defense; this matchup does not meet the statistical screen.'); return; }
+      }
       if (probability < gate.probability || confidence < gate.confidence || payout <= gate.payout) { setError(mode + ' strategy thresholds not met: probability ' + Math.round(probability * 100) + '% / confidence ' + confidence + ' / payout ' + payout.toFixed(2) + '×.'); return; }
     }
     if (trades.some((t) => t.ticker === line.ticker && t.side === side)) return;
