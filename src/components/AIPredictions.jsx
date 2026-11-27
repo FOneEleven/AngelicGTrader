@@ -85,6 +85,8 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
   const [markets, setMarkets] = useState([]);
   const [trades, setTrades] = useState([]);
   const [seasonProfile, setSeasonProfile] = useState(null);
+  const [seasonProfiles, setSeasonProfiles] = useState([]);
+  const [selectedPieceId, setSelectedPieceId] = useState('');
   const [paperMode, setPaperMode] = useState(true);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState('');
@@ -114,7 +116,9 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       const activeSeason = await latestSeason(root);
       if (activeSeason && activeSeason !== season) setSeason(activeSeason);
       const profiles = await listSeasonProfiles(root);
-      const activeProfile = profiles.find((profile) => profile.id === scanRequest?.profileId) || profiles.find((profile) => profile.id === 'season-' + (activeSeason || season)) || null;
+      setSeasonProfiles(profiles);
+      const activeProfile = profiles.find((profile) => profile.id === scanRequest?.profileId) || profiles.find((profile) => profile.id === selectedPieceId) || profiles.find((profile) => profile.id === 'season-' + (activeSeason || season)) || null;
+      if (activeProfile && selectedPieceId !== activeProfile.id) setSelectedPieceId(activeProfile.id);
       if (activeProfile && activeProfile.season !== season) setSeason(activeProfile.season);
       setSeasonProfile(activeProfile);
       setPiecePrompt(activeProfile?.piecePrompt || '');
@@ -126,9 +130,9 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       setPieceQuotaFilled(!!activeProfile && accruedProfit >= (Number(activeProfile.quotaValue ?? activeProfile.balance) || 0));
       const activeWeek = activeProfile?.nextScheduledWeek || week;
       if (activeWeek !== week) setWeek(activeWeek);
-      setTrades(await readTrades(root, activeSeason || season, activeWeek));
+      setTrades(await readTrades(root, activeProfile?.season || activeSeason || season, activeWeek));
     })().catch((e) => setError(e.message));
-  }, [root, season, week, scanRequest?.requestId]);
+  }, [root, season, week, scanRequest?.requestId, selectedPieceId]);
 
   const { predictions } = useMemo(() => ({
     predictions: computePredictions(markets).predictions.filter((p) =>
@@ -444,7 +448,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       {progress && <div className="notice"><RefreshCw size={16}/><b>{progress}</b></div>}
       <section className="panel">
         <div className="panel-heading"><div><h2>AI prediction entries · {predictions.length}</h2><p>NFL/NBA/MLB entries are populated automatically. The active season piece's strategy filters the entries shown here.</p></div></div>
-        <div className="piece-instruction-box"><label htmlFor="piece-ai-instruction">Instruction to this season piece</label><textarea id="piece-ai-instruction" rows="3" value={piecePrompt} onChange={(e) => setPiecePrompt(e.target.value)} placeholder="Ask this piece to investigate a matchup factor, trend, or concern. Azure will test the claim against evidence rather than assume it is true."/><button className="secondary-btn" disabled={!seasonProfile || busy} onClick={savePiecePrompt}>Save piece instruction</button></div>
+        <div className="piece-instruction-box"><label htmlFor="active-season-piece">Active season piece</label><select id="active-season-piece" value={selectedPieceId} onChange={(e) => setSelectedPieceId(e.target.value)}>{seasonProfiles.filter((profile) => profile.activePlayer !== false).map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.selectionStrategy || "standard"}</option>)}</select><label htmlFor="piece-ai-instruction">Instruction to this season piece</label><textarea id="piece-ai-instruction" rows="3" value={piecePrompt} onChange={(e) => setPiecePrompt(e.target.value)} placeholder="Ask this piece to investigate a matchup factor, trend, or concern. Azure will test the claim against evidence rather than assume it is true."/><button className="secondary-btn" disabled={!seasonProfile || busy} onClick={savePiecePrompt}>Save piece instruction</button></div>
         {!predictions.length ? (
           <div className="empty-state"><div className="empty-icon"><AlertCircle size={22}/></div><b>No AI prediction entries selected</b><span>Open Live Market Scanner and use Add ladder on a team-total market.</span></div>
         ) : (
