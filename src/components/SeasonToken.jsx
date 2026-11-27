@@ -5,6 +5,8 @@ export default function SeasonToken({ pieceType = 'Quarterback', baseColor = '#c
   const type = String(pieceType).toLowerCase();
   const basketball = /dunk|posterizer|dribbler|3pt/.test(type);
   const football = /quarterback|running back|receiver|lineman/.test(type);
+  const baseball = /baseball|slugger|heater|catcher|runner/.test(type);
+  const baseballRole = type.includes('slugger') ? 'slugger' : type.includes('heater') ? 'heater' : type.includes('catcher') ? 'catcher' : 'runner';
   const armPoses = {
     quarterback: 'M48 50 L34 54 L29 45 M72 50 L87 58 L94 54',
     'running back': 'M48 50 L42 63 L54 72 M72 50 L82 62 L78 77',
@@ -15,7 +17,13 @@ export default function SeasonToken({ pieceType = 'Quarterback', baseColor = '#c
     dribbler: 'M48 50 L34 64 L30 84 M72 50 L85 66 L91 88',
     '3pt shooter': 'M48 50 L42 35 L49 22 M72 50 L78 35 L71 22',
   };
-  const armPath = armPoses[type] || armPoses.quarterback;
+  const baseballPoses = {
+    slugger: 'M48 50 L35 42 L31 28 M72 50 L84 40 L91 25',
+    heater: 'M48 50 L35 39 L31 22 M72 50 L82 57 L91 70',
+    catcher: 'M48 50 L35 63 L31 79 M72 50 L85 63 L89 79',
+    runner: 'M48 50 L34 39 L25 48 M72 50 L86 38 L95 49',
+  };
+  const armPath = baseball ? baseballPoses[baseballRole] : (armPoses[type] || armPoses.quarterback);
   const ballTransform = type === 'quarterback' ? 'translate(29 45) rotate(-25)' :
     type === 'running back' ? 'translate(54 73) rotate(-25)' :
     type === 'receiver' ? 'translate(90 23) rotate(-25)' :
@@ -23,6 +31,7 @@ export default function SeasonToken({ pieceType = 'Quarterback', baseColor = '#c
     type === 'slam dunk' ? 'translate(91 17)' :
     type === 'posterizer' ? 'translate(60 15)' :
     type === 'dribbler' ? 'translate(91 90)' : 'translate(60 18)';
+  const baseballBallTransform = baseballRole === 'slugger' ? 'translate(95 23)' : baseballRole === 'heater' ? 'translate(92 71)' : baseballRole === 'catcher' ? 'translate(60 83)' : 'translate(25 49)';
   return <div className="season-token-art" style={{ width: size, height: size + 12 }}>
     <svg viewBox="0 0 120 138" width={size} height={size + 12} role="img" aria-label={pieceType + ' statue token'}>
       <defs>
@@ -37,6 +46,8 @@ export default function SeasonToken({ pieceType = 'Quarterback', baseColor = '#c
       <path d={armPath} fill="none" stroke={'url(#statue-metal-' + uid + ')'} strokeWidth="8" strokeLinecap="round" strokeLinejoin="round"/>
       <path d="M51 83 L45 101 M69 83 L76 101" fill="none" stroke={'url(#statue-metal-' + uid + ')'} strokeWidth="9" strokeLinecap="round"/>
       {football && <g transform={ballTransform}><ellipse cx="0" cy="0" rx="8" ry="5" fill="#6d3e1e" stroke="#d6b27a" strokeWidth="1.2"/><path d="M-4 0H4 M0 -3V3" stroke="#f3e2bd" strokeWidth="1"/></g>}
+      {baseball && <g transform={baseballBallTransform}><circle cx="0" cy="0" r="7" fill="#f5f1e8" stroke="#b7a58c" strokeWidth="1"/><path d="M-3 -5 Q1 -1 -3 5 M3 -5 Q-1 -1 3 5" fill="none" stroke="#bd4b4b" strokeWidth="1.1"/></g>}
+      {baseball && baseballRole === 'slugger' && <g transform="translate(92 25) rotate(35)"><rect x="-2" y="-24" width="4" height="25" rx="2" fill="#9b6a35" stroke="#f0d19a" strokeWidth=".8"/><rect x="-2.5" y="-25" width="5" height="5" rx="2" fill="#d8b47b"/></g>}
       {basketball && <g transform={ballTransform}><circle cx="0" cy="0" r="8" fill="#b96f2e" stroke="#f2c17a" strokeWidth="1.2"/><path d="M-8 0H8 M0 -8V8 M-6 -6Q6 6 6 -6 M-6 6Q6 -6 6 6" fill="none" stroke="#5d351d" strokeWidth="1"/></g>}
       <path d="M51 31 Q60 18 69 31" fill="none" stroke="#f4dfaa" strokeWidth="2" opacity=".7"/>
     </svg>
