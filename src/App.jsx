@@ -22,7 +22,7 @@ const nav = [
   { label: 'Live Market Scanner', icon: Radar, group: 'WORKSPACE' },
   { label: 'AI Predictions', icon: BrainCircuit, group: 'WORKSPACE' },
   { label: 'Season Manager', icon: ClipboardList, group: 'WORKSPACE' },
-  { label: 'Competition Stakes', icon: Trophy, group: 'WORKSPACE' },
+  { label: 'Game Day', icon: Trophy, group: 'WORKSPACE' },
   { label: 'Performance Analytics', icon: ChartNoAxesCombined, group: 'INSIGHTS' },
   { label: 'Prediction History', icon: History, group: 'INSIGHTS' },
   { label: 'Configuration', icon: Settings, group: 'SYSTEM' },
@@ -99,7 +99,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
         <div className="panel-heading"><div><h2>Records</h2><p>Predictions and recommendations saved using Record</p></div><button className="text-btn" onClick={() => onNavigate?.('AI Predictions')}>AI Predictions <ChevronRight size={15}/></button></div>
         {records.length ? (
           <div className="table-wrap"><table><thead><tr><th>RECORDED</th><th>MATCHUP</th><th>MARKET</th><th>SIDE</th><th>MODEL PROB.</th><th>PRICE</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>
-            {records.map((r) => <tr key={r.id}><td>{new Date(r.timestamp).toLocaleString()}</td><td>{r.matchup}</td><td>{r.market}</td><td>{r.side}</td><td>{r.modelProbability == null ? (r.probability + '%') : Math.round(Number(r.modelProbability) * 100) + '%'}</td><td>{r.price}¢</td><td><span className="status-pill">{r.status || 'open'}</span></td><td><button className="danger-text-btn" onClick={async () => { if (!window.confirm('Remove this record from AI Predictions and Dashboard Records?')) return; await deleteTrade(dataFolder.handle, r.id); setRecords((old) => old.filter((item) => item.id !== r.id)); onActivity?.('RECORD_REMOVED', 'Record removed · ' + r.market); }}>Remove</button></td></tr>)}
+            {records.map((r) => <tr key={r.id}><td>{new Date(r.timestamp).toLocaleString()}</td><td>{r.matchup}</td><td>{r.market}</td><td>{r.side}</td><td>{r.modelProbability == null ? (r.probability + '%') : Math.round(Number(r.modelProbability) * 100) + '%'}</td><td>{r.price}¢</td><td><span className="status-pill">{r.status || 'open'}</span></td><td><button className="danger-text-btn" onClick={async () => { await deleteTrade(dataFolder.handle, r.id); setRecords((old) => old.filter((item) => item.id !== r.id)); onActivity?.('RECORD_REMOVED', 'Record removed · ' + r.market); }}>Remove</button></td></tr>)}
           </tbody></table></div>
         ) : <div className="empty-state"><div className="empty-icon"><ClipboardList size={22}/></div><b>No records yet</b><span>Use Record in AI Predictions to add an entry here.</span></div>}
         <div className="table-foot"><span>Saved locally in your season/week records</span><span>{records.length} records</span></div>
@@ -131,7 +131,7 @@ function Placeholder({ page }) {
   const item = nav.find(n => n.label === page);
   const Icon = item?.icon || Activity;
   const descriptions = {
-    'Competition Stakes': 'Filter for games where teams have meaningful playoff or tournament incentives.',
+    'Game Day': 'Track season-piece earnings, active players, scheduled games and weekly starts.',
     'Performance Analytics': 'Measure prediction accuracy, simulated returns and performance by sport.',
     'Prediction History': 'Inspect the append-only TXT prediction and results history.',
     'Configuration': 'Configure probability thresholds, payout targets, data sources and risk limits.',
