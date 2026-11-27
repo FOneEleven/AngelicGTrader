@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BrainCircuit, ExternalLink, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { readCache } from '../lib/marketCache';
 import { readSettings, appendTrade, readTrades, readAIPredictionSelections, deleteTrade, latestSeason, listSeasonProfiles, updateSeasonProfile, readSeasonTrades } from '../lib/dataModel';
@@ -81,7 +81,7 @@ function analysisKey(market, stats) {
   });
 }
 
-export default function AIPredictions({ dataFolder, onActivity }) {
+export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
   const [markets, setMarkets] = useState([]);
   const [trades, setTrades] = useState([]);
   const [seasonProfile, setSeasonProfile] = useState(null);
@@ -100,6 +100,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
   const [piecePrompt, setPiecePrompt] = useState('');
   const [pieceQuotaFilled, setPieceQuotaFilled] = useState(false);
   const [otherPieceTickers, setOtherPieceTickers] = useState([]);
+  const handledScanRef = useRef(null);
   const root = dataFolder?.handle;
 
   useEffect(() => {
@@ -113,7 +114,8 @@ export default function AIPredictions({ dataFolder, onActivity }) {
       const activeSeason = await latestSeason(root);
       if (activeSeason && activeSeason !== season) setSeason(activeSeason);
       const profiles = await listSeasonProfiles(root);
-      const activeProfile = profiles.find((profile) => profile.id === 'season-' + (activeSeason || season)) || null;
+      const activeProfile = profiles.find((profile) => profile.id === scanRequest?.profileId) || profiles.find((profile) => profile.id === 'season-' + (activeSeason || season)) || null;
+      if (activeProfile && activeProfile.season !== season) setSeason(activeProfile.season);
       setSeasonProfile(activeProfile);
       setPiecePrompt(activeProfile?.piecePrompt || '');
       const otherProfiles = profiles.filter((profile) => profile.id !== activeProfile?.id && profile.activePlayer !== false);
@@ -126,7 +128,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
       if (activeWeek !== week) setWeek(activeWeek);
       setTrades(await readTrades(root, activeSeason || season, activeWeek));
     })().catch((e) => setError(e.message));
-  }, [root, season, week]);
+  }, [root, season, week, scanRequest?.requestId]);
 
   const { predictions } = useMemo(() => ({
     predictions: computePredictions(markets).predictions.filter((p) =>
@@ -242,7 +244,8 @@ export default function AIPredictions({ dataFolder, onActivity }) {
 
   async function analyzeSelectedLine(p, line) {
     const stats = statsByKey[p.key];
-    if (!root || !stats || !line || analyses[line.ticker]) return;
+    if (!root || !stats || !line) return null;
+    if (analyses[line.ticker]) return analyses[line.ticker];
     setBusy(true);
     setProgress('Analyzing selected line: ' + p.team + ' over ' + line.line);
     setAnalysisErrors((old) => ({ ...old, [p.key]: '' }));
@@ -267,8 +270,10 @@ export default function AIPredictions({ dataFolder, onActivity }) {
       });
       if (!cached) await setCachedAnalysis(root, cacheKey, data);
       setAnalyses((old) => ({ ...old, [line.ticker]: data }));
+      return data;
     } catch (e) {
       setAnalysisErrors((old) => ({ ...old, [p.key]: e.message || 'Selected-line analysis failed' }));
+      return null;
     } finally {
       setBusy(false);
       setProgress('');
@@ -305,6 +310,64 @@ export default function AIPredictions({ dataFolder, onActivity }) {
     } catch (e) { setError(e.message || 'Piece instruction reassessment failed'); }
     finally { setBusy(false); }
   }
+
+
+  useEffect(() => {
+    if (!scanRequest?.requestId || handledScanRef.current === scanRequest.requestId) return;
+    if (!seasonProfile || seasonProfile.id !== scanRequest.profileId || !predictions.length || !Object.keys(statsByKey).length) return;
+    handledScanRef.current = scanRequest.requestId;
+    (async () => {
+      setError('');
+      setProgress('Start next week: scanning upcoming games and every slider line…');
+      const selected = {};
+      const mode = seasonProfile.selectionStrategy || 'standard';
+      const gates = { standard: { probability: 0.92, confidence: 90, payout: 1.2 }, value: { probability: 0.84, confidence: 84, payout: 1.4 }, highroller: { probability: 0.70, confidence: 70, payout: 1.75 } };
+      const gate = { ...(gates[mode] || gates.standard) };
+      if (seasonProfile.riskPreference === 'probability') { gate.probability += 0.02; gate.confidence += 2; }
+      if (seasonProfile.riskPreference === 'value') { gate.probability = Math.max(0.5, gate.probability - 0.02); gate.confidence = Math.max(50, gate.confidence - 2); gate.payout += 0.1; }
+      for (const p of predictions) {
+        const gameTime = p.gameTime || p.expectedExpiration || p.closeTime;
+        if (gameTime && Number.isFinite(Date.parse(gameTime)) && Date.parse(gameTime) <= Date.now()) continue;
+        const stats = statsByKey[p.key];
+        if (!stats) continue;
+        let best = null;
+        for (const line of p.lines) {
+          setProgress('Scanning ' + p.team + ' line ' + line.line + ' · ' + p.league);
+          const analysis = await analyzeSelectedLine(p, line);
+          if (!analysis?.prediction) continue;
+          const sides = leagueFor(p) === 'MLB' ? ['NO'] : ['YES', 'NO'];
+          for (const side of sides) {
+            const probability = probabilityFor(analysis, side);
+            const ask = askFor(line, side);
+            const payout = ask > 0 ? 1 / ask : 0;
+            const confidence = Number(analysis.prediction.confidence) || 0;
+            if (probability == null || ask == null) continue;
+            if (leagueFor(p) === 'MLB') {
+              if (analysis.mlbEligibility?.eligible !== true || probability < 0.90 || confidence < 85) continue;
+            } else {
+              if (mode === 'value' && (!pieceQuotaFilled || seasonProfile.safe === true)) continue;
+              if (mode === 'highroller') {
+                const teamPPG = Number(stats.team?.pointsPerGame) || 0;
+                const opponentPA = Number(stats.opponent?.pointsAllowedPerGame) || 0;
+                const shootout = leagueFor(p) === 'NFL' ? teamPPG >= 22 && opponentPA >= 22
+                  : leagueFor(p) === 'NBA' ? teamPPG >= 110 && opponentPA >= 110 : false;
+                if (!shootout) continue;
+              }
+              if (seasonProfile.diversityMode === 'avoid-overlap' && otherPieceTickers.includes(line.ticker)) continue;
+              if (probability < gate.probability || confidence < gate.confidence || payout <= gate.payout) continue;
+            }
+            const value = probability - ask;
+            if (!best || value > best.value) best = { index: p.lines.findIndex((item) => item.ticker === line.ticker), side, value };
+          }
+        }
+        if (best) selected[p.key] = best;
+      }
+      setSliderIdx((old) => ({ ...old, ...Object.fromEntries(Object.entries(selected).map(([key, item]) => [key, item.index])) }));
+      setSideByKey((old) => ({ ...old, ...Object.fromEntries(Object.entries(selected).map(([key, item]) => [key, item.side])) }));
+      setProgress('Weekly scan complete · ' + Object.keys(selected).length + ' qualifying game selections found. Nothing was placed automatically.');
+      onActivity?.('WEEK_SCAN_COMPLETE', Object.keys(selected).length + ' qualifying selections found for ' + seasonProfile.name);
+    })().catch((e) => setError(e.message || 'Weekly scan failed'));
+  }, [scanRequest, seasonProfile, predictions, statsByKey]);
 
   function setSide(p, side) {
     setSideByKey((old) => ({ ...old, [p.key]: side }));
