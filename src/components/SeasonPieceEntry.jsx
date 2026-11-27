@@ -20,7 +20,7 @@ function strategyGrid(profile, currentWorth) {
   const ratio = quota > 0 ? currentWorth / quota : 0;
   const band = ratio >= 3 ? '3x' : ratio >= 2 ? '2x' : ratio >= 1 ? 'break-even' : 'pre-even';
   const offset = GRID_BANDS.findIndex((item) => item.id === band);
-  return { ratio, band, strategies: [...STRATEGIES.slice(offset), ...STRATEGIES.slice(0, offset)] };
+  return { ratio, band: profile.gridBand || band, strategies: [...STRATEGIES.slice(offset), ...STRATEGIES.slice(0, offset)] };
 }
 
 export default function SeasonPieceEntry({ profile, earnings = 0, onUpdate, onStartWeek, onNavigate, busy = false, compact = false, onHide }) {
