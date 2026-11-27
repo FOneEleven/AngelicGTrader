@@ -1342,3 +1342,45 @@ tr.row-mid td {
     background: transparent
 }
 .technical-market-box .panel-heading { padding-top: 13px }
+
+
+/* Season Manager and collectible season pieces */
+.primary-btn{border:1px solid #b58c42;background:linear-gradient(135deg,#d7b56b,#98702f);color:#17130b;border-radius:8px;padding:11px 15px;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-size:11px;font-weight:700}
+.primary-btn:disabled{opacity:.5;cursor:not-allowed}
+.danger-text-btn{border:1px solid #57343a;background:#24171b;color:#e5a0a4;border-radius:6px;padding:6px 9px;font-size:9px}
+.season-create-layout{display:grid;grid-template-columns:minmax(240px,.9fr) minmax(280px,1.1fr);gap:20px;padding:10px 20px 22px}
+.season-token-preview{min-height:300px;border:1px solid #33303a;border-radius:12px;background:radial-gradient(ellipse at 50% 38%,#3a3020 0%,#191a20 48%,#12151c 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:18px}
+.season-token-preview>b{font:600 15px 'Space Grotesk';color:#f0d89e}
+.season-token-preview>span{font-size:10px;color:#8992a1;margin-bottom:7px}
+.season-token-art{display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 10px 12px #0008)}
+.season-create-controls{display:flex;flex-direction:column;gap:10px;justify-content:center;max-width:520px}
+.season-create-controls>label{font-size:10px;color:#aeb6c3;font-weight:600}
+.season-balance-input{display:flex;align-items:center;gap:9px;border:1px solid #343c49;background:#0d1118;border-radius:8px;padding:0 12px;height:43px;color:#d8bb79}
+.season-balance-input input{width:100%;background:transparent;border:0;outline:0;color:#e8e9ed;font-size:16px}
+.season-mode-card{display:flex;align-items:center;gap:10px;border:1px solid #303744;background:#151a22;border-radius:8px;padding:12px}
+.season-mode-card>div{display:flex;flex-direction:column;gap:3px}
+.season-mode-card b{font-size:11px}.season-mode-card small{font-size:9px;color:#7e8999}
+.season-name-preview{display:flex;flex-direction:column;gap:5px;border-left:2px solid #b99953;background:#191a20;padding:12px}
+.season-name-preview small{font-size:8px;letter-spacing:1.2px;color:#a78b50}
+.season-name-preview b{font:600 14px 'Space Grotesk';color:#ead39c}
+.season-name-preview span{font-size:9px;color:#8992a1}
+.season-commit{align-self:flex-start;margin-top:5px}
+.season-success{font-size:10px;color:#8bc99a}
+.season-manager-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;padding:0 16px 16px}
+.season-manager-row{display:flex;align-items:center;gap:12px;padding:10px;border:1px solid #2a303b;background:#151922;border-radius:9px}
+.season-manager-row>div:last-child{display:flex;flex-direction:column;gap:4px}
+.season-manager-row b{font-size:10px;color:#e2d1a5}.season-manager-row span,.season-manager-row small{font-size:9px;color:#8992a1}
+.season-pieces-section{margin:0 0 15px}
+.season-pieces-heading{display:flex;align-items:flex-end;justify-content:space-between;margin:0 2px 10px}
+.season-pieces-heading h2{font:600 13px 'Space Grotesk';margin:0}
+.season-pieces-heading p{font-size:9px;color:#778192;margin:5px 0 0}
+.season-pieces-heading>span{font-size:9px;color:#b99953}
+.season-pieces-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(205px,1fr));gap:12px}
+.season-piece-card{display:flex;align-items:center;gap:10px;min-height:126px;padding:10px 13px;border:1px solid #2b303b;border-radius:10px;background:linear-gradient(145deg,#171b24,#10141b)}
+.season-piece-art{width:105px;display:grid;place-items:center;flex-shrink:0}
+.season-piece-info{min-width:0;display:flex;flex-direction:column;gap:5px}
+.season-piece-info b{font:600 11px 'Space Grotesk';color:#ead39c;overflow-wrap:anywhere}
+.season-piece-info span,.season-piece-info small{font-size:9px;color:#8992a1}
+.season-piece-info strong{font:600 14px 'Space Grotesk';color:#e7e9ee}
+.season-pieces-empty{padding:18px;border:1px dashed #343b47;border-radius:9px;color:#7e8999;font-size:10px;text-align:center}
+@media(max-width:850px){.season-create-layout{grid-template-columns:1fr}.season-token-preview{min-height:270px}.season-create-controls{max-width:none}}
