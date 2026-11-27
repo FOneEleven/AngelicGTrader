@@ -12,8 +12,8 @@ import Recommendations from './components/Recommendations';
 import LiveMarketScanner from './components/LiveMarketScanner';
 import AIPredictions from './components/AIPredictions';
 import GameDay from './components/GameDay';
-import SeasonToken from './components/SeasonToken';
-import { readSettings, writeSettings, readTrades, readAllRecords, deleteTrade, listSeasonProfiles, updateSeasonProfile, advanceSeasonWeek } from './lib/dataModel';
+import SeasonPieceEntry from './components/SeasonPieceEntry';
+import { readSettings, writeSettings, readTrades, readAllRecords, deleteTrade, listSeasonProfiles, updateSeasonProfile, advanceSeasonWeek, readSeasonTrades } from './lib/dataModel';
 import { WEEKS } from './lib/dataFolder';
 import { readCache, isCacheFresh, appendCacheBatch } from './lib/marketCache';
 import { fetchSportsMarkets } from './lib/kalshi';
@@ -44,6 +44,7 @@ function StatCard({ title, value, note, icon: Icon, tone = 'gold', trend }) {
 function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, paperMode, onNavigate, onActivity, onStartWeek }) {
   const [records, setRecords] = useState([]);
   const [seasonProfiles, setSeasonProfiles] = useState([]);
+  const [pieceEarnings, setPieceEarnings] = useState({});
   useEffect(() => {
     const root = dataFolder?.handle;
     if (!root) { setRecords([]); setSeasonProfiles([]); return; }
@@ -52,7 +53,11 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
       const season = dataFolder?.season || 1;
       const all = await readAllRecords(root);
       const profiles = await listSeasonProfiles(root);
-      if (!cancelled) setSeasonProfiles(profiles);
+      const earningsEntries = await Promise.all(profiles.map(async (profile) => {
+        const trades = await readSeasonTrades(root, profile);
+        return [profile.id, trades.reduce((sum, trade) => sum + (Number(trade.earnings ?? trade.profit) || 0), 0)];
+      }));
+      if (!cancelled) { setSeasonProfiles(profiles); setPieceEarnings(Object.fromEntries(earningsEntries)); }
       if (!all.length) {
         const legacy = (await Promise.all(WEEKS.map((week) => readTrades(root, season, week)))).flat();
         legacy.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
@@ -124,18 +129,15 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
       </section>
     </div>
     <section className="season-pieces-section">
-      <div className="season-pieces-heading"><div><h2>Season pieces</h2><p>Each committed token represents an individual season.</p></div><span>{seasonProfiles.length} active</span></div>
-      {seasonProfiles.length ? <div className="season-pieces-grid">{seasonProfiles.map((season) => <article className={`season-piece-card ${season.activePlayer === false ? 'season-inactive' : ''}`} key={season.id}>
-        <div className="season-piece-art"><SeasonToken pieceType={season.pieceType} baseColor={season.baseColor} size={104}/></div>
-        <div className="season-piece-info"><b>{season.name}</b><span>Season {season.season} · {season.paperMode ? 'Paper' : 'Live'} · {season.activePlayer === false ? 'Inactive' : 'Active'}</span><strong>$ {Number(season.balance).toFixed(2)}</strong><small>{season.pieceType} · {season.baseName} base · {season.strategy || 'midpoint'}</small>
-          <small>Next scheduled: {season.nextScheduledWeek || 'week1'}</small>
-          {season.activePlayer !== false && <div className="season-piece-controls">
-            <button className="secondary-btn" onClick={() => startDashboardWeek(season)}>Start next week</button>
-            <label className={`auto-switch ${season.auto ? 'enabled' : ''}`}><input type="checkbox" checked={!!season.auto} onChange={(e) => updateDashboardPiece(season, { auto: e.target.checked })}/><span className="auto-switch-track"></span><b>Auto</b></label>
-            <select value={season.strategy || 'midpoint'} onChange={(e) => updateDashboardPiece(season, { strategy: e.target.value })} aria-label={season.name + ' strategy'}><option value="midpoint">Midpoint</option><option value="cliff">Cliff</option></select>
-          </div>}
-        </div>
-      </article>)}</div> : <div className="season-pieces-empty">No season pieces yet. Create your first one in Season Manager.</div>}
+      <div className="season-pieces-heading"><div><h2>Season pieces</h2><p>Shared season-piece entries. Open a piece to edit its strategy and message it.</p></div><span>{seasonProfiles.filter((item) => item.activePlayer !== false).length} active</span></div>
+      {seasonProfiles.length ? <div className="season-pieces-grid">{seasonProfiles.map((profile) => <SeasonPieceEntry
+        key={profile.id}
+        profile={profile}
+        earnings={pieceEarnings[profile.id] || 0}
+        onUpdate={updateDashboardPiece}
+        onStartWeek={startDashboardWeek}
+        onNavigate={onNavigate}
+      />)}</div> : <div className="season-pieces-empty">No season pieces yet. Create your first one in Season Manager.</div>}
     </section>
     <LatestActivity dataFolder={dataFolder} filter={activityFilter} onFilterChange={onActivityFilter} key={refreshKey} />
   </>;
@@ -245,7 +247,7 @@ export default function App() {
           <AIPredictions dataFolder={dataFolder} onActivity={handleActivity} scanRequest={scanRequest} />
         )}
         {active === 'Game Day' && (
-          <GameDay dataFolder={dataFolder} onActivity={handleActivity} />
+          <GameDay dataFolder={dataFolder} onActivity={handleActivity} onStartWeek={handleStartWeek} onNavigate={setActive} />
         )}
         {active === 'Season Manager' && (
           <Recommendations dataFolder={dataFolder} paperMode={paperMode} kalshiAccount={kalshiAccount} onActivity={handleActivity} onStartWeek={handleStartWeek} />
