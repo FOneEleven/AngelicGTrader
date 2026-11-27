@@ -96,11 +96,11 @@ export async function readIndex(root) {
 
 // --- Activity log ---
 
-export async function appendActivity(root, type, message) {
+export async function appendActivity(root, type, message, options = {}) {
   const metaDir = await root.getDirectoryHandle(META, { create: true });
   const file = await metaDir.getFileHandle(ACTIVITY_FILE, { create: true });
   const existing = await (await file.getFile()).text().catch(() => '');
-  const line = `${new Date().toISOString()} | ${type} | ${message}\n`;
+  const line = `${options.timestamp || new Date().toISOString()} | ${type} | ${message}\n`;
   const w = await file.createWritable();
   await w.write(existing + line);
   await w.close();
@@ -118,7 +118,7 @@ export async function readActivity(root, limit = 20) {
       const [timestamp, type, ...rest] = line.split(' | ');
       return { timestamp, type, message: rest.join(' | ') };
     })
-    .reverse()
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
     .slice(0, limit);
 }
 
