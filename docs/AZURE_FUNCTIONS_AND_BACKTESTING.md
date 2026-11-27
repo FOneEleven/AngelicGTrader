@@ -34,7 +34,7 @@ ESPN public endpoints used:
 - NBA teams: `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams`
 - NBA team schedule: `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/{teamId}/schedule`
 
-The tested response includes provider/league/season metadata; team and opponent identity; games played; season PPG and points allowed; recent-five and recent-ten PPG/PA; home/away scoring splits; wins/losses; recent game records; model inputs; and data-quality metadata.
+**Repository source parity warning:** the checked-in `azure-functions/GetTeamStatistics/index.js` is an older Node.js v4 provider-normalizing scaffold and is not the v3 ESPN implementation currently deployed and tested. Do not deploy that scaffold over the working Azure function. The next backend task is to port the verified deployed v3 ESPN source into this repository (including its `function.json`) and remove the obsolete v4 scaffold. The frontend client has been aligned to the tested query parameter names.\n\nThe tested response includes provider/league/season metadata; team and opponent identity; games played; season PPG and points allowed; recent-five and recent-ten PPG/PA; home/away scoring splits; wins/losses; recent game records; model inputs; and data-quality metadata.
 
 Example:
 ```
