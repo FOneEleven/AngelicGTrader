@@ -97,6 +97,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
   const [paperMode, setPaperMode] = useState(true);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState('');
+  const [debugEntries, setDebugEntries] = useState([]);
   const [error, setError] = useState('');
   const [season, setSeason] = useState(dataFolder?.season || 1);
   const [week, setWeek] = useState('week1');
@@ -168,6 +169,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
     let cancelled = false;
     async function run() {
       setBusy(true); setError(''); setProgress('Resolving league statistics and MLB weather…');
+      setDebugEntries([{ time: new Date().toLocaleTimeString(), message: 'Refresh started · ' + predictions.length + ' prediction entries · ' + new Date().toISOString() }]);
       const nextStats = {}, nextAnalyses = {}, nextErrors = {};
       const statsForPrediction = new Map();
       try {
@@ -183,24 +185,38 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
           const opponent = eventOpponent(markets, p.event, p.team);
           if (!league || !opponent) {
             nextErrors[p.key] = !league ? 'Unsupported league for ESPN statistics.' : 'Could not identify the opponent in this event.';
+            setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SKIP · ' + p.team + ' · ' + nextErrors[p.key] }].slice(-40));
             continue;
           }
           const gameTime = p.gameTime || p.expectedExpiration || p.closeTime;
           const params = { league, team: p.team, opponent, season: currentSeason, seasonType: '2' };
           const key = teamStatsCacheKey({ ...params, season: league === 'MLB' ? gameTime : currentSeason });
           let entry = await getCachedTeamStats(root, key, league === 'MLB' ? 60 * 60 * 1000 : undefined);
-          if (!entry) {
+          if (entry) {
+            setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'CACHE HIT · ' + league + ' · ' + p.team + ' vs ' + opponent + ' · fetched ' + (entry.data?.fetchedAt || 'timestamp unavailable') }].slice(-40));
+            setProgress('Cached ' + league + ' statistics: ' + p.team + ' vs ' + opponent);
+          } else {
+            const startedAt = Date.now();
             setProgress((league === 'MLB' ? 'MLB statistics: ' : 'ESPN league statistics: ') + p.team + ' vs ' + opponent + ' {5}');
-            const raw = league === 'MLB'
-              ? await fetchMLBTeamStatistics({ team: p.team, opponent, gameTime, onProgress: setProgress })
-              : normalizeStats(await fetchTeamStatistics({ ...params, onProgress: setProgress }), p.team, opponent);
-            entry = await setCachedTeamStats(root, key, raw);
+            setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'REQUEST · ' + league + ' · ' + p.team + ' vs ' + opponent + ' · provider=' + (league === 'MLB' ? 'MLB Stats API + Open-Meteo' : 'Azure GetTeamStatistics / ESPN') + ' · timeout=5000ms' }].slice(-40));
+            try {
+              const raw = league === 'MLB'
+                ? await fetchMLBTeamStatistics({ team: p.team, opponent, gameTime, onProgress: setProgress })
+                : normalizeStats(await fetchTeamStatistics({ ...params, onProgress: setProgress }), p.team, opponent);
+              entry = await setCachedTeamStats(root, key, raw);
+              setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SUCCESS · ' + league + ' · ' + p.team + ' vs ' + opponent + ' · ' + (Date.now() - startedAt) + 'ms · provider=' + (raw.provider || 'ESPN') }].slice(-40));
+            } catch (requestError) {
+              setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'FAILED · ' + league + ' · ' + p.team + ' vs ' + opponent + ' · ' + (requestError.message || String(requestError)) }].slice(-40));
+              throw requestError;
+            }
           }
           const stats = entry.data;
           if (!stats?.team || stats.team.pointsPerGame == null || stats.opponent?.pointsAllowedPerGame == null || (league === 'MLB' && (!stats.weather || stats.weather.rainoutRisk === true))) {
             nextErrors[p.key] = league === 'MLB' && stats?.weather?.rainoutRisk ? 'Likely rainout: MLB market excluded.' : league === 'MLB' ? 'MLB statistics or batting-weather forecast is incomplete.' : 'ESPN response is missing team PPG or opponent PA.';
+            setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'DATA CHECK FAILED · ' + p.team + ' · ' + nextErrors[p.key] + ' · provider=' + (stats?.provider || 'unknown') + ' · teamPPG=' + stats?.team?.pointsPerGame + ' · opponentPA=' + stats?.opponent?.pointsAllowedPerGame + ' · weather=' + (stats?.weather ? JSON.stringify(stats.weather) : 'missing') }].slice(-40));
             continue;
           }
+          setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'DATA VALID · ' + p.team + ' · teamPPG=' + stats.team.pointsPerGame + ' · opponentPA=' + stats.opponent.pointsAllowedPerGame + (league === 'MLB' ? ' · weather=' + JSON.stringify(stats.weather) : '') }].slice(-40));
           nextStats[p.key] = stats;
           statsForPrediction.set(p.key, stats);
         }
@@ -247,10 +263,12 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
           if (!cancelled) setProgress('OpenAI analysis: ' + completed + ' / ' + tasks.length + ' AI Prediction entries');
         }
         if (cancelled) return;
+        setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'REFRESH COMPLETE · valid stats=' + Object.keys(nextStats).length + ' · stats errors=' + Object.keys(nextErrors).length + ' · AI analyses=' + Object.keys(nextAnalyses).length }].slice(-40));
         setStatsByKey(nextStats); setAnalyses(nextAnalyses); setAnalysisErrors(nextErrors); setProgress('');
       } catch (e) {
         if (!cancelled) {
           setStatsByKey(nextStats); setAnalyses(nextAnalyses); setAnalysisErrors(nextErrors);
+          setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'REFRESH ERROR · ' + (e.message || String(e)) }].slice(-40));
           setError(e.message || 'Prediction analysis failed'); setProgress('');
         }
       } finally {
@@ -486,7 +504,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       </div>
       {!root && <div className="notice"><div className="notice-icon"><BrainCircuit size={18}/></div><div><b>Connect a data folder</b><span>ESPN and OpenAI results are cached in its meta folder.</span></div></div>}
       {error && <div className="notice error-notice"><b>{error}</b></div>}
-      {progress && <div className="notice"><RefreshCw size={16}/><b>{progress}</b></div>}
+      {(progress || debugEntries.length > 0) && <div className="notice" style={{display:'block'}}><div style={{display:'flex',alignItems:'center',gap:8}}><RefreshCw size={16}/><b>{progress || 'Refresh diagnostics'}</b></div><details open style={{marginTop:8}}><summary style={{cursor:'pointer',fontWeight:600}}>Debug details ({debugEntries.length})</summary><div style={{marginTop:8,maxHeight:220,overflowY:'auto',fontFamily:'monospace',fontSize:11,lineHeight:1.5,whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{debugEntries.map((item,index)=><div key={index}>[{item.time}] {item.message}</div>)}</div></details></div>}
       <section className="panel">
         <div className="panel-heading"><div><h2>AI prediction entries · {predictions.length}</h2><p>NFL/NBA/MLB entries are populated automatically. The active season piece's strategy filters the entries shown here.</p></div></div>
         <div className="piece-instruction-box"><label htmlFor="active-season-piece">Active season piece</label><select id="active-season-piece" value={selectedPieceId} onChange={(e) => setSelectedPieceId(e.target.value)}>{seasonProfiles.filter((profile) => profile.activePlayer !== false).map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.selectionStrategy || "standard"}</option>)}</select><div className="piece-instruction-current"><b>Saved piece instruction</b><span>{piecePrompt || 'No instruction saved. Open the piece avatar on Dashboard or Game Day to send it a message.'}</span></div></div>
