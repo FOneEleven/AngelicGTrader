@@ -250,7 +250,7 @@ export default function App() {
           <GameDay dataFolder={dataFolder} onActivity={handleActivity} onStartWeek={handleStartWeek} onNavigate={setActive} />
         )}
         {active === 'Season Manager' && (
-          <Recommendations dataFolder={dataFolder} paperMode={paperMode} kalshiAccount={kalshiAccount} onActivity={handleActivity} onStartWeek={handleStartWeek} />
+          <Recommendations dataFolder={dataFolder} paperMode={paperMode} kalshiAccount={kalshiAccount} onActivity={handleActivity} onStartWeek={handleStartWeek} onNavigate={setActive} />
         )}
         {active !== 'Dashboard'
           && active !== 'Live Market Scanner'
