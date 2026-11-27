@@ -11,13 +11,6 @@ const BASES = [
   { name: 'Amethyst', color: '#8865bd' }, { name: 'Obsidian', color: '#777d8b' },
 ];
 const EPITHETS = ['Golden', 'Rising', 'Iron', 'Velocity', 'Crowned', 'Untamed', 'Starlight', 'Victory'];
-const GRID_BANDS = ['pre-even', 'break-even', '2x', '3x'];
-const STRATEGIES = [
-  { id: 'standard', label: 'Standard', probability: 92, confidence: 90, payout: 1.2 },
-  { id: 'value', label: 'Value', probability: 84, confidence: 84, payout: 1.4 },
-  { id: 'highroller', label: 'High Roller', probability: 70, confidence: 70, payout: 1.75 },
-  { id: 'baseball-no', label: 'Bet No Strat Baseball', probability: 90, confidence: 85, payout: 1 },
-];
 function randomFrom(items) { return items[Math.floor(Math.random() * items.length)]; }
 function makeToken() {
   const pieceType = randomFrom(PIECES), base = randomFrom(BASES), nonce = Math.floor(1000 + Math.random() * 9000);
@@ -75,13 +68,6 @@ export default function Recommendations({ dataFolder, paperMode: currentPaperMod
       onActivity?.('PIECE_SPLIT', profile.name + ' split into ' + count + ' pieces · ' + money(worth));
     } catch (e) { setError(e.message || 'Could not split season piece'); }
     finally { setBusy(false); }
-  }
-
-  function strategyOrder(profile, currentWorth, quota) {
-    const ratio = quota > 0 ? currentWorth / quota : 0;
-    const band = ratio >= 3 ? '3x' : ratio >= 2 ? '2x' : ratio >= 1 ? 'break-even' : 'pre-even';
-    const offset = Math.max(0, GRID_BANDS.indexOf(band));
-    return { band, ratio, items: [...STRATEGIES.slice(offset), ...STRATEGIES.slice(0, offset)] };
   }
 
   async function commitSeason() {
