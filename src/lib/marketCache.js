@@ -22,17 +22,22 @@ async function writeText(root, text) {
 }
 
 const HEADER =
-  '# fetchedAtyesBid: nullableNumber(yesBid),ttickeryesAsk: nullableNumber(yesAsk),teventTickernoBid: nullableNumber(noBid),ttitlenoAsk: nullableNumber(noAsk),tsubtitlelastPrice: nullableNumber(lastPrice),tstatus\tcloseTime\texpectedExpiration\toccurrenceTime\tlatestExpiration\topenInterest\tvolume24h\tvolume\tyesBid\tyesAsk\tnoBid\tnoAsk\tlastPrice\n';
+  '# fetchedAt\tticker\teventTicker\ttitle\tsubtitle\tstatus\tcloseTime\texpectedExpiration\toccurrenceTime\tlatestExpiration\topenInterest\tvolume24h\tvolume\tyesBid\tyesAsk\tnoBid\tnoAsk\tlastPrice\n';
 
-function nullableNumber(value) {\n  if (value == null || value === '') return null;\n  const n = Number(value);\n  return Number.isFinite(n) ? n : null;\n}\n\nfunction rowToMarket(fields) {
+function nullableNumber(value) {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function rowToMarket(fields) {
   const [
     fetchedAt, ticker, eventTicker, title, subtitle, status,
     closeTime, expectedExpiration, occurrenceTime, latestExpiration,
     openInterest, volume24h, volume, yesBid, yesAsk, noBid, noAsk, lastPrice,
   ] = fields;
   return {
-    fetchedAt,
-    ticker, eventTicker, title, subtitle, status,
+    fetchedAt, ticker, eventTicker, title, subtitle, status,
     closeTime: closeTime || '',
     expectedExpiration: expectedExpiration || '',
     occurrenceTime: occurrenceTime || '',
@@ -40,11 +45,11 @@ function nullableNumber(value) {\n  if (value == null || value === '') return nu
     openInterest: Number(openInterest) || 0,
     volume24h: Number(volume24h) || 0,
     volume: Number(volume) || 0,
-    yesBid: Number(yesBid) || 0,
-    yesAsk: Number(yesAsk) || 0,
-    noBid: Number(noBid) || 0,
-    noAsk: Number(noAsk) || 0,
-    lastPrice: Number(lastPrice) || 0,
+    yesBid: nullableNumber(yesBid),
+    yesAsk: nullableNumber(yesAsk),
+    noBid: nullableNumber(noBid),
+    noAsk: nullableNumber(noAsk),
+    lastPrice: nullableNumber(lastPrice),
   };
 }
 
@@ -55,8 +60,8 @@ function marketToRow(m, fetchedAt) {
     m.expectedExpiration || '',
     m.occurrenceTime || '',
     m.latestExpiration || '',
-    m.openInterest, m.volume24h, m.volume,
-    m.yesBid, m.yesAsk, m.noBid, m.noAsk, m.lastPrice,
+    m.openInterest ?? 0, m.volume24h ?? 0, m.volume ?? 0,
+    m.yesBid ?? '', m.yesAsk ?? '', m.noBid ?? '', m.noAsk ?? '', m.lastPrice ?? '',
   ].join('\t');
 }
 
