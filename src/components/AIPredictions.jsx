@@ -302,7 +302,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
     }
     run();
     return () => { cancelled = true; if (!refreshRecord.completed) refreshRecord.cancelled = true; };
-  }, [root, markets, predictions, predictionDatasetSignature, seasonProfile?.id]);
+  }, [root, markets, predictions, predictionDatasetSignature, seasonProfile?.id, autoRetryCount]);
 
   useEffect(() => {
     if (!autoRetryAt) return undefined;
@@ -478,6 +478,8 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
           autoRetryTimerRef.current = window.setTimeout(() => {
             autoRetryTimerRef.current = null;
             setAutoRetryAt(null); setAutoRetrySeconds(0);
+            lastStatsRefreshRef.current = null;
+            setStatsResolved(false);
             setAutoRetryCount((value) => value + 1);
           }, 60000);
         }
