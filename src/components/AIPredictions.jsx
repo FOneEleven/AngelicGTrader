@@ -347,6 +347,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
             const payout = ask > 0 ? 1 / ask : 0;
             const confidence = Number(analysis.prediction.confidence) || 0;
             if (probability == null || ask == null) continue;
+            if (['avoid-overlap', 'split'].includes(seasonProfile.diversityMode) && otherPieceTickers.includes(line.ticker)) continue;
             if (leagueFor(p) === 'MLB') {
               if (analysis.mlbEligibility?.eligible !== true || probability < 0.90 || confidence < 85) continue;
             } else {
@@ -359,7 +360,6 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
                   : leagueFor(p) === 'NBA' ? teamPPG >= 110 && opponentPA >= 110 : false;
                 if (!shootout) continue;
               }
-              if (['avoid-overlap', 'split'].includes(seasonProfile.diversityMode) && otherPieceTickers.includes(line.ticker)) continue;
               if (probability < gate.probability || confidence < gate.confidence || payout <= gate.payout) continue;
             }
             const value = probability - ask;
@@ -386,6 +386,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
     const line = p.lines[idxFor(p)], side = sideFor(p), analysis = analyses[line?.ticker];
     const probability = probabilityFor(analysis, side), ask = askFor(line, side);
     if (probability == null || ask == null) { setError('OpenAI analysis or executable ask is missing for this line.'); return; }
+    if (['avoid-overlap', 'split'].includes(seasonProfile?.diversityMode) && otherPieceTickers.includes(line.ticker)) { setError('This game is already selected by another active season piece. Diversity mode blocks overlap.'); return; }
     if (leagueFor(p) === 'MLB' && (side !== 'NO' || analysis?.mlbEligibility?.eligible !== true)) { setError('MLB is NO-only and this line has not passed the strict MLB eligibility checks.'); return; }
     if (leagueFor(p) !== 'MLB') {
       const mode = seasonProfile?.selectionStrategy || 'standard';
@@ -397,7 +398,6 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       const payout = ask > 0 ? 1 / ask : 0;
       if (mode === 'value' && (!pieceQuotaFilled || seasonProfile?.safe === true)) { setError('Value strategy requires this piece to have filled its monetary quota and not be marked Safe.'); return; }
       if (mode === 'value') { const stats = statsByKey[p.key]; const knownPPG = Math.min(Number(stats?.team?.pointsPerGame) || Infinity, Number(stats?.team?.recent5PPG) || Number(stats?.team?.pointsPerGame) || Infinity); if (!Number.isFinite(knownPPG) || Number(line.line) > knownPPG * 0.9) { setError('Value strategy requires a line at least 10% below the team's season and recent scoring average.'); return; } }
-      if (['avoid-overlap', 'split'].includes(seasonProfile?.diversityMode) && otherPieceTickers.includes(line.ticker)) { setError('This game is already selected by another active season piece. Diversity mode blocks overlap.'); return; }
       if (mode === 'highroller') {
         const stats = statsByKey[p.key];
         const teamPPG = Number(stats?.team?.pointsPerGame) || 0;
