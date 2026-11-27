@@ -82,9 +82,11 @@ export default function Recommendations({ dataFolder, paperMode: currentPaperMod
     finally { setBusy(false); }
   }
 
-  function strategyOrder(profile) {
-    const offset = Math.max(0, GRID_BANDS.indexOf(profile.gridBand || 'pre-even'));
-    return [...STRATEGIES.slice(offset), ...STRATEGIES.slice(0, offset)];
+  function strategyOrder(profile, currentWorth, quota) {
+    const ratio = quota > 0 ? currentWorth / quota : 0;
+    const band = ratio >= 3 ? '3x' : ratio >= 2 ? '2x' : ratio >= 1 ? 'break-even' : 'pre-even';
+    const offset = Math.max(0, GRID_BANDS.indexOf(band));
+    return { band, ratio, items: [...STRATEGIES.slice(offset), ...STRATEGIES.slice(0, offset)] };
   }
 
   async function commitSeason() {
@@ -134,12 +136,13 @@ export default function Recommendations({ dataFolder, paperMode: currentPaperMod
       </div>
     </section>
     <section className="panel">
-      <div className="panel-heading"><div><h2>Season pieces · {seasons.filter((s) => !s.parentPieceId).length}</h2><p>Configure the grid, risk, diversity, strategy, and each piece's monetary quota.</p></div></div>
+      <div className="panel-heading"><div><h2>Season pieces · {seasons.filter((s) => s.activePlayer !== false).length}</h2><p>Configure the grid, risk, diversity, strategy, and each piece's monetary quota.</p></div></div>
       {seasons.length ? <div className="season-manager-list">{seasons.map((s) => {
         const currentWorth = Math.max(0, (Number(s.balance) || 0) + (Number(pieceProfit[s.id]) || 0));
         const quota = Number(s.quotaValue ?? s.balance) || 0;
         const selected = s.selectionStrategy || 'standard';
-        const ordered = strategyOrder(s);
+        const grid = strategyOrder(s, currentWorth, quota);
+        const ordered = grid.items;
         return <article className={`season-manager-row ${s.activePlayer === false ? 'season-inactive' : ''}`} key={s.id}>
           <SeasonToken pieceType={s.pieceType} baseColor={s.baseColor} size={68}/>
           <div className="season-manager-main">
@@ -153,11 +156,13 @@ export default function Recommendations({ dataFolder, paperMode: currentPaperMod
             </div>
             <div className="piece-strategy-grid">
               <div className="piece-grid-horizontal">
-                {GRID_BANDS.map((band) => <button key={band} className={`secondary-btn ${(s.gridBand || 'pre-even') === band ? 'active' : ''}`} onClick={() => updatePiece(s, { gridBand: band })}>{band === 'pre-even' ? 'Pre-even' : band === 'break-even' ? 'Breaking even' : band}</button>)}
+                {GRID_BANDS.map((band) => <span key={band} className={'piece-grid-band ' + (grid.band === band ? 'active' : '')}>{band === 'pre-even' ? 'Pre-even' : band === 'break-even' ? 'Breaking even' : band}</span>)}
               </div>
+              <small>Position: {grid.band} · {grid.ratio.toFixed(2)}× quota</small>
               <div className="piece-grid-settings">
                 <label>Risk · top axis<select value={s.riskPreference || 'probability'} onChange={(e) => updatePiece(s, { riskPreference: e.target.value })}><option value="probability">Probability first · strict</option><option value="balanced">Balanced</option><option value="value">Value first · lenient</option></select></label>
                 <label>Diversity · bottom axis<select value={s.diversityMode || 'allow-overlap'} onChange={(e) => updatePiece(s, { diversityMode: e.target.value })}><option value="allow-overlap">Allow same games</option><option value="avoid-overlap">Avoid other pieces' games</option><option value="split">Prefer diversified split</option></select></label>
+                <label className={'auto-switch ' + (s.safe ? 'enabled' : '')}><input type="checkbox" checked={!!s.safe} onChange={(e) => updatePiece(s, { safe: e.target.checked })}/><span className="auto-switch-track"></span><b>Safe strategy</b></label>
               </div>
               <div className="piece-strategy-buttons">
                 {ordered.map((item) => <button key={item.id} className={`secondary-btn ${selected === item.id ? 'active' : ''}`} onClick={() => updatePiece(s, { selectionStrategy: item.id })}>{item.label}</button>)}
