@@ -40,12 +40,16 @@ function normalizeMarket(m) {
     return Number.isFinite(n) ? n : 0;
   };
 
+  const title = m.title || m.yes_sub_title || m.ticker;
+  const subtitleCandidate = m.subtitle || m.no_sub_title || '';
+  const subtitle = /.+\\s+over\\s+[\\d.]+/i.test(subtitleCandidate) ? subtitleCandidate : title;
+
   return {
     ticker: m.ticker,
     eventTicker: m.event_ticker || '',
-    title: m.title || m.yes_sub_title || m.ticker,
-    // Kalshi team-total YES subtitle identifies the team and run/point threshold.
-    subtitle: m.subtitle || m.yes_sub_title || m.no_sub_title || '',
+    title,
+    // Keep a team-and-threshold label when present; otherwise parse the full market title.
+    subtitle,
     status: m.status || '',
     closeTime: m.close_time || '',
     expectedExpiration: m.expected_expiration_time || '',
