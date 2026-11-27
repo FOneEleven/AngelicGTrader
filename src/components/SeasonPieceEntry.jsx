@@ -84,7 +84,7 @@ export default function SeasonPieceEntry({
           <div className="season-piece-strategy-note">
             {STRATEGIES.find((item) => item.id === selected)?.probability == null
               ? 'Baseball: original strict NO-only eligibility rules.'
-              : `Minimum model probability ${STRATEGIES.find((item) => item.id === selected).probability}% · payout above ${STRATEGIES.find((item) => item.id === selected).payout}. Confidence is not used.`}
+              : `Minimum model probability ${STRATEGIES.find((item) => item.id === selected).probability}% · payout above ${STRATEGIES.find((item) => item.id === selected).payout}.`}
           </div>
         </div>
         <div className="season-piece-chat">
