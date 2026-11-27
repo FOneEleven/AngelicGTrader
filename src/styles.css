@@ -1468,3 +1468,25 @@ tr.row-mid td {
 .kalshi-notice { color:#49b987; background:rgba(73,185,135,.08); }
 .kalshi-footnote { margin-top:14px; }
 @media(max-width:700px) { .kalshi-connect-head,.kalshi-account-summary { align-items:flex-start; } .kalshi-account-summary { gap:14px; } .kalshi-balance { width:100%; } .kalshi-connect-actions { align-items:flex-start; flex-direction:column; } }
+/* Compact integrations and account header */
+.integration-collapse{margin-bottom:9px;border:1px solid #252c38;border-radius:9px;background:#11151d;overflow:hidden}
+.integration-collapse>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;color:#cbd0d9;font-size:10px;font-weight:600;cursor:pointer;list-style:none}
+.integration-collapse>summary::-webkit-details-marker{display:none}
+.integration-collapse>summary::after{content:'＋';color:#9aa4b4;font-size:12px}
+.integration-collapse[open]>summary::after{content:'−'}
+.integration-collapse>summary small{color:#7e899a;font-weight:400;margin-left:auto}
+.integration-collapse .dfc{margin:0;border:0;border-top:1px solid #252c38;border-radius:0}
+.integration-collapse .kalshi-connect{border-top:1px solid #252c38;padding:12px}
+.integration-collapse .kalshi-connect-title>div p{display:none}
+.integration-collapse .kalshi-connect-title h2{font-size:11px}
+.integration-collapse .kalshi-account-summary{gap:12px}
+.integration-collapse .kalshi-account-summary>div:first-child span{display:none}
+.integration-collapse .kalshi-account-summary small{font-size:8px}
+.integration-collapse .kalshi-account-summary b{font-size:11px}
+.integration-collapse .kalshi-balance strong{font-size:17px}
+.header-kalshi-account{display:flex;align-items:center;gap:9px;padding:0 11px;border-right:1px solid #303744;font-size:10px;white-space:nowrap}
+.header-kalshi-account b{color:#e3d2a5;font-weight:600}
+.header-kalshi-account span{color:#82c795;font-variant-numeric:tabular-nums}
+.header-doc-btn{display:flex;align-items:center;gap:5px;border:1px solid #303744;background:#151a23;color:#bfc6d1;border-radius:7px;padding:6px 9px;font-size:10px}
+.header-doc-btn:hover{border-color:#a98b4d;color:#e4c77f}
+@media(max-width:850px){.header-kalshi-account{gap:5px;padding:0 6px;font-size:9px}.header-doc-btn span{display:none}}
