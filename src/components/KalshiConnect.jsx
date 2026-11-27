@@ -77,6 +77,9 @@ export default function KalshiConnect({ dataFolderHandle, onAccountChange }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      onAccountChange?.(null);
+      setSaved(null);
+      setBalance(null);
       const connection = await readConnection(dataFolderHandle);
       if (!cancelled) {
         setSaved(connection);
