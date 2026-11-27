@@ -358,7 +358,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
                   : leagueFor(p) === 'NBA' ? teamPPG >= 110 && opponentPA >= 110 : false;
                 if (!shootout) continue;
               }
-              if (seasonProfile.diversityMode === 'avoid-overlap' && otherPieceTickers.includes(line.ticker)) continue;
+              if (['avoid-overlap', 'split'].includes(seasonProfile.diversityMode) && otherPieceTickers.includes(line.ticker)) continue;
               if (probability < gate.probability || confidence < gate.confidence || payout <= gate.payout) continue;
             }
             const value = probability - ask;
@@ -395,7 +395,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       const confidence = Number(analysis?.prediction?.confidence) || 0;
       const payout = ask > 0 ? 1 / ask : 0;
       if (mode === 'value' && (!pieceQuotaFilled || seasonProfile?.safe === true)) { setError('Value strategy requires this piece to have filled its monetary quota and not be marked Safe.'); return; }
-      if (seasonProfile?.diversityMode === 'avoid-overlap' && otherPieceTickers.includes(line.ticker)) { setError('This game is already selected by another active season piece. Diversity mode blocks overlap.'); return; }
+      if (['avoid-overlap', 'split'].includes(seasonProfile?.diversityMode) && otherPieceTickers.includes(line.ticker)) { setError('This game is already selected by another active season piece. Diversity mode blocks overlap.'); return; }
       if (mode === 'highroller') {
         const stats = statsByKey[p.key];
         const teamPPG = Number(stats?.team?.pointsPerGame) || 0;
@@ -415,7 +415,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         matchup: p.team + ' vs ' + (stats.opponent?.name || 'opponent') + ' · ' + closeDate(p.closeTime),
         market: p.team + ' over ' + line.line + (leagueFor(p) === 'MLB' ? ' runs' : ' pts'), side,
         price: Math.round(ask * 100), probability: Math.round(probability * 100),
-        strategy: seasonProfile?.strategy || p.strategy || null, seasonPieceId: seasonProfile?.id || null, week, ticker: line.ticker, line: line.line, marketProbability: ask,
+        strategy: seasonProfile?.strategy || p.strategy || null, selectionStrategy: seasonProfile?.selectionStrategy || 'standard', riskPreference: seasonProfile?.riskPreference || 'probability', diversityMode: seasonProfile?.diversityMode || 'allow-overlap', seasonPieceId: seasonProfile?.id || null, week, ticker: line.ticker, line: line.line, marketProbability: ask,
         modelProbability: probability, edge: probability - ask, modelVersion: analysis.model || 'OpenAI',
         context: { team: stats.team, opponent: stats.opponent, modelInputs: stats.modelInputs, dataQuality: stats.dataQuality, weather: stats.weather || null, schedule: stats.schedule || null },
         reasoning: (ai.reasoning || []).join(' '), stake: 1, paper: true, status: 'open',
@@ -486,7 +486,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
                 </td>
                 <td><select value={side} onChange={(e)=>setSide(p,e.target.value)} aria-label={p.team + ' position side'}>{leagueFor(p) === 'MLB' ? <option value="NO">NO</option> : <><option value="YES">YES</option><option value="NO">NO</option></>}</select></td>
                 <td>{cents(ask)}</td>
-                <td><b className="prob">{probability == null ? '—' : Math.round(probability*100) + '%'}</b><small style={{display:'block'}}>{probability == null ? 'Awaiting analysis' : 'Selected line'}</small></td>
+                <td><b className="prob">{probability == null ? '—' : Math.round(probability*100) + '%'}</b><small style={{display:'block'}}>{probability == null ? 'Awaiting analysis' : 'Confidence ' + (analysis?.prediction?.confidence ?? '—') + '%'}</small>{analysis?.reassessment && <small>Original {Math.round(analysis.reassessment.baselineProbabilityYes * (side === 'NO' ? 100 : 100))}% → reassessed {Math.round(probability * 100)}%</small>}</td>
                 <td>{edge == null ? '—' : (edge >= 0 ? '+' : '') + Math.round(edge*100) + '¢'}</td>
                 <td><b className="prob">{payout ? payout.toFixed(2) + '×' : '—'}</b></td>
                 <td>{analysis ? <span className="status-pill strat-cliff">Ready</span> : <span className="status-pill">Pending</span>}</td>
