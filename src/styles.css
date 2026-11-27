@@ -1630,3 +1630,5 @@ tr.row-mid td {
   .season-piece-chat-compose .primary-btn{align-self:flex-end}
   .season-manager-piece-entry{padding:8px}
 }
+
+.season-piece-selected-game{color:#e1c47d!important;padding:5px 7px;border-left:2px solid #c69d4e;background:rgba(198,157,78,.07);line-height:1.45}
