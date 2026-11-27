@@ -35,16 +35,16 @@ export async function fetchTeamStatistics({
   onProgress?.('ESPN league statistics: ' + resolvedTeam + (resolvedOpponent ? ' vs ' + resolvedOpponent : '') + ' {5}');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
-  let response;
+  let response, data;
   try {
     response = await fetch(url, { headers: { Accept: 'application/json' }, signal: controller.signal });
+    data = await response.json().catch(() => ({}));
   } catch (error) {
     if (error.name === 'AbortError') throw new Error('ESPN statistics timed out after 5 seconds for ' + resolvedTeam + '.');
     throw error;
   } finally {
     clearTimeout(timeout);
   }
-  const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(data.error || `Team statistics request failed (${response.status})`);
   }
