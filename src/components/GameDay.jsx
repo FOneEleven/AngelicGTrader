@@ -132,7 +132,6 @@ export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigat
           key={piece.id}
           profile={piece}
           earnings={piece.earnings}
-          showEarnings
           compact
           busy={busyId === piece.id}
           onUpdate={updatePiece}
