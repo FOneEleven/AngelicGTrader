@@ -98,6 +98,10 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState('');
   const [debugEntries, setDebugEntries] = useState([]);
+  const [autoRetryCount, setAutoRetryCount] = useState(0);
+  const [autoRetryAt, setAutoRetryAt] = useState(null);
+  const [autoRetrySeconds, setAutoRetrySeconds] = useState(0);
+  const autoRetryTimerRef = useRef(null);
   const [error, setError] = useState('');
   const [season, setSeason] = useState(dataFolder?.season || 1);
   const [week, setWeek] = useState('week1');
@@ -155,7 +159,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       if (activeWeek !== week) setWeek(activeWeek);
       setTrades(await readTrades(root, activeProfile?.season || activeSeason || season, activeWeek));
     })().catch((e) => setError(e.message));
-  }, [root, season, week, scanRequest?.requestId, selectedPieceId]);
+  }, [root, season, week, scanRequest?.requestId]);
 
   const { predictions } = useMemo(() => ({
     predictions: computePredictions(markets).predictions.filter((p) =>
@@ -165,7 +169,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
   }), [markets, selectedEntries, seasonProfile?.strategy]);
 
   useEffect(() => {
-    if (!root || !markets.length || !predictions.length) return;
+    if (!root || !seasonProfile || !markets.length || !predictions.length) return;
     let cancelled = false;
     async function run() {
       setBusy(true); setError(''); setProgress('Resolving league statistics and MLB weather…');
@@ -281,7 +285,17 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
     }
     run();
     return () => { cancelled = true; };
-  }, [root, markets, predictions]);
+  }, [root, markets, predictions, seasonProfile?.id]);
+
+  useEffect(() => {
+    if (!autoRetryAt) return undefined;
+    const tick = () => setAutoRetrySeconds(Math.max(0, Math.ceil((autoRetryAt - Date.now()) / 1000)));
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [autoRetryAt]);
+
+  useEffect(() => () => { if (autoRetryTimerRef.current) window.clearTimeout(autoRetryTimerRef.current); }, []);
 
   function sideFor(p) { return sideByKey[p.key] || (leagueFor(p) === 'MLB' ? 'NO' : 'YES'); }
   function idxFor(p) {
@@ -357,9 +371,15 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
 
 
   useEffect(() => {
-    if (!scanRequest?.requestId || handledScanRef.current === scanRequest.requestId) return;
-    if (!seasonProfile || seasonProfile.id !== scanRequest.profileId || !predictions.length || !Object.keys(statsByKey).length) return;
-    handledScanRef.current = scanRequest.requestId;
+    const isAuto = seasonProfile?.auto === true;
+    if (!scanRequest?.requestId && !isAuto) return;
+    if (scanRequest?.requestId && seasonProfile?.id !== scanRequest.profileId) return;
+    const attemptKey = (scanRequest?.requestId || ('auto-' + seasonProfile?.id)) + ':' + autoRetryCount;
+    if (handledScanRef.current === attemptKey) return;
+    if (!seasonProfile || !predictions.length || !Object.keys(statsByKey).length) return;
+    handledScanRef.current = attemptKey;
+    if (autoRetryTimerRef.current) { window.clearTimeout(autoRetryTimerRef.current); autoRetryTimerRef.current = null; }
+    setAutoRetryAt(null); setAutoRetrySeconds(0);
     (async () => {
       setError('');
       setProgress('Start next week: scanning upcoming games and every slider line…');
@@ -375,7 +395,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       const risk = seasonProfile.riskByWorthCondition?.[worthCondition] || '';
       const baseballEnabled = seasonProfile.baseballNoStrategy === true || seasonProfile.selectionStrategy === 'baseball-no';
       const gates = { standard: { probability: 0.92, payout: 1.2 }, value: { probability: 0.84, payout: 1.4 }, highroller: { probability: 0.70, payout: 1.75 } };
-      if (!mode || !risk) { setProgress('Piece is not ready for play: configure strategy and risk for its current worth condition.'); return; }
+      if (!mode || !risk) { setProgress('Piece is not ready for play: configure strategy and risk for its current worth condition.'); setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SCAN STOPPED · strategy or risk is not configured for ' + worthCondition }].slice(-40)); return; }
       const gate = { ...(gates[mode] || gates.standard) };
       if (risk === 'probability') { gate.probability += 0.02; }
       if (risk === 'value') { gate.probability = Math.max(0.5, gate.probability - 0.02); gate.payout += 0.1; }
@@ -425,10 +445,26 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       setSideByKey((old) => ({ ...old, ...Object.fromEntries(orderedSelections.map((item) => [item.predictionKey, item.side])) }));
       const selectedLines = orderedSelections.map(({ predictionKey, ticker, event, team, league, line, side }) => ({ predictionKey, ticker, event, team, league, line, side }));
       try { const updatedProfile = await updateSeasonProfile(root, seasonProfile.id, { selectedLines }); setSeasonProfile(updatedProfile); } catch (e) { setError(e.message || 'Could not save piece selections'); }
-      setProgress('Weekly scan complete · ' + orderedSelections.length + ' strategy-game(s) selected. Earliest upcoming game is first. No trade was placed automatically.');
-      onActivity?.('WEEK_SCAN_COMPLETE', orderedSelections.length + ' qualifying selections found for ' + seasonProfile.name);
-    })().catch((e) => setError(e.message || 'Weekly scan failed'));
-  }, [scanRequest, seasonProfile, predictions, statsByKey]);
+      if (orderedSelections.length) {
+        setProgress('Selection resolved · ' + orderedSelections.length + ' qualifying game(s) found. Earliest upcoming game is first.');
+        setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SELECTION RESOLVED · ' + orderedSelections.length + ' qualifying game(s) saved to this piece.' }].slice(-40));
+        onActivity?.('WEEK_SCAN_COMPLETE', orderedSelections.length + ' qualifying selections found for ' + seasonProfile.name);
+      } else {
+        const message = 'No qualifying game found in the current dataset.';
+        setProgress(message + (isAuto ? ' Next automatic scan in 60 seconds.' : ' Auto is off; waiting for the next manual scan.'));
+        setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'NO SELECTION · checked ' + orderedPredictions.length + ' prediction entries and their available lines; none passed the piece strategy/risk rules.' }].slice(-40));
+        if (isAuto) {
+          const retryAt = Date.now() + 60000;
+          setAutoRetryAt(retryAt); setAutoRetrySeconds(60);
+          autoRetryTimerRef.current = window.setTimeout(() => {
+            autoRetryTimerRef.current = null;
+            setAutoRetryAt(null); setAutoRetrySeconds(0);
+            setAutoRetryCount((value) => value + 1);
+          }, 60000);
+        }
+      }
+    })().catch((e) => { setError(e.message || 'Weekly scan failed'); setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SCAN ERROR · ' + (e.message || String(e)) }].slice(-40)); });
+  }, [scanRequest, seasonProfile, predictions, statsByKey, autoRetryCount]);
 
   function setSide(p, side) {
     setSideByKey((old) => ({ ...old, [p.key]: side }));
@@ -508,10 +544,10 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       </div>
       {!root && <div className="notice"><div className="notice-icon"><BrainCircuit size={18}/></div><div><b>Connect a data folder</b><span>ESPN and OpenAI results are cached in its meta folder.</span></div></div>}
       {error && <div className="notice error-notice"><b>{error}</b></div>}
-      {(progress || debugEntries.length > 0) && <div className="notice" style={{display:'block'}}><div style={{display:'flex',alignItems:'center',gap:8}}><RefreshCw size={16}/><b>{progress || 'Refresh diagnostics'}</b></div><details open style={{marginTop:8}}><summary style={{cursor:'pointer',fontWeight:600}}>Debug details ({debugEntries.length})</summary><div style={{marginTop:8,maxHeight:220,overflowY:'auto',fontFamily:'monospace',fontSize:11,lineHeight:1.5,whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{debugEntries.map((item,index)=><div key={index}>[{item.time}] {item.message}</div>)}</div></details></div>}
+      {(progress || debugEntries.length > 0) && <div className="notice" style={{display:'block'}}><div style={{display:'flex',alignItems:'center',gap:8}}><RefreshCw size={16}/><b>{progress || 'Refresh diagnostics'}</b></div>{autoRetryAt && <div style={{marginTop:6,fontVariantNumeric:'tabular-nums'}}>Next auto scan in {autoRetrySeconds}s</div>}<details open style={{marginTop:8}}><summary style={{cursor:'pointer',fontWeight:600}}>Debug details ({debugEntries.length})</summary><div style={{marginTop:8,maxHeight:220,overflowY:'auto',fontFamily:'monospace',fontSize:11,lineHeight:1.5,whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{debugEntries.map((item,index)=><div key={index}>[{item.time}] {item.message}</div>)}</div></details></div>}
       <section className="panel">
         <div className="panel-heading"><div><h2>AI prediction entries · {predictions.length}</h2><p>NFL/NBA/MLB entries are populated automatically. The active season piece's strategy filters the entries shown here.</p></div></div>
-        <div className="piece-instruction-box"><label htmlFor="active-season-piece">Active season piece</label><select id="active-season-piece" value={selectedPieceId} onChange={(e) => setSelectedPieceId(e.target.value)}>{seasonProfiles.filter((profile) => profile.activePlayer !== false).map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.selectionStrategy || "standard"}</option>)}</select><div className="piece-instruction-current"><b>Saved piece instruction</b><span>{piecePrompt || 'No instruction saved. Open the piece avatar on Dashboard or Game Day to send it a message.'}</span></div></div>
+        <div className="piece-instruction-box"><label htmlFor="active-season-piece">Active season piece</label><select id="active-season-piece" value={selectedPieceId} onChange={(e) => { const id = e.target.value; const profile = seasonProfiles.find((item) => item.id === id); setSelectedPieceId(id); if (profile) { setSeasonProfile(profile); setSeason(profile.season); setPiecePrompt(profile.piecePrompt || profile.pieceMessages?.filter((item) => item.role === 'user').slice(-1)[0]?.content || ''); setStatsByKey({}); setAnalyses({}); setAnalysisErrors({}); setAutoRetryCount(0); handledScanRef.current = null; } }}>{seasonProfiles.filter((profile) => profile.activePlayer !== false).map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.selectionStrategy || "standard"}</option>)}</select><div className="piece-instruction-current"><b>Saved piece instruction</b><span>{piecePrompt || 'No instruction saved. Open the piece avatar on Dashboard or Game Day to send it a message.'}</span></div></div>
         {!predictions.length ? (
           <div className="empty-state"><div className="empty-icon"><AlertCircle size={22}/></div><b>No AI prediction entries selected</b><span>Open Live Market Scanner and use Add ladder on a team-total market.</span></div>
         ) : (
