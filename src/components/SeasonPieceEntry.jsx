@@ -24,7 +24,7 @@ function strategyGrid(profile, currentWorth) {
 
 export default function SeasonPieceEntry({
   profile, earnings = 0, onUpdate, onStartWeek, onNavigate, busy = false,
-  showEarnings = false, compact = false, onHide,
+  compact = false, onHide,
 }) {
   const [expanded, setExpanded] = useState(false);
   const [message, setMessage] = useState('');
@@ -53,9 +53,10 @@ export default function SeasonPieceEntry({
     <div className="season-piece-info">
       <b>{profile.name}</b>
       <span>Season {profile.season} · {profile.paperMode ? 'Paper' : 'Live'} · {profile.activePlayer === false ? 'Inactive' : 'Active'}</span>
-      <strong>{money(currentWorth)} {showEarnings ? 'current worth' : 'piece worth'}</strong>
+      <strong>{money(currentWorth)} current worth</strong>
       <small>{profile.pieceType} · {profile.baseName} base · {profile.strategy || 'midpoint'} ladder</small>
-      <small>Quota {money(profile.quotaValue ?? profile.balance)} · {showEarnings ? money(tradesEarnings) + ' earned' : 'Next: ' + (profile.nextScheduledWeek || 'week1')}</small>
+      <small>Quota {money(profile.quotaValue ?? profile.balance)} · {money(tradesEarnings)} earned</small>
+      <small>Next scheduled: {profile.nextScheduledWeek || 'week1'}</small>
       {profile.selectedLines?.[0] && <small className="season-piece-selected-game">Strategy pick: {profile.selectedLines[0].team || profile.selectedLines[0].event || profile.selectedLines[0].ticker} · {profile.selectedLines[0].league || 'Market'} · {profile.selectedLines[0].line ?? 'ladder'} · {profile.selectedLines[0].side}</small>}
       {profile.activePlayer !== false && <div className="season-piece-controls">
         <button className="secondary-btn" disabled={busy} onClick={() => onStartWeek?.(profile)}>Start next week</button>
