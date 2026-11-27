@@ -1295,3 +1295,50 @@ tr.row-mid td {
     color: #83b5e0;
     border-color: #2a3a4a;
 }
+
+/* Collapsible technical market data box */
+.technical-market-box {
+    border: 1px solid #34313a;
+    border-radius: 10px;
+    background: #10141b;
+    overflow: hidden
+}
+.technical-market-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    cursor: pointer;
+    list-style: none;
+    background: #171a22;
+    border-bottom: 1px solid transparent
+}
+.technical-market-summary::-webkit-details-marker { display: none }
+.technical-market-summary::after {
+    content: '+';
+    color: #d9b86c;
+    font-size: 18px;
+    margin-left: 8px
+}
+.technical-market-box[open] .technical-market-summary {
+    border-bottom-color: #292f3a
+}
+.technical-market-box[open] .technical-market-summary::after { content: '−' }
+.technical-market-summary b {
+    display: block;
+    color: #d7dbe2;
+    font-size: 11px
+}
+.technical-market-summary small {
+    display: block;
+    margin-top: 4px;
+    color: #788394;
+    font-size: 9px
+}
+.technical-market-box > .panel {
+    border: 0;
+    border-radius: 0;
+    background: transparent
+}
+.technical-market-box .panel-heading { padding-top: 13px }
