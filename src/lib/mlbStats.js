@@ -13,8 +13,10 @@ function keyName(value) {
 }
 function findTeam(teams, name) {
   const key = keyName(name);
-  return teams.find((t) => keyName(t.name) === key || keyName(t.abbreviation) === key)
-    || teams.find((t) => keyName(t.name).includes(key) || key.includes(keyName(t.name)) || keyName(t.abbreviation).includes(key));
+  const exact = teams.find((t) => keyName(t.name) === key || keyName(t.abbreviation) === key);
+  if (exact) return exact;
+  const matches = teams.filter((t) => keyName(t.name).includes(key) || key.includes(keyName(t.name)) || keyName(t.abbreviation).includes(key));
+  return matches.length === 1 ? matches[0] : null;
 }
 function statSplit(payload, type) {
   const rows = payload?.stats || [];
@@ -47,6 +49,7 @@ async function teamStats(teamId, group, season, split) {
   url.searchParams.set('stats', split);
   url.searchParams.set('group', group);
   url.searchParams.set('season', String(season));
+  if (split === 'lastXGames') url.searchParams.set('limit', '10');
   const data = await getJson(url.toString(), 'MLB ' + group + ' statistics');
   return statSplit(data, split);
 }
@@ -137,7 +140,8 @@ export async function fetchMLBTeamStatistics({ team, opponent, gameTime }) {
     throw new Error('MLB venue coordinates are unavailable; weather screening cannot be completed.');
   }
   const scheduledTime = game.gameDate || gameTime;
-  const weather = await fetchWeather(coordinates.latitude, coordinates.longitude, date, scheduledTime);
+  const weatherDate = isoDate(scheduledTime);
+  const weather = await fetchWeather(coordinates.latitude, coordinates.longitude, weatherDate, scheduledTime);
   const teamRunsPerGame = perGame(hitting, 'runs');
   const opponentRunsAllowedPerGame = perGame(opponentPitching, 'runs');
   if (teamRunsPerGame == null || opponentRunsAllowedPerGame == null) {
