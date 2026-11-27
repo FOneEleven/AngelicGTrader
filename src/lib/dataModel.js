@@ -1,0 +1,210 @@
+// AngelicGTrader — season/week data model + activity log + paper trading.
+import { WEEKS, META, ensureStructure } from './dataFolder';
+
+const SEASON_PREFIX = 'season-';
+const INDEX_FILE = 'index.txt';
+const ACTIVITY_FILE = 'activity.txt';
+const SETTINGS_FILE = 'settings.txt';
+
+// --- Season discovery ---
+
+export async function listSeasons(root) {
+  const seasons = [];
+  for await (const [name, handle] of root.entries()) {
+    if (handle.kind !== 'directory') continue;
+    const m = name.match(/^season-(\d+)$/);
+    if (m) seasons.push(Number(m[1]));
+  }
+  return seasons.sort((a, b) => a - b);
+}
+
+export async function latestSeason(root) {
+  const seasons = await listSeasons(root);
+  return seasons.length ? seasons[seasons.length - 1] : 0;
+}
+
+// --- Low-level text helpers ---
+
+async function writeText(dirHandle, filename, text) {
+  const file = await dirHandle.getFileHandle(filename, { create: true });
+  const w = await file.createWritable();
+  await w.write(text);
+  await w.close();
+}
+
+async function readText(dirHandle, filename) {
+  try {
+    const file = await dirHandle.getFileHandle(filename);
+    return await (await file.getFile()).text();
+  } catch {
+    return null;
+  }
+}
+
+// --- Season / week creation ---
+
+export async function createSeason(root, seasonNumber) {
+  const seasonDir = await root.getDirectoryHandle(`${SEASON_PREFIX}${seasonNumber}`, { create: true });
+  const now = new Date().toISOString();
+  await writeText(seasonDir, 'season.txt',
+    `# AngelicGTrader season\nseason: ${seasonNumber}\ncreated: ${now}\nstatus: active\n`);
+
+  for (const week of WEEKS) {
+    const weekDir = await seasonDir.getDirectoryHandle(week, { create: true });
+    await writeText(weekDir, 'week.txt',
+      `# AngelicGTrader week\nseason: ${seasonNumber}\nweek: ${week}\ncreated: ${now}\nstatus: open\n`);
+  }
+  return seasonNumber;
+}
+
+export async function ensureSeason(root, { forceNew = false } = {}) {
+  const current = await latestSeason(root);
+  if (!forceNew && current > 0) {
+    return { season: current, created: false };
+  }
+  const next = current + 1;
+  await createSeason(root, next);
+  return { season: next, created: true };
+}
+
+// --- Index file ---
+
+export async function writeIndex(root, { season, activeWeek = 'week1' }) {
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  const now = new Date().toISOString();
+  const text =
+    `# AngelicGTrader index\n` +
+    `updated: ${now}\n` +
+    `active_season: ${season}\n` +
+    `active_week: ${activeWeek}\n` +
+    `weeks: ${WEEKS.join(',')}\n`;
+  await writeText(metaDir, INDEX_FILE, text);
+}
+
+export async function readIndex(root) {
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  const text = await readText(metaDir, INDEX_FILE);
+  if (!text) return null;
+  const out = {};
+  for (const line of text.split('\n')) {
+    const m = line.match(/^(\w+):\s*(.+)$/);
+    if (m && !line.startsWith('#')) out[m[1]] = m[2].trim();
+  }
+  return out;
+}
+
+// --- Activity log ---
+
+export async function appendActivity(root, type, message) {
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  const file = await metaDir.getFileHandle(ACTIVITY_FILE, { create: true });
+  const existing = await (await file.getFile()).text().catch(() => '');
+  const line = `${new Date().toISOString()} | ${type} | ${message}\n`;
+  const w = await file.createWritable();
+  await w.write(existing + line);
+  await w.close();
+  return line.trim();
+}
+
+export async function readActivity(root, limit = 20) {
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  const text = await readText(metaDir, ACTIVITY_FILE);
+  if (!text) return [];
+  return text
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [timestamp, type, ...rest] = line.split(' | ');
+      return { timestamp, type, message: rest.join(' | ') };
+    })
+    .reverse()
+    .slice(0, limit);
+}
+
+// --- Paper mode settings ---
+
+export async function readSettings(root) {
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  const text = await readText(metaDir, SETTINGS_FILE);
+  const out = { paperMode: true };
+  if (!text) return out;
+  for (const line of text.split('\n')) {
+    const m = line.match(/^(\w+):\s*(.+)$/);
+    if (!m || line.startsWith('#')) continue;
+    out[m[1]] = m[2] === 'true' ? true : m[2] === 'false' ? false : m[2].trim();
+  }
+  return out;
+}
+
+export async function writeSettings(root, settings) {
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  const lines = ['# AngelicGTrader settings', `updated: ${new Date().toISOString()}`];
+  for (const [k, v] of Object.entries(settings)) lines.push(`${k}: ${v}`);
+  await writeText(metaDir, SETTINGS_FILE, lines.join('\n') + '\n');
+  return settings;
+}
+
+// --- Trade records ---
+
+export async function appendTrade(root, season, week, trade) {
+  const seasonDir = await root.getDirectoryHandle(`${SEASON_PREFIX}${season}`, { create: true });
+  const weekDir = await seasonDir.getDirectoryHandle(week, { create: true });
+  const filename = 'trades.txt';
+  const file = await weekDir.getFileHandle(filename, { create: true });
+  const existing = await (await file.getFile()).text().catch(() => '');
+  const header = existing
+    ? ''
+    : '# id\ttimestamp\tmatchup\tmarket\tside\tprice\tprobability\tstake\tpaper\tstatus\n';
+  const row = [
+    trade.id,
+    trade.timestamp,
+    trade.matchup,
+    trade.market,
+    trade.side,
+    trade.price,
+    trade.probability,
+    trade.stake,
+    trade.paper ? 'paper' : 'live',
+    trade.status || 'open',
+  ].join('\t') + '\n';
+  const w = await file.createWritable();
+  await w.write(existing + header + row);
+  await w.close();
+  return trade;
+}
+
+export async function readTrades(root, season, week) {
+  const seasonDir = await root.getDirectoryHandle(`${SEASON_PREFIX}${season}`, { create: true });
+  const weekDir = await seasonDir.getDirectoryHandle(week, { create: true });
+  const text = await readText(weekDir, 'trades.txt');
+  if (!text) return [];
+  return text
+    .split('\n')
+    .filter((l) => l && !l.startsWith('#'))
+    .map((line) => {
+      const [id, timestamp, matchup, market, side, price, probability, stake, paper, status] = line.split('\t');
+      return { id, timestamp, matchup, market, side, price, probability, stake, paper: paper === 'paper', status };
+    });
+}
+
+export async function tradeSummary(root, season, week) {
+  const trades = await readTrades(root, season, week);
+  return {
+    total: trades.length,
+    paper: trades.filter((t) => t.paper).length,
+    live: trades.filter((t) => !t.paper).length,
+  };
+}
+
+// --- Bootstrap ---
+
+export async function bootstrapDataFolder(root) {
+  await ensureStructure(root);
+  const { season, created } = await ensureSeason(root, { forceNew: false });
+  await writeIndex(root, { season, activeWeek: 'week1' });
+
+  if (created) {
+    await appendActivity(root, 'SEASON_START', `Season ${season} started`);
+  }
+  return { season, created };
+}

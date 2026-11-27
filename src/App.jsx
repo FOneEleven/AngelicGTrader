@@ -1,10 +1,17 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   Activity, LayoutDashboard, Radar, BrainCircuit, ClipboardList, Trophy,
   ChartNoAxesCombined, History, Settings, FileText, ChevronRight,
-  Search, Bell, CircleHelp, ArrowUpRight, ArrowDownRight, ShieldCheck,
+  Search, Bell, CircleHelp, ArrowUpRight, ArrowDownRight, ShieldCheck, ShieldAlert,
   Clock3, Target, Zap, Menu, X, RefreshCw, Filter, ExternalLink
 } from 'lucide-react';
+import DataFolderConnect from './components/DataFolderConnect';
+import LatestActivity from './components/LatestActivity';
+import PaperModeToggle from './components/PaperModeToggle';
+import Recommendations from './components/Recommendations';
+import LiveMarketScanner from './components/LiveMarketScanner';
+import AIPredictions from './components/AIPredictions';
+import { readSettings, writeSettings } from './lib/dataModel';
 
 const nav = [
   { label: 'Dashboard', icon: LayoutDashboard, group: 'WORKSPACE' },
@@ -32,13 +39,17 @@ function StatCard({ title, value, note, icon: Icon, tone = 'gold', trend }) {
   </div>;
 }
 
-function Dashboard() {
+function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, paperMode }) {
   return <>
     <div className="page-heading">
       <div><div className="eyebrow">OVERVIEW</div><h1>Dashboard</h1><p>Your sports-market intelligence at a glance.</p></div>
       <button className="secondary-btn"><RefreshCw size={15}/> Refresh data</button>
     </div>
-    <div className="notice"><div className="notice-icon"><ShieldCheck size={19}/></div><div><b>Paper mode is active</b><span>All predictions are simulated. No real-money orders are being placed.</span></div><span className="live-dot"></span></div>
+    {paperMode ? (
+      <div className="notice"><div className="notice-icon"><ShieldCheck size={19}/></div><div><b>Paper mode is active</b><span>All predictions are simulated. No real-money orders are being placed.</span></div><span className="live-dot"></span></div>
+    ) : (
+      <div className="notice notice-live"><div className="notice-icon live"><ShieldAlert size={19}/></div><div><b>Live mode is active</b><span>Recommendations are treated as real trades. Paper mode is off.</span></div><span className="live-dot live"></span></div>
+    )}
     <div className="stats-grid">
       <StatCard title="Markets discovered" value="—" note="Waiting for market data connection" icon={Radar}/>
       <StatCard title="Paper predictions" value="0" note="No predictions recorded yet" icon={BrainCircuit} tone="purple"/>
@@ -57,18 +68,15 @@ function Dashboard() {
         <div className="panel-heading"><div><h2>System checks</h2><p>Integration status</p></div><span className="check-ring"><ShieldCheck size={17}/></span></div>
         {[
           ['Dashboard','Running locally','ok'],
-          ['Market API','Not connected','wait'],
+          ['Market API','Connected · cached','ok'],
           ['Sports data','Not connected','wait'],
           ['TXT history','Ready for local files','ok'],
-          ['Paper trader','Awaiting data feeds','wait'],
+          [paperMode ? 'Paper trader' : 'Live trader','Awaiting data feeds','wait'],
         ].map(([name, status, state]) => <div className="check-row" key={name}><span className={`check-dot ${state}`}></span><div><b>{name}</b><small>{status}</small></div></div>)}
         <div className="side-tip"><Zap size={16}/><span>Next: connect market discovery and sports data, then start recording timestamped paper predictions.</span></div>
       </section>
     </div>
-    <section className="panel bottom-panel">
-      <div className="panel-heading"><div><h2>Latest activity</h2><p>Prediction and system event log</p></div><button className="icon-btn"><Filter size={16}/></button></div>
-      <div className="empty-state"><div className="empty-icon"><Clock3 size={22}/></div><b>No activity recorded</b><span>Once data feeds are connected, predictions and system events will appear here.</span></div>
-    </section>
+    <LatestActivity dataFolder={dataFolder} filter={activityFilter} onFilterChange={onActivityFilter} key={refreshKey} />
   </>;
 }
 
@@ -76,9 +84,6 @@ function Placeholder({ page }) {
   const item = nav.find(n => n.label === page);
   const Icon = item?.icon || Activity;
   const descriptions = {
-    'Live Market Scanner': 'Discover available sports markets and team scoring thresholds.',
-    'AI Predictions': 'Review paper predictions, probabilities, model reasoning and resolved outcomes.',
-    'Betting Recommendations': 'Review qualified recommendations with market links for manual execution.',
     'Competition Stakes': 'Filter for games where teams have meaningful playoff or tournament incentives.',
     'Performance Analytics': 'Measure prediction accuracy, simulated returns and performance by sport.',
     'Prediction History': 'Inspect the append-only TXT prediction and results history.',
@@ -92,8 +97,30 @@ export default function App() {
   const [active, setActive] = useState('Dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [dataFolder, setDataFolder] = useState(null);
+  const [paperMode, setPaperMode] = useState(true);
+  const [activityFilter, setActivityFilter] = useState('all');
+  const [refreshKey, setRefreshKey] = useState(0);
+
   const groups = ['WORKSPACE', 'INSIGHTS', 'SYSTEM'];
   const filtered = nav.filter(n => n.label.toLowerCase().includes(search.toLowerCase()));
+
+  useEffect(() => {
+    if (!dataFolder?.handle) return;
+    readSettings(dataFolder.handle).then((s) => setPaperMode(!!s.paperMode)).catch(() => {});
+  }, [dataFolder]);
+
+  const handlePaperToggle = useCallback(async (next) => {
+    setPaperMode(next);
+    if (dataFolder?.handle) {
+      try { await writeSettings(dataFolder.handle, { paperMode: next }); } catch {}
+    }
+  }, [dataFolder]);
+
+  const handleActivity = useCallback(() => {
+    setRefreshKey((k) => k + 1);
+  }, []);
+
   return <div className="app-shell">
     <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
       <div className="brand"><div className="brand-mark"><Activity size={21}/></div><div className="brand-text"><b>AngelicGTrader</b><small>SPORTS INTELLIGENCE</small></div><button className="mobile-close" onClick={() => setSidebarOpen(false)}><X size={18}/></button></div>
@@ -102,13 +129,55 @@ export default function App() {
         const items = filtered.filter(n => n.group === group);
         return items.length ? <div className="nav-group" key={group}><div className="nav-label">{group}</div>{items.map(item => { const Icon = item.icon; return <button key={item.label} className={`nav-item ${active === item.label ? 'active' : ''}`} onClick={() => {setActive(item.label);setSidebarOpen(false);}}><Icon size={17}/><span>{item.label}</span>{active === item.label && <span className="active-bar"/>}</button>; })}</div> : null;
       })}</nav>
-      <div className="sidebar-bottom"><div className="mode-card"><div className="mode-head"><span className="live-dot"></span><b>Paper trading mode</b></div><p>Simulation only. Real orders disabled.</p></div><div className="user-row"><div className="avatar">A</div><div><b>Local workspace</b><small>Development environment</small></div><Settings size={16}/></div></div>
+      <div className="sidebar-bottom">
+        <div className={`mode-card ${paperMode ? '' : 'live'}`}>
+          <div className="mode-head">
+            <span className={`live-dot ${paperMode ? '' : 'live'}`}></span>
+            <b>{paperMode ? 'Paper trading mode' : 'Live trading mode'}</b>
+          </div>
+          <p>{paperMode ? 'Simulation only. Real orders disabled.' : 'Live recommendations. Real orders enabled.'}</p>
+        </div>
+        <div className="user-row"><div className="avatar">A</div><div><b>Local workspace</b><small>Development environment</small></div><Settings size={16}/></div>
+      </div>
     </aside>
     {sidebarOpen && <div className="mobile-overlay" onClick={() => setSidebarOpen(false)}></div>}
     <main className="main">
-      <header className="topbar"><button className="mobile-menu" onClick={() => setSidebarOpen(true)}><Menu size={19}/></button><div className="breadcrumb">Workspace <ChevronRight size={14}/><b>{active}</b></div><div className="top-actions"><span className="connection"><i></i> Local app</span><button className="icon-btn" title="Help"><CircleHelp size={17}/></button><button className="icon-btn" title="Notifications"><Bell size={17}/></button></div></header>
-      <div className="page-content">{active === 'Dashboard' ? <Dashboard/> : <Placeholder page={active}/>}</div>
-      <footer><span>AngelicGTrader · Local development build</span><span>Paper mode <i className="footer-dot"></i></span></footer>
+      <header className="topbar">
+        <button className="mobile-menu" onClick={() => setSidebarOpen(true)}><Menu size={19}/></button>
+        <div className="breadcrumb">Workspace <ChevronRight size={14}/><b>{active}</b></div>
+        <div className="top-actions">
+          <PaperModeToggle enabled={paperMode} onChange={handlePaperToggle} disabled={!dataFolder?.handle} />
+          <span className="connection"><i></i> Local app</span>
+          <button className="icon-btn" title="Help"><CircleHelp size={17}/></button>
+          <button className="icon-btn" title="Notifications"><Bell size={17}/></button>
+        </div>
+      </header>
+      <div className="page-content">
+        {active === 'Dashboard' && (
+          <>
+            <DataFolderConnect onFolderReady={setDataFolder} />
+            <Dashboard dataFolder={dataFolder} activityFilter={activityFilter} onActivityFilter={setActivityFilter} refreshKey={refreshKey} paperMode={paperMode} />
+          </>
+        )}
+        {active === 'Live Market Scanner' && (
+          <LiveMarketScanner dataFolder={dataFolder} onActivity={handleActivity} />
+        )}
+        {active === 'AI Predictions' && (
+          <AIPredictions dataFolder={dataFolder} onActivity={handleActivity} />
+        )}
+        {active === 'Betting Recommendations' && (
+          <Recommendations dataFolder={dataFolder} onActivity={handleActivity} />
+        )}
+        {active !== 'Dashboard'
+          && active !== 'Live Market Scanner'
+          && active !== 'AI Predictions'
+          && active !== 'Betting Recommendations'
+          && <Placeholder page={active} />}
+      </div>
+      <footer>
+        <span>AngelicGTrader · Local development build</span>
+        <span className={paperMode ? '' : 'live'}>{paperMode ? 'Paper mode' : 'Live mode'} <i className={`footer-dot ${paperMode ? '' : 'live'}`}></i></span>
+      </footer>
     </main>
   </div>;
 }
