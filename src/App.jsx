@@ -84,7 +84,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
       if (!cancelled && markets.length) await appendCacheBatch(root, markets);
     })().catch(() => {});
     return () => { cancelled = true; };
-  }, [dataFolder, kalshiAccount]);
+  }, [dataFolder]);
   return <>
     <div className="page-heading">
       <div><div className="eyebrow">OVERVIEW</div><h1>Dashboard</h1><p>Your sports-market intelligence at a glance.</p></div>
