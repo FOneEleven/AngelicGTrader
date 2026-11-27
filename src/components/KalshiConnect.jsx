@@ -81,8 +81,11 @@ export default function KalshiConnect({ dataFolderHandle, onAccountChange }) {
         setSaved(connection);
         if (connection?.nickname) setNickname(connection.nickname);
         if (connection?.keyId && connection?.envelope) {
-          try { await verifyAndLoad(connection); }
-          catch (e) { setError(e.message || 'Saved Kalshi connection could not be verified.'); }
+          try {
+            await verifyAndLoad(connection);
+            try { await importKalshiHistory(connection); }
+            catch (historyError) { setError('Account connected; history sync failed: ' + historyError.message); }
+          } catch (e) { setError(e.message || 'Saved Kalshi connection could not be verified.'); }
         }
       }
     })();
@@ -130,7 +133,7 @@ export default function KalshiConnect({ dataFolderHandle, onAccountChange }) {
       setKeyId('');
       setShowForm(false);
       setShowGuide(false);
-      setNotice('Kalshi account connected.');
+      if (!notice.startsWith('Account connected. Trade history import failed:')) setNotice('Kalshi account connected.');
       setBalance(result);
     } catch (e) {
       setError(e.message || 'Could not connect to Kalshi.');
@@ -176,11 +179,12 @@ export default function KalshiConnect({ dataFolderHandle, onAccountChange }) {
     previous.importedFillIds = Array.from(seen);
     previous.lastSyncedAt = new Date().toISOString();
     previous.apiResponses = result.apiResponses || [];
+    previous.historyTruncated = !!result.truncated;
     store.accounts = { ...(store.accounts || {}), [accountId]: previous };
     const writer = await file.createWritable();
     await writer.write(JSON.stringify(store, null, 2));
     await writer.close();
-    setNotice('Kalshi account connected. Imported ' + fresh.length + ' new fills.');
+    setNotice('Kalshi account connected. Imported ' + fresh.length + ' new fills.' + (result.truncated ? ' More history will load on the next sync.' : ''));
     return fresh.length;
   }
   async function refresh() {
