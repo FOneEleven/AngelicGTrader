@@ -190,7 +190,7 @@ export default function KalshiConnect({ dataFolderHandle, onAccountChange }) {
       const writer = await file.createWritable();
       await writer.write(JSON.stringify(store, null, 2));
       await writer.close();
-      setNotice('Kalshi account connected. Imported ' + fresh.length + ' new fills.' + (result.truncated ? ' More history will load on the next sync.' : ''));
+      setNotice('Kalshi account connected. Imported ' + fresh.length + ' new fills.' + (result.truncated ? ' Pagination cap reached; additional older records need a separate backfill.' : ''));
       return fresh.length;
     })();
     historySyncRef.current.set(accountId, task);
