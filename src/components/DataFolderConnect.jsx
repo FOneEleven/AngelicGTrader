@@ -6,7 +6,8 @@ import {
 import { bootstrapDataFolder, readIndex } from '../lib/dataModel';
 import KalshiConnect from './KalshiConnect';
 
-export default function DataFolderConnect({ onFolderReady }) {
+export default function DataFolderConnect({ onFolderReady, onAccountChange }) {
+  const [kalshiExpanded, setKalshiExpanded] = useState(true);
   const [state, setState] = useState('loading');
   const [folderName, setFolderName] = useState('');
   const [savedHandle, setSavedHandle] = useState(null);
@@ -80,6 +81,8 @@ export default function DataFolderConnect({ onFolderReady }) {
   const connected = state === 'connected';
 
   return <>
+    <details className="integration-collapse" open={state !== 'connected'}>
+      <summary><span>Local data folder</span><small>{connected ? folderName : 'Not connected'}</small></summary>
     <div className="dfc">
       <span className={`dfc-icon ${connected ? 'ok' : 'idle'}`}>
         {connected ? <CheckCircle2 size={16} /> : <ShieldCheck size={16} />}
@@ -109,6 +112,10 @@ export default function DataFolderConnect({ onFolderReady }) {
         </button>
       )}
     </div>
-    <KalshiConnect dataFolderHandle={folderHandle}/>
+    </details>
+    <details className="integration-collapse" open={kalshiExpanded}>
+      <summary><span>Kalshi account</span><small>Account connection and balance</small></summary>
+      <KalshiConnect dataFolderHandle={folderHandle} onAccountChange={(account) => { onAccountChange?.(account); if (account) setKalshiExpanded(false); }} />
+    </details>
   </>;
 }
