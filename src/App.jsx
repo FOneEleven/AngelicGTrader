@@ -24,10 +24,7 @@ const nav = [
   { label: 'AI Predictions', icon: BrainCircuit, group: 'WORKSPACE' },
   { label: 'Season Manager', icon: ClipboardList, group: 'WORKSPACE' },
   { label: 'Game Day', icon: Trophy, group: 'WORKSPACE' },
-  { label: 'Performance Analytics', icon: ChartNoAxesCombined, group: 'INSIGHTS' },
-  { label: 'Prediction History', icon: History, group: 'INSIGHTS' },
-  { label: 'Configuration', icon: Settings, group: 'SYSTEM' },
-  { label: 'System Logs', icon: FileText, group: 'SYSTEM' },
+  { label: 'Prediction History', icon: History, group: 'WORKSPACE' },
 ];
 
 const opportunities = [
@@ -93,7 +90,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
       if (!cancelled && markets.length) await appendCacheBatch(root, markets);
     })().catch(() => {});
     return () => { cancelled = true; };
-  }, [dataFolder]);
+  }, [dataFolder, kalshiAccount]);
   return <>
     <div className="page-heading">
       <div><div className="eyebrow">OVERVIEW</div><h1>Dashboard</h1><p>Your sports-market intelligence at a glance.</p></div>
@@ -173,15 +170,20 @@ export default function App() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [kalshiAccount, setKalshiAccount] = useState(null);
 
-  const groups = ['WORKSPACE', 'INSIGHTS', 'SYSTEM'];
-  const filtered = nav.filter(n => n.label.toLowerCase().includes(search.toLowerCase()));
+  const groups = ['WORKSPACE'];
+  const filtered = nav;
 
   useEffect(() => {
     if (!dataFolder?.handle) return;
-    readSettings(dataFolder.handle).then((s) => setPaperMode(!!s.paperMode)).catch(() => {});
-  }, [dataFolder]);
+    readSettings(dataFolder.handle).then(async (s) => {
+      const nextMode = kalshiAccount?.connected ? !!s.paperMode : true;
+      setPaperMode(nextMode);
+      if (!kalshiAccount?.connected && !s.paperMode) await writeSettings(dataFolder.handle, { paperMode: true });
+    }).catch(() => {});
+  }, [dataFolder, kalshiAccount]);
 
   const handlePaperToggle = useCallback(async (next) => {
+    if (!kalshiAccount?.connected && next === false) return;
     setPaperMode(next);
     if (dataFolder?.handle) {
       try { await writeSettings(dataFolder.handle, { paperMode: next }); } catch {}
@@ -195,7 +197,6 @@ export default function App() {
   return <div className="app-shell">
     <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
       <div className="brand"><div className="brand-mark"><Activity size={21}/></div><div className="brand-text"><b>AngelicGTrader</b><small>SPORTS INTELLIGENCE</small></div><button className="mobile-close" onClick={() => setSidebarOpen(false)}><X size={18}/></button></div>
-      <div className="sidebar-search"><Search size={15}/><input placeholder="Find a section..." value={search} onChange={e => setSearch(e.target.value)}/><kbd>/</kbd></div>
       <nav>{groups.map(group => {
         const items = filtered.filter(n => n.group === group);
         return items.length ? <div className="nav-group" key={group}><div className="nav-label">{group}</div>{items.map(item => { const Icon = item.icon; return <button key={item.label} className={`nav-item ${active === item.label ? 'active' : ''}`} onClick={() => {setActive(item.label);setSidebarOpen(false);}}><Icon size={17}/><span>{item.label}</span>{active === item.label && <span className="active-bar"/>}</button>; })}</div> : null;
@@ -218,7 +219,7 @@ export default function App() {
         <div className="breadcrumb">Workspace <ChevronRight size={14}/><b>{active}</b></div>
         <div className="top-actions">
           {kalshiAccount && <div className="header-kalshi-account"><b>{kalshiAccount.accountName}</b><span>${Number(kalshiAccount.balanceDollars || 0).toFixed(2)}</span></div>}
-          <PaperModeToggle enabled={paperMode} onChange={handlePaperToggle} disabled={!dataFolder?.handle} />
+          <PaperModeToggle enabled={paperMode} onChange={handlePaperToggle} disabled={!dataFolder?.handle || !kalshiAccount?.connected} />
           <a className="header-doc-btn" title="Documentation" href="https://github.com/FOneEleven/AngelicGTrader/blob/main/README.md" target="_blank" rel="noreferrer"><FileText size={16}/><span>Docs</span></a>
           <button className="icon-btn" title="Notifications"><Bell size={17}/></button>
         </div>
@@ -226,7 +227,7 @@ export default function App() {
       <div className="page-content">
         {active === 'Dashboard' && (
           <>
-            <DataFolderConnect onFolderReady={setDataFolder} onAccountChange={setKalshiAccount} />
+            <DataFolderConnect onFolderReady={setDataFolder} onAccountChange={(account) => { setKalshiAccount(account); if (!account?.connected) handlePaperToggle(true); }} />
             <Dashboard dataFolder={dataFolder} activityFilter={activityFilter} onActivityFilter={setActivityFilter} refreshKey={refreshKey} paperMode={paperMode} onNavigate={setActive} onActivity={handleActivity} />
           </>
         )}
@@ -240,7 +241,7 @@ export default function App() {
           <GameDay dataFolder={dataFolder} onActivity={handleActivity} />
         )}
         {active === 'Season Manager' && (
-          <Recommendations dataFolder={dataFolder} paperMode={paperMode} onActivity={handleActivity} />
+          <Recommendations dataFolder={dataFolder} paperMode={paperMode} kalshiAccount={kalshiAccount} onActivity={handleActivity} />
         )}
         {active !== 'Dashboard'
           && active !== 'Live Market Scanner'
