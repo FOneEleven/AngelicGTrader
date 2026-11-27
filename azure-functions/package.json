@@ -1,0 +1,9 @@
+{
+  "name": "angelicgtrader-sports-functions",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "engines": { "node": ">=18" },
+  "scripts": { "start": "func start" },
+  "dependencies": { "@azure/functions": "^4.7.2" }
+}
