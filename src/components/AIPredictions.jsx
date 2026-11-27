@@ -121,6 +121,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       if (activeProfile && selectedPieceId !== activeProfile.id) setSelectedPieceId(activeProfile.id);
       if (activeProfile && activeProfile.season !== season) setSeason(activeProfile.season);
       setSeasonProfile(activeProfile);
+      setStatsByKey({});
       setPiecePrompt(activeProfile?.piecePrompt || '');
       const otherProfiles = profiles.filter((profile) => profile.id !== activeProfile?.id && profile.activePlayer !== false);
       const otherTrades = (await Promise.all(otherProfiles.map((profile) => readSeasonTrades(root, profile)))).flat();
