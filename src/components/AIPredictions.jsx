@@ -119,9 +119,10 @@ export default function AIPredictions({ dataFolder, onActivity }) {
 
   const { predictions } = useMemo(() => ({
     predictions: computePredictions(markets).predictions.filter((p) =>
-      ['NFL', 'NBA'].includes(String(p.league).toUpperCase()) || selectedEntries.includes(p.key)
+      (['NFL', 'NBA'].includes(String(p.league).toUpperCase()) || selectedEntries.includes(p.key)) &&
+      (!seasonProfile?.strategy || p.strategy === seasonProfile.strategy)
     ),
-  }), [markets, selectedEntries]);
+  }), [markets, selectedEntries, seasonProfile?.strategy]);
 
   useEffect(() => {
     if (!root || !markets.length || !predictions.length) return;
@@ -304,7 +305,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
       {error && <div className="notice error-notice"><b>{error}</b></div>}
       {progress && <div className="notice"><RefreshCw size={16}/><b>{progress}</b></div>}
       <section className="panel">
-        <div className="panel-heading"><div><h2>AI prediction entries · {predictions.length}</h2><p>Only ladders added from Live Market Scanner appear here. One strategy-selected line is analyzed per entry.</p></div></div>
+        <div className="panel-heading"><div><h2>AI prediction entries · {predictions.length}</h2><p>NFL/NBA entries are populated automatically. The active season piece's strategy filters the entries shown here.</p></div></div>
         {!predictions.length ? (
           <div className="empty-state"><div className="empty-icon"><AlertCircle size={22}/></div><b>No AI prediction entries selected</b><span>Open Live Market Scanner and use Add ladder on a team-total market.</span></div>
         ) : (
