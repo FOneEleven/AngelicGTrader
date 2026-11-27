@@ -81,7 +81,7 @@ export default function Recommendations({ dataFolder, paperMode: currentPaperMod
       const profile = await createSeasonProfile(root, {
         balance: amount, quotaValue: amount, paperMode, pieceType: token.pieceType, baseColor: token.baseColor,
         baseName: token.baseName, nonce: token.nonce, name: token.name,
-        selectionStrategy: 'standard', gridBand: 'pre-even', riskPreference: 'probability',
+        selectionStrategy: '', gridBand: 'pre-even', riskPreference: 'probability',
         diversityMode: 'allow-overlap', splitCount: 2, piecePrompt: '',
       });
       setSeasons((old) => [...old, profile]);
