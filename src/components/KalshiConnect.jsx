@@ -148,50 +148,54 @@ export default function KalshiConnect({ dataFolderHandle, onAccountChange }) {
     const accountId = connection.keyId;
     if (historySyncRef.current.has(accountId)) return historySyncRef.current.get(accountId);
     const task = (async () => {
-    const response = await fetch(API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ action: 'history', keyId: connection.keyId, envelope: connection.envelope }),
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok || !Array.isArray(result.fills)) throw new Error(result.error || 'Kalshi history import failed.');
-    const meta = await dataFolderHandle.getDirectoryHandle('meta', { create: true });
-    const file = await meta.getFileHandle('kalshi-history.json', { create: true });
-    let store = { accounts: {} };
-    try { store = JSON.parse(await (await file.getFile()).text()); } catch {}
-    const previous = store.accounts?.[accountId] || { nickname: connection.nickname, importedFillIds: [], fills: [] };
-    const seen = new Set(previous.importedFillIds || []);
-    const fresh = result.fills.filter((fill) => {
-      const id = String(fill.fill_id || fill.trade_id || fill.id || '');
-      return id && !seen.has(id);
-    });
-    for (const fill of fresh) {
-      const id = String(fill.fill_id || fill.trade_id || fill.id);
-      seen.add(id);
-      previous.fills.push(fill);
-      const rawTime = fill.created_time || fill.created_at || fill.ts || fill.created_ts;
-      let timestamp = new Date().toISOString();
-      if (rawTime != null) {
-        const parsed = typeof rawTime === 'number' ? new Date(rawTime * 1000) : new Date(rawTime);
-        if (!Number.isNaN(parsed.getTime())) timestamp = parsed.toISOString();
+      const response = await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ action: 'history', keyId: connection.keyId, envelope: connection.envelope }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !Array.isArray(result.fills)) throw new Error(result.error || 'Kalshi history import failed.');
+      const meta = await dataFolderHandle.getDirectoryHandle('meta', { create: true });
+      const file = await meta.getFileHandle('kalshi-history.json', { create: true });
+      let store = { accounts: {} };
+      try { store = JSON.parse(await (await file.getFile()).text()); } catch {}
+      const previous = store.accounts?.[accountId] || { nickname: connection.nickname, importedFillIds: [], fills: [] };
+      const seen = new Set(previous.importedFillIds || []);
+      const fresh = result.fills.filter((fill) => {
+        const id = String(fill.fill_id || fill.trade_id || fill.id || '');
+        return id && !seen.has(id);
+      });
+      for (const fill of fresh) {
+        const id = String(fill.fill_id || fill.trade_id || fill.id);
+        seen.add(id);
+        previous.fills.push(fill);
+        const rawTime = fill.created_time || fill.created_at || fill.ts || fill.created_ts;
+        let timestamp = new Date().toISOString();
+        if (rawTime != null) {
+          const parsed = typeof rawTime === 'number' ? new Date(rawTime * 1000) : new Date(rawTime);
+          if (!Number.isNaN(parsed.getTime())) timestamp = parsed.toISOString();
+        }
+        const quantity = fill.count_fp ?? fill.count ?? fill.quantity ?? '?';
+        const side = [fill.action, fill.side].filter(Boolean).join(' ');
+        const price = fill.yes_price_dollars ?? fill.no_price_dollars ?? fill.yes_price ?? fill.no_price;
+        const description = (connection.nickname || 'Kalshi') + ' · ' + (fill.ticker || 'Market') + ' · ' + side + ' ' + quantity + (price != null ? ' @ ' + price : '');
+        await appendActivity(dataFolderHandle, 'KALSHI_FILL', description, { timestamp });
       }
-      const quantity = fill.count_fp ?? fill.count ?? fill.quantity ?? '?';
-      const side = [fill.action, fill.side].filter(Boolean).join(' ');
-      const price = fill.yes_price_dollars ?? fill.no_price_dollars ?? fill.yes_price ?? fill.no_price;
-      const description = (connection.nickname || 'Kalshi') + ' · ' + (fill.ticker || 'Market') + ' · ' + side + ' ' + quantity + (price != null ? ' @ ' + price : '');
-      await appendActivity(dataFolderHandle, 'KALSHI_FILL', description, { timestamp });
-    }
-    previous.nickname = connection.nickname || 'Kalshi Account';
-    previous.importedFillIds = Array.from(seen);
-    previous.lastSyncedAt = new Date().toISOString();
-    previous.apiResponses = result.apiResponses || [];
-    previous.historyTruncated = !!result.truncated;
-    store.accounts = { ...(store.accounts || {}), [accountId]: previous };
-    const writer = await file.createWritable();
-    await writer.write(JSON.stringify(store, null, 2));
-    await writer.close();
-    setNotice('Kalshi account connected. Imported ' + fresh.length + ' new fills.' + (result.truncated ? ' More history will load on the next sync.' : ''));
-    return fresh.length;
+      previous.nickname = connection.nickname || 'Kalshi Account';
+      previous.importedFillIds = Array.from(seen);
+      previous.lastSyncedAt = new Date().toISOString();
+      previous.apiResponses = result.apiResponses || [];
+      previous.historyTruncated = !!result.truncated;
+      store.accounts = { ...(store.accounts || {}), [accountId]: previous };
+      const writer = await file.createWritable();
+      await writer.write(JSON.stringify(store, null, 2));
+      await writer.close();
+      setNotice('Kalshi account connected. Imported ' + fresh.length + ' new fills.' + (result.truncated ? ' More history will load on the next sync.' : ''));
+      return fresh.length;
+    })();
+    historySyncRef.current.set(accountId, task);
+    try { return await task; }
+    finally { historySyncRef.current.delete(accountId); }
   }
   async function refresh() {
     if (!saved) return;
