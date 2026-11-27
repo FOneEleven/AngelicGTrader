@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MessageCircle, Send, ChevronDown, CalendarDays } from 'lucide-react';
+import { MessageCircle, Send, ChevronDown, CalendarDays, X } from 'lucide-react';
 import SeasonToken from './SeasonToken';
 
 const GRID_BANDS = ['pre-even', 'break-even', '2x', '3x'];
@@ -24,7 +24,7 @@ function strategyGrid(profile, currentWorth) {
 
 export default function SeasonPieceEntry({
   profile, earnings = 0, onUpdate, onStartWeek, onNavigate, busy = false,
-  showEarnings = false, compact = false,
+  showEarnings = false, compact = false, onHide,
 }) {
   const [expanded, setExpanded] = useState(false);
   const [message, setMessage] = useState('');
@@ -48,6 +48,7 @@ export default function SeasonPieceEntry({
   }
 
   return <article className={`season-piece-card ${profile.activePlayer === false ? 'season-inactive' : ''} ${compact ? 'season-piece-card-compact' : ''}`}>
+    {onHide && <button className="remove-piece-btn" title="Remove piece from this graph" onClick={() => onHide(profile)}><X size={14}/></button>}
     <div className="season-piece-art"><SeasonToken pieceType={profile.pieceType} baseColor={profile.baseColor} size={compact ? 76 : 92}/></div>
     <div className="season-piece-info">
       <b>{profile.name}</b>
