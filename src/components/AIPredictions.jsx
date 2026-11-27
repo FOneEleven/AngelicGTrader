@@ -9,7 +9,6 @@ import { teamStatsCacheKey, getCachedTeamStats, setCachedTeamStats } from '../li
 import { getCachedAnalysis, setCachedAnalysis } from '../lib/analysisCache';
 
 const TEAM_TOTAL = /^KX([A-Z0-9]+?)TEAMTOTAL-/;
-const TARGET_PROBABILITY = 0.90;
 
 function cents(v) { return v == null || !Number.isFinite(Number(v)) ? '—' : Math.round(Number(v) * 100) + '¢'; }
 function closesIn(iso) {
@@ -68,15 +67,11 @@ function askFor(line, side) {
   const v = side === 'NO' ? line?.noAsk : line?.yesAsk;
   return v == null || !Number.isFinite(Number(v)) ? null : Number(v);
 }
-function chooseAutoIndex(p, side, analyses) {
-  const candidates = p.lines.map((line, index) => ({
-    index, probability: probabilityFor(analyses[line.ticker], side), ask: askFor(line, side),
-  })).filter((x) => x.probability != null && x.ask != null && x.ask > 0 && x.ask < 1);
-  if (!candidates.length) return Math.floor((p.lines.length - 1) / 2);
-  const qualified = candidates.filter((x) => x.probability >= TARGET_PROBABILITY);
-  const pool = qualified.length ? qualified : candidates;
-  pool.sort((a, b) => a.ask - b.ask || b.probability - a.probability);
-  return pool[0].index;
+function recommendedIndex(p) {
+  const ticker = p.recommended?.ticker;
+  const index = p.lines.findIndex((line) => line.ticker === ticker);
+  if (index >= 0) return index;
+  return Math.max(0, Math.min(Number(p.targetIdx) || 0, p.lines.length - 1));
 }
 function analysisKey(market, stats) {
   return JSON.stringify({
@@ -151,8 +146,10 @@ export default function AIPredictions({ dataFolder, onActivity }) {
         const tasks = [];
         for (const p of predictions) {
           const stats = statsForPrediction.get(p.key);
-          if (!stats) continue;
-          for (const line of p.lines) tasks.push({ p, line, stats });
+          // Each AI Predictions entry starts with exactly the line selected by
+          // its existing Midpoint/Cliff population logic. Other ladder lines
+          // are analyzed only if the user explicitly selects one in this box.
+          if (stats && p.recommended) tasks.push({ p, line: p.recommended, stats });
         }
         let completed = 0;
         for (let offset = 0; offset < tasks.length; offset += 3) {
@@ -181,7 +178,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
             nextAnalyses[result.ticker] = result.data;
             completed += 1;
           }
-          if (!cancelled) setProgress('OpenAI analysis: ' + completed + ' / ' + tasks.length + ' market lines');
+          if (!cancelled) setProgress('OpenAI analysis: ' + completed + ' / ' + tasks.length + ' AI Prediction entries');
         }
         if (cancelled) return;
         setStatsByKey(nextStats); setAnalyses(nextAnalyses); setAnalysisErrors(nextErrors); setProgress('');
@@ -201,7 +198,38 @@ export default function AIPredictions({ dataFolder, onActivity }) {
   function sideFor(p) { return sideByKey[p.key] || 'YES'; }
   function idxFor(p) {
     if (sliderIdx[p.key] != null) return Math.max(0, Math.min(sliderIdx[p.key], p.lines.length - 1));
-    return chooseAutoIndex(p, sideFor(p), analyses);
+    return recommendedIndex(p);
+  }
+
+  async function analyzeSelectedLine(p, line) {
+    const stats = statsByKey[p.key];
+    if (!root || !stats || !line || analyses[line.ticker]) return;
+    setBusy(true);
+    setProgress('Analyzing selected line: ' + p.team + ' over ' + line.line);
+    setAnalysisErrors((old) => ({ ...old, [p.key]: '' }));
+    try {
+      const market = {
+        ticker: line.ticker, title: p.team + ' over ' + line.line + ' points',
+        league: leagueFor(p), team: p.team, opponent: stats.opponent?.name || '',
+        line: line.line, yesAsk: line.yesAsk, noAsk: line.noAsk,
+        closeTime: p.closeTime || p.expectedExpiration || null,
+      };
+      const cacheKey = analysisKey(market, stats);
+      const cached = await getCachedAnalysis(root, cacheKey);
+      const data = cached?.data || await analyzeMarket({
+        market,
+        teamStats: { ...stats.team, modelInputs: stats.modelInputs, recentGames: stats.recentGames, dataQuality: stats.dataQuality },
+        opponentStats: stats.opponent,
+        context: { source: 'ESPN', season: stats.season, seasonType: stats.seasonType, statisticsFetchedAt: stats.fetchedAt },
+      });
+      if (!cached) await setCachedAnalysis(root, cacheKey, data);
+      setAnalyses((old) => ({ ...old, [line.ticker]: data }));
+    } catch (e) {
+      setAnalysisErrors((old) => ({ ...old, [p.key]: e.message || 'Selected-line analysis failed' }));
+    } finally {
+      setBusy(false);
+      setProgress('');
+    }
   }
   function setSide(p, side) {
     setSideByKey((old) => ({ ...old, [p.key]: side }));
@@ -244,7 +272,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
       {error && <div className="notice error-notice"><b>{error}</b></div>}
       {progress && <div className="notice"><RefreshCw size={16}/><b>{progress}</b></div>}
       <section className="panel">
-        <div className="panel-heading"><div><h2>AI market entries · {predictions.length}</h2><p>{predictions.reduce((n, p) => n + p.lines.length, 0)} individual market lines · 90% target probability</p></div></div>
+        <div className="panel-heading"><div><h2>AI prediction entries · {predictions.length}</h2><p>One strategy-selected market line analyzed per entry; alternate lines are analyzed only when selected here.</p></div></div>
         {!predictions.length ? (
           <div className="empty-state"><div className="empty-icon"><AlertCircle size={22}/></div><b>No team-total market entries</b><span>Run Live Market Scanner to populate the existing market cache.</span></div>
         ) : (
@@ -255,19 +283,16 @@ export default function AIPredictions({ dataFolder, onActivity }) {
               const analysis = analyses[chosen?.ticker], probability = probabilityFor(analysis, side), ask = askFor(chosen, side);
               const edge = probability == null || ask == null ? null : probability - ask;
               const payout = ask > 0 ? 1 / ask : null;
-              const qualified = probability != null && probability >= TARGET_PROBABILITY;
               const already = trades.some((t) => t.ticker === chosen?.ticker && t.side === side);
-              const probs = p.lines.map((line) => probabilityFor(analyses[line.ticker], side)).filter((v) => v != null);
-              const best = probs.length ? Math.max(...probs) : null;
               const rowError = analysisErrors[p.key];
               return <tr key={p.key}>
                 <td><b>{closesIn(p.gameTime || p.expectedExpiration || p.closeTime)}</b><small style={{display:'block',marginTop:2}}>{closeDate(p.closeTime)}</small></td>
                 <td><span className="status-pill">{p.league}</span></td>
                 <td><b>{p.team}</b><small style={{display:'block',marginTop:3}}>{p.event}</small>{rowError && <small className="negative">{rowError}</small>}</td>
-                <td><div className="line-slider"><input type="range" min="0" max={Math.max(0,p.lines.length-1)} step="1" value={idx} onChange={(e)=>setSliderIdx((old)=>({...old,[p.key]:Number(e.target.value)}))}/><span className="line-value">{chosen?.line ?? '—'}</span></div><small className="line-range">{p.lines[0]?.line} – {p.lines[p.lines.length-1]?.line}</small></td>
+                <td><div className="line-slider"><input type="range" min="0" max={Math.max(0,p.lines.length-1)} step="1" value={idx} onChange={(e)=>{const next=Number(e.target.value);setSliderIdx((old)=>({...old,[p.key]:next}));analyzeSelectedLine(p,p.lines[next]);}}/><span className="line-value">{chosen?.line ?? '—'}</span></div><small className="line-range">{p.lines[0]?.line} – {p.lines[p.lines.length-1]?.line}</small></td>
                 <td><select value={side} onChange={(e)=>setSide(p,e.target.value)} aria-label={p.team + ' position side'}><option value="YES">YES</option><option value="NO">NO</option></select></td>
                 <td>{cents(ask)}</td>
-                <td><b className={qualified ? 'positive' : 'prob'}>{probability == null ? '—' : Math.round(probability*100) + '%'}</b><small style={{display:'block'}}>{qualified ? '≥90% target' : best == null ? 'Awaiting analysis' : 'Best line: ' + Math.round(best*100) + '%'}</small></td>
+                <td><b className="prob">{probability == null ? '—' : Math.round(probability*100) + '%'}</b><small style={{display:'block'}}>{probability == null ? 'Awaiting analysis' : 'Selected line'}</small></td>
                 <td>{edge == null ? '—' : (edge >= 0 ? '+' : '') + Math.round(edge*100) + '¢'}</td>
                 <td><b className="prob">{payout ? payout.toFixed(2) + '×' : '—'}</b></td>
                 <td>{analysis ? <span className="status-pill strat-cliff">Ready</span> : <span className="status-pill">Pending</span>}</td>
@@ -276,7 +301,7 @@ export default function AIPredictions({ dataFolder, onActivity }) {
             })}</tbody>
           </table></div>
         )}
-        <div className="table-foot"><span>Model probability is OpenAI's YES estimate or its complement for NO. Team PPG and opponent PA remain internal.</span><span>{predictions.length} entries</span></div>
+        <div className="table-foot"><span>OpenAI evaluates the selected line in each AI Prediction entry. Team PPG and opponent PA remain internal.</span><span>{predictions.length} entries</span></div>
       </section>
     </div>
   );
