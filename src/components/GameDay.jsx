@@ -81,7 +81,7 @@ export default function GameDay({ dataFolder, onActivity }) {
   const visiblePieces = useMemo(() => {
     let rows = pieces.filter((p) => !hiddenIds.includes(p.id));
     if (filter === 'active') rows = rows.filter((p) => p.activePlayer !== false);
-    if (filter === 'winners') rows = rows.sort((a,b) => b.earnings - a.earnings).slice(0,5);
+    if (filter === 'winners') rows = rows.filter((p) => p.earnings > 0).sort((a,b) => b.earnings - a.earnings).slice(0,5);
     return rows;
   }, [pieces, filter, hiddenIds]);
 
