@@ -12,9 +12,7 @@ const BASES = [
 const EPITHETS = ['Golden', 'Rising', 'Iron', 'Velocity', 'Crowned', 'Untamed', 'Starlight', 'Victory'];
 function randomFrom(items) { return items[Math.floor(Math.random() * items.length)]; }
 function makeToken() {
-  const pieceType = randomFrom(PIECES);
-  const base = randomFrom(BASES);
-  const nonce = Math.floor(1000 + Math.random() * 9000);
+  const pieceType = randomFrom(PIECES), base = randomFrom(BASES), nonce = Math.floor(1000 + Math.random() * 9000);
   return { pieceType, baseColor: base.color, baseName: base.name, nonce, name: randomFrom(EPITHETS) + ' ' + pieceType + ' · ' + nonce };
 }
 
@@ -35,7 +33,22 @@ export default function Recommendations({ dataFolder, paperMode: currentPaperMod
 
   function cyclePiece() { setToken(makeToken()); setCreated(null); }
 
-  async function updatePiece(profile, patch) {\n    try { const updated = await updateSeasonProfile(root, profile.id, patch); setSeasons((old) => old.map((item) => item.id === updated.id ? updated : item)); } catch (e) { setError(e.message || 'Could not update season piece'); }\n  }\n\n  async function startNextWeek(profile) {\n    try { const updated = await advanceSeasonWeek(root, profile); setSeasons((old) => old.map((item) => item.id === updated.id ? updated : item)); onActivity?.('WEEK_START', updated.name + ' scheduled for ' + updated.nextScheduledWeek); } catch (e) { setError(e.message || 'Could not schedule next week'); }\n  }\n\n  async function commitSeason() {
+  async function updatePiece(profile, patch) {
+    try {
+      const updated = await updateSeasonProfile(root, profile.id, patch);
+      setSeasons((old) => old.map((item) => item.id === updated.id ? updated : item));
+    } catch (e) { setError(e.message || 'Could not update season piece'); }
+  }
+
+  async function startNextWeek(profile) {
+    try {
+      const updated = await advanceSeasonWeek(root, profile);
+      setSeasons((old) => old.map((item) => item.id === updated.id ? updated : item));
+      onActivity?.('WEEK_START', updated.name + ' scheduled for ' + updated.nextScheduledWeek);
+    } catch (e) { setError(e.message || 'Could not schedule next week'); }
+  }
+
+  async function commitSeason() {
     const amount = Number(balance);
     if (!root) { setError('Connect a data folder first.'); return; }
     if (!Number.isFinite(amount) || amount <= 0) { setError('Enter a season balance greater than zero.'); return; }
@@ -77,8 +90,20 @@ export default function Recommendations({ dataFolder, paperMode: currentPaperMod
       </div>
     </section>
     <section className="panel">
-      <div className="panel-heading"><div><h2>Created seasons · {seasons.length}</h2><p>Each committed token is retained as the identity of its season.</p></div></div>
-      {seasons.length ? <div className="season-manager-list">{seasons.map((s) => <article className={`season-manager-row ${s.activePlayer === false ? 'season-inactive' : ''}`} key={s.id}><SeasonToken pieceType={s.pieceType} baseColor={s.baseColor} size={68}/><div className="season-manager-main"><b>{s.name}</b><span>Season {s.season} · <i>$</i>{Number(s.balance).toFixed(2)} · {s.paperMode ? 'Paper' : 'Live'}</span><small>{s.pieceType} · {s.baseName} base · {s.activePlayer === false ? 'Inactive' : 'Active'}</small><div className="season-piece-controls"><button className="secondary-btn" onClick={() => startNextWeek(s)} disabled={busy || s.activePlayer === false}>Start next week</button><label className={`auto-switch ${s.auto ? 'enabled' : ''}`}><input type="checkbox" checked={!!s.auto} onChange={(e) => updatePiece(s, { auto: e.target.checked })}/><span className="auto-switch-track"></span><b>Auto</b></label><select value={s.strategy || 'midpoint'} onChange={(e) => updatePiece(s, { strategy: e.target.value })} aria-label={s.name + ' strategy'}><option value="midpoint">Midpoint</option><option value="cliff">Cliff</option></select></div><small>Next scheduled: {s.nextScheduledWeek || 'week1'}</small></div></article>)}</div> : <div className="empty-state"><b>No seasons created yet</b><span>Your committed season tokens will be listed here.</span></div>}
+      <div className="panel-heading"><div><h2>Season pieces · {seasons.length}</h2><p>Control each piece's weekly schedule, automation flag and strategy.</p></div></div>
+      {seasons.length ? <div className="season-manager-list">{seasons.map((s) => <article className={`season-manager-row ${s.activePlayer === false ? 'season-inactive' : ''}`} key={s.id}>
+        <SeasonToken pieceType={s.pieceType} baseColor={s.baseColor} size={68}/>
+        <div className="season-manager-main">
+          <b>{s.name}</b><span>Season {s.season} · $ {Number(s.balance).toFixed(2)} · {s.paperMode ? 'Paper' : 'Live'}</span>
+          <small>{s.pieceType} · {s.baseName} base · {s.activePlayer === false ? 'Inactive' : 'Active'}</small>
+          <div className="season-piece-controls">
+            <button className="secondary-btn" onClick={() => startNextWeek(s)} disabled={busy || s.activePlayer === false}>Start next week</button>
+            <label className={`auto-switch ${s.auto ? 'enabled' : ''}`}><input type="checkbox" checked={!!s.auto} onChange={(e) => updatePiece(s, { auto: e.target.checked })}/><span className="auto-switch-track"></span><b>Auto</b></label>
+            <select value={s.strategy || 'midpoint'} onChange={(e) => updatePiece(s, { strategy: e.target.value })} aria-label={s.name + ' strategy'}><option value="midpoint">Midpoint</option><option value="cliff">Cliff</option></select>
+          </div>
+          <small>Next scheduled: {s.nextScheduledWeek || 'week1'}</small>
+        </div>
+      </article>)}</div> : <div className="empty-state"><b>No seasons created yet</b><span>Your committed season tokens will be listed here.</span></div>}
     </section>
   </div>;
 }
