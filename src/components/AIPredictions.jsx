@@ -101,6 +101,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
   const [selectedEntries, setSelectedEntries] = useState([]);
   const [piecePrompt, setPiecePrompt] = useState('');
   const [pieceQuotaFilled, setPieceQuotaFilled] = useState(false);
+  const [reassessPredictionKey, setReassessPredictionKey] = useState('');
   const [otherPieceTickers, setOtherPieceTickers] = useState([]);
   const handledScanRef = useRef(null);
   const root = dataFolder?.handle;
@@ -123,7 +124,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       if (activeProfile && activeProfile.season !== season) setSeason(activeProfile.season);
       setSeasonProfile(activeProfile);
       setStatsByKey({});
-      setPiecePrompt(activeProfile?.piecePrompt || '');
+      setPiecePrompt(activeProfile?.piecePrompt || activeProfile?.pieceMessages?.filter((item) => item.role === 'user').slice(-1)[0]?.content || '');
       const otherProfiles = profiles.filter((profile) => profile.id !== activeProfile?.id && profile.activePlayer !== false);
       const otherTrades = (await Promise.all(otherProfiles.map((profile) => readSeasonTrades(root, profile)))).flat();
       setOtherPieceTickers([...otherTrades.map((trade) => trade.ticker), ...otherProfiles.flatMap((profile) => (profile.selectedLines || []).map((item) => item.ticker))].filter(Boolean));
@@ -285,15 +286,6 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       setProgress('');
     }
   }
-  async function savePiecePrompt() {
-    if (!root || !seasonProfile) return;
-    try {
-      const updated = await updateSeasonProfile(root, seasonProfile.id, { piecePrompt });
-      setSeasonProfile(updated);
-      setProgress('Piece instruction saved.');
-    } catch (e) { setError(e.message || 'Could not save piece instruction'); }
-  }
-
   async function reassessSelectedLine(p, line) {
     const stats = statsByKey[p.key];
     const baseline = analyses[line?.ticker];
@@ -326,11 +318,12 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       setError('');
       setProgress('Start next week: scanning upcoming games and every slider line…');
       const selected = {};
+      let bestOverall = null;
       const mode = seasonProfile.selectionStrategy || 'standard';
-      const gates = { standard: { probability: 0.92, confidence: 90, payout: 1.2 }, value: { probability: 0.84, confidence: 84, payout: 1.4 }, highroller: { probability: 0.70, confidence: 70, payout: 1.75 } };
+      const gates = { standard: { probability: 0.92, payout: 1.2 }, value: { probability: 0.84, payout: 1.4 }, highroller: { probability: 0.70, payout: 1.75 } };
       const gate = { ...(gates[mode] || gates.standard) };
-      if (seasonProfile.riskPreference === 'probability') { gate.probability += 0.02; gate.confidence += 2; }
-      if (seasonProfile.riskPreference === 'value') { gate.probability = Math.max(0.5, gate.probability - 0.02); gate.confidence = Math.max(50, gate.confidence - 2); gate.payout += 0.1; }
+      if (seasonProfile.riskPreference === 'probability') { gate.probability += 0.02; }
+      if (seasonProfile.riskPreference === 'value') { gate.probability = Math.max(0.5, gate.probability - 0.02); gate.payout += 0.1; }
       for (const p of predictions) {
         const gameTime = p.gameTime || p.expectedExpiration || p.closeTime;
         if (gameTime && Number.isFinite(Date.parse(gameTime)) && Date.parse(gameTime) <= Date.now()) continue;
@@ -346,11 +339,10 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
             const probability = probabilityFor(analysis, side);
             const ask = askFor(line, side);
             const payout = ask > 0 ? 1 / ask : 0;
-            const confidence = Number(analysis.prediction.confidence) || 0;
             if (probability == null || ask == null) continue;
             if (['avoid-overlap', 'split'].includes(seasonProfile.diversityMode) && otherPieceTickers.includes(line.ticker)) continue;
             if (leagueFor(p) === 'MLB') {
-              if (analysis.mlbEligibility?.eligible !== true || probability < 0.90 || confidence < 85) continue;
+              if (analysis.mlbEligibility?.eligible !== true || probability < 0.90) continue;
             } else {
               if (mode === 'value' && (!pieceQuotaFilled || seasonProfile.safe === true)) continue;
               if (mode === 'value') { const knownPPG = Math.min(Number(stats.team?.pointsPerGame) || Infinity, Number(stats.team?.recent5PPG) || Number(stats.team?.pointsPerGame) || Infinity); if (!Number.isFinite(knownPPG) || Number(line.line) > knownPPG * 0.9) continue; }
@@ -361,14 +353,14 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
                   : leagueFor(p) === 'NBA' ? teamPPG >= 110 && opponentPA >= 110 : false;
                 if (!shootout) continue;
               }
-              if (probability < gate.probability || confidence < gate.confidence || payout <= gate.payout) continue;
+              if (probability < gate.probability || payout <= gate.payout) continue;
             }
             const value = probability - ask;
-            if (!best || value > best.value) best = { index: p.lines.findIndex((item) => item.ticker === line.ticker), ticker: line.ticker, event: p.event, side, value };
+            if (!bestOverall || value > bestOverall.value) bestOverall = { predictionKey: p.key, index: p.lines.findIndex((item) => item.ticker === line.ticker), ticker: line.ticker, event: p.event, side, value };
           }
         }
-        if (best) selected[p.key] = best;
       }
+      if (bestOverall) selected[bestOverall.predictionKey] = bestOverall;
       setSliderIdx((old) => ({ ...old, ...Object.fromEntries(Object.entries(selected).map(([key, item]) => [key, item.index])) }));
       setSideByKey((old) => ({ ...old, ...Object.fromEntries(Object.entries(selected).map(([key, item]) => [key, item.side])) }));
       const selectedLines = Object.entries(selected).map(([predictionKey, item]) => ({ predictionKey, ticker: item.ticker, event: item.event, side: item.side }));
@@ -393,11 +385,10 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
     if (leagueFor(p) === 'MLB' && (side !== 'NO' || analysis?.mlbEligibility?.eligible !== true)) { setError('MLB is NO-only and this line has not passed the strict MLB eligibility checks.'); return; }
     if (leagueFor(p) !== 'MLB') {
       const mode = seasonProfile?.selectionStrategy || 'standard';
-      const gates = { standard: { probability: 0.92, confidence: 90, payout: 1.2 }, value: { probability: 0.84, confidence: 84, payout: 1.4 }, highroller: { probability: 0.70, confidence: 70, payout: 1.75 } };
+      const gates = { standard: { probability: 0.92, payout: 1.2 }, value: { probability: 0.84, payout: 1.4 }, highroller: { probability: 0.70, payout: 1.75 } };
       const gate = { ...(gates[mode] || gates.standard) };
-      if (seasonProfile?.riskPreference === 'probability') { gate.probability += 0.02; gate.confidence += 2; }
-      if (seasonProfile?.riskPreference === 'value') { gate.probability = Math.max(0.5, gate.probability - 0.02); gate.confidence = Math.max(50, gate.confidence - 2); gate.payout += 0.1; }
-      const confidence = Number(analysis?.prediction?.confidence) || 0;
+      if (seasonProfile?.riskPreference === 'probability') { gate.probability += 0.02; }
+      if (seasonProfile?.riskPreference === 'value') { gate.probability = Math.max(0.5, gate.probability - 0.02); gate.payout += 0.1; }
       const payout = ask > 0 ? 1 / ask : 0;
       if (mode === 'value' && (!pieceQuotaFilled || seasonProfile?.safe === true)) { setError('Value strategy requires this piece to have filled its monetary quota and not be marked Safe.'); return; }
       if (mode === 'value') { const stats = statsByKey[p.key]; const knownPPG = Math.min(Number(stats?.team?.pointsPerGame) || Infinity, Number(stats?.team?.recent5PPG) || Number(stats?.team?.pointsPerGame) || Infinity); if (!Number.isFinite(knownPPG) || Number(line.line) > knownPPG * 0.9) { setError("Value strategy requires a line at least 10% below the team's season and recent scoring average."); return; } }
@@ -409,7 +400,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
           : leagueFor(p) === 'NBA' ? teamPPG >= 110 && opponentPA >= 110 : false;
         if (!shootoutProfile) { setError('High Roller requires a high-scoring team profile against a weaker defense; this matchup does not meet the statistical screen.'); return; }
       }
-      if (probability < gate.probability || confidence < gate.confidence || payout <= gate.payout) { setError(mode + ' strategy thresholds not met: probability ' + Math.round(probability * 100) + '% / confidence ' + confidence + ' / payout ' + payout.toFixed(2) + '×.'); return; }
+      if (probability < gate.probability || payout <= gate.payout) { setError(mode + ' strategy thresholds not met: probability ' + Math.round(probability * 100) + '% / confidence ' + confidence + ' / payout ' + payout.toFixed(2) + '×.'); return; }
     }
     if (trades.some((t) => t.ticker === line.ticker && t.side === side)) return;
     setBusy(true); setError('');
@@ -454,7 +445,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       {progress && <div className="notice"><RefreshCw size={16}/><b>{progress}</b></div>}
       <section className="panel">
         <div className="panel-heading"><div><h2>AI prediction entries · {predictions.length}</h2><p>NFL/NBA/MLB entries are populated automatically. The active season piece's strategy filters the entries shown here.</p></div></div>
-        <div className="piece-instruction-box"><label htmlFor="active-season-piece">Active season piece</label><select id="active-season-piece" value={selectedPieceId} onChange={(e) => setSelectedPieceId(e.target.value)}>{seasonProfiles.filter((profile) => profile.activePlayer !== false).map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.selectionStrategy || "standard"}</option>)}</select><label htmlFor="piece-ai-instruction">Instruction to this season piece</label><textarea id="piece-ai-instruction" rows="3" value={piecePrompt} onChange={(e) => setPiecePrompt(e.target.value)} placeholder="Ask this piece to investigate a matchup factor, trend, or concern. Azure will test the claim against evidence rather than assume it is true."/><button className="secondary-btn" disabled={!seasonProfile || busy} onClick={savePiecePrompt}>Save piece instruction</button></div>
+        <div className="piece-instruction-box"><label htmlFor="active-season-piece">Active season piece</label><select id="active-season-piece" value={selectedPieceId} onChange={(e) => setSelectedPieceId(e.target.value)}>{seasonProfiles.filter((profile) => profile.activePlayer !== false).map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.selectionStrategy || "standard"}</option>)}</select><div className="piece-instruction-current"><b>Saved piece instruction</b><span>{piecePrompt || 'No instruction saved. Open the piece avatar on Dashboard or Game Day to send it a message.'}</span></div><button className="secondary-btn" disabled={busy || !piecePrompt.trim() || !predictions.length || !statsByKey[(predictions.find((p) => p.key === reassessPredictionKey) || predictions[0])?.key]} onClick={() => { const target = predictions.find((p) => p.key === reassessPredictionKey) || predictions[0]; if (target) reassessSelectedLine(target, target.lines[idxFor(target)]); }}>Reassess selected line for this piece</button></div>
         {!predictions.length ? (
           <div className="empty-state"><div className="empty-icon"><AlertCircle size={22}/></div><b>No AI prediction entries selected</b><span>Open Live Market Scanner and use Add ladder on a team-total market.</span></div>
         ) : (
@@ -481,9 +472,9 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
                       step="1"
                       value={idx}
                       style={{flex:'1 1 auto',width:130,minWidth:0,margin:0}}
-                      onChange={(e)=>setSliderIdx((old)=>({...old,[p.key]:Number(e.target.value)}))}
-                      onPointerUp={(e)=>commitSliderSelection(p,e.currentTarget.value)}
-                      onKeyUp={(e)=>{if(['ArrowLeft','ArrowRight','Home','End','PageUp','PageDown'].includes(e.key))commitSliderSelection(p,e.currentTarget.value);}}
+                      onChange={(e)=>{setSliderIdx((old)=>({...old,[p.key]:Number(e.target.value)}));setReassessPredictionKey(p.key);}}
+                      onPointerUp={(e)=>{setReassessPredictionKey(p.key);commitSliderSelection(p,e.currentTarget.value);}}
+                      onKeyUp={(e)=>{if(['ArrowLeft','ArrowRight','Home','End','PageUp','PageDown'].includes(e.key)){setReassessPredictionKey(p.key);commitSliderSelection(p,e.currentTarget.value);}}}
                     />
                     <span className="line-value" style={{display:'inline-block',width:48,minWidth:48,textAlign:'right',fontVariantNumeric:'tabular-nums',flexShrink:0}}>{chosen?.line ?? '—'}</span>
                   </div>
@@ -491,11 +482,11 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
                 </td>
                 <td><select value={side} onChange={(e)=>setSide(p,e.target.value)} aria-label={p.team + ' position side'}>{leagueFor(p) === 'MLB' ? <option value="NO">NO</option> : <><option value="YES">YES</option><option value="NO">NO</option></>}</select></td>
                 <td>{cents(ask)}</td>
-                <td><b className="prob">{probability == null ? '—' : Math.round(probability*100) + '%'}</b><small style={{display:'block'}}>{probability == null ? 'Awaiting analysis' : 'Confidence ' + (analysis?.prediction?.confidence ?? '—') + '%'}</small>{analysis?.reassessment && <small>Original {Math.round((side === 'NO' ? 1 - analysis.reassessment.baselineProbabilityYes : analysis.reassessment.baselineProbabilityYes) * 100)}% → reassessed {Math.round(probability * 100)}%</small>}</td>
+                <td><b className="prob">{probability == null ? '—' : Math.round(probability*100) + '%'}</b><small style={{display:'block'}}>{probability == null ? 'Awaiting analysis' : 'Model probability'}</small>{analysis?.reassessment && <small>Original {Math.round((side === 'NO' ? 1 - analysis.reassessment.baselineProbabilityYes : analysis.reassessment.baselineProbabilityYes) * 100)}% → reassessed {Math.round(probability * 100)}%</small>}</td>
                 <td>{edge == null ? '—' : (edge >= 0 ? '+' : '') + Math.round(edge*100) + '¢'}</td>
                 <td><b className="prob">{payout ? payout.toFixed(2) + '×' : '—'}</b></td>
                 <td>{analysis ? <span className="status-pill strat-cliff">Ready</span> : <span className="status-pill">Pending</span>}</td>
-                <td><button className="secondary-btn" disabled={busy || !piecePrompt.trim() || !analysis || !statsByKey[p.key]} onClick={()=>reassessSelectedLine(p, chosen)}>Reassess</button> <button className="secondary-btn" disabled={busy || !root || (!already && (!paperMode || seasonProfile?.activePlayer === false || probability == null || ask == null || (leagueFor(p) === 'MLB' && (side !== 'NO' || analysis?.mlbEligibility?.eligible !== true))))} onClick={()=>already ? removePredictionRecord(p, chosen, side) : recordPrediction(p)}>{already ? 'Remove record' : 'Record'}</button><a className="icon-btn" href={'https://kalshi.com/markets/' + (p.event || chosen?.ticker || '').toLowerCase()} target="_blank" rel="noreferrer" title="Open on Kalshi" style={{marginLeft:6}}><ExternalLink size={14}/></a></td>
+                <td><button className="secondary-btn" disabled={busy || !root || (!already && (!paperMode || seasonProfile?.activePlayer === false || probability == null || ask == null || (leagueFor(p) === 'MLB' && (side !== 'NO' || analysis?.mlbEligibility?.eligible !== true))))} onClick={()=>already ? removePredictionRecord(p, chosen, side) : recordPrediction(p)}>{already ? 'Remove record' : 'Record'}</button><a className="icon-btn" href={'https://kalshi.com/markets/' + (p.event || chosen?.ticker || '').toLowerCase()} target="_blank" rel="noreferrer" title="Open on Kalshi" style={{marginLeft:6}}><ExternalLink size={14}/></a></td>
               </tr>;
             })}</tbody>
           </table></div>
