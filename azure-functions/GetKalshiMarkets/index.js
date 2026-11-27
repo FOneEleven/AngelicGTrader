@@ -42,7 +42,7 @@ function normalizeMarket(m) {
 
   const title = m.title || m.yes_sub_title || m.ticker;
   const subtitleCandidate = m.subtitle || m.no_sub_title || '';
-  const subtitle = /.+\\s+over\\s+[\\d.]+/i.test(subtitleCandidate) ? subtitleCandidate : title;
+  const subtitle = /.+\s+over\s+[\d.]+/i.test(subtitleCandidate) ? subtitleCandidate : title;
 
   return {
     ticker: m.ticker,
