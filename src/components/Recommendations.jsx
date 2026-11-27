@@ -24,7 +24,7 @@ function makeToken() {
 }
 function money(value) { return '$' + (Number(value) || 0).toFixed(2); }
 
-export default function Recommendations({ dataFolder, paperMode: currentPaperMode = true, kalshiAccount, onActivity }) {
+export default function Recommendations({ dataFolder, paperMode: currentPaperMode = true, kalshiAccount, onActivity, onStartWeek }) {
   const root = dataFolder?.handle;
   const [balance, setBalance] = useState('0');
   const availableBalance = kalshiAccount?.connected ? Math.max(0, Number(kalshiAccount.balanceDollars) || 0) : 0;
@@ -60,13 +60,7 @@ export default function Recommendations({ dataFolder, paperMode: currentPaperMod
     } catch (e) { setError(e.message || 'Could not update season piece'); }
   }
 
-  async function startNextWeek(profile) {
-    try {
-      const updated = await advanceSeasonWeek(root, profile);
-      setSeasons((old) => old.map((item) => item.id === updated.id ? updated : item));
-      onActivity?.('WEEK_START', updated.name + ' scheduled for ' + updated.nextScheduledWeek);
-    } catch (e) { setError(e.message || 'Could not schedule next week'); }
-  }
+  async function startNextWeek(profile) { onStartWeek?.(profile); }
 
   async function confirmSplit(profile) {
     const count = Number(splitCounts[profile.id] || profile.splitCount || 2);
