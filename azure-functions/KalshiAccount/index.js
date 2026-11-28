@@ -102,7 +102,7 @@ function signRequest(keyId, privatePem, method, path, setStage) {
     throw new Error('Kalshi signing key must be Ed25519; received ' + signingKey.asymmetricKeyType + '.');
   }
 
-  setStage('sign Kalshi balance request');
+  setStage('sign Kalshi API request');
   const timestamp = String(Date.now());
   const message = Buffer.from(timestamp + method.toUpperCase() + path.split('?')[0], 'utf8');
   const signature = crypto.sign(null, message, signingKey);
@@ -146,6 +146,62 @@ app.http('KalshiAccount', {
       setStage('select Kalshi environment and account endpoint');
       const environment = process.env.KALSHI_ENVIRONMENT === 'demo' ? 'demo' : 'production';
       const host = HOSTS[environment];
+      if (body.action === 'orders') {
+        const orders = Array.isArray(body.orders) ? body.orders : [];
+        if (!orders.length || orders.length > 20) {
+          return response(400, { error: 'Provide between 1 and 20 validated order requests.' });
+        }
+        const results = [];
+        for (const order of orders) {
+          const ticker = String(order?.ticker || '').trim();
+          const side = String(order?.side || '').toLowerCase();
+          const count = String(order?.count || '');
+          const price = String(order?.price || '');
+          const clientOrderId = String(order?.client_order_id || '');
+          if (!ticker || !['bid', 'ask'].includes(side) || !/^\\d+(?:\\.\\d{1,2})?$/.test(count) || !(Number(count) >= 0.01) || !/^0?\\.\\d{1,4}$/.test(price) || !(Number(price) > 0 && Number(price) < 1) || !/^[A-Za-z0-9_\\-:+=\\/]{1,64}$/.test(clientOrderId)) {
+            results.push({ client_order_id: clientOrderId || null, ticker, submitted: false, error: 'Invalid V2 order fields.' });
+            continue;
+          }
+          const requestPath = PREFIX + '/portfolio/events/orders';
+          const headers = { ...signRequest(keyId, signingPem, 'POST', requestPath, setStage), 'Content-Type': 'application/json' };
+          const requestBody = {
+            ticker, client_order_id: clientOrderId, side, count, price,
+            time_in_force: 'good_till_canceled',
+            self_trade_prevention_type: 'taker_at_cross',
+            post_only: false, cancel_order_on_pause: false, reduce_only: false,
+            exchange_index: -1,
+          };
+          setStage('submit Kalshi V2 order for ' + ticker);
+          const upstream = await fetch(host + requestPath, {
+            method: 'POST', headers, body: JSON.stringify(requestBody),
+            signal: AbortSignal.timeout(20000),
+          });
+          const payload = await upstream.json().catch(() => ({}));
+          if (!upstream.ok) {
+            results.push({
+              client_order_id: clientOrderId, ticker, submitted: false,
+              kalshiStatus: upstream.status,
+              error: payload?.error?.message || payload?.error?.details || 'Kalshi rejected the order.',
+            });
+            continue;
+          }
+          results.push({
+            client_order_id: clientOrderId, ticker, submitted: true,
+            order_id: payload.order_id || payload.order?.order_id || null,
+            fill_count: payload.fill_count ?? payload.order?.fill_count ?? '0.00',
+            remaining_count: payload.remaining_count ?? payload.order?.remaining_count ?? null,
+            ts_ms: payload.ts_ms || Date.now(),
+            response: payload,
+          });
+        }
+        return response(200, {
+          connected: true, environment,
+          submitted: results.filter((item) => item.submitted).length,
+          failed: results.filter((item) => !item.submitted).length,
+          results,
+        });
+      }
+
       if (body.action === 'history') {
         const allPages = [];
         const allFills = [];
