@@ -70,12 +70,12 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
           savedProfile = await updateSeasonProfile(root, profile.id, {
             selectedLines: [{
               ticker: placedTrade.ticker, event: placedTrade.matchup || '', team: selectedTeam,
-              league: selectedLeague, line: placedTrade.line ?? null, side: placedTrade.side || '',
-              sourceRecordId: placedTrade.sourceRecordId, placedTradeId: placedTrade.id,
+              league: selectedLeague, line: placedTrade.line ?? null, side: placedTrade.side || '', week: currentWeek,
+              sourceRecordId: placedTrade.sourceRecordId, placedTradeId: placedTrade.id, playBoxStatus: 'committed',
             }],
             selectionResolution: {
               ...(profile.selectionResolution || {}),
-              status: 'selected', phase: 'placed-from-dashboard', resolvedAt: placedTrade.timestamp || new Date().toISOString(),
+              status: 'committed', phase: 'placed-from-dashboard', resolvedAt: placedTrade.timestamp || new Date().toISOString(), week: currentWeek,
               selectedGames: 1, message: 'Existing Dashboard bet linked to this season piece.',
             },
           });
