@@ -132,7 +132,7 @@ export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigat
         {visiblePieces.map((piece) => <SeasonPieceEntry
           key={piece.id}
           profile={piece}
-          earnings={piece.walletReturned}
+          earnings={piece.currentWorth}
           compact
           busy={busyId === piece.id}
           onUpdate={updatePiece}
@@ -159,6 +159,6 @@ export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigat
       })}
       {!visiblePieces.some((p) => p.activePlayer !== false) && <div className="empty-state"><Users size={22}/><b>No active pieces in this view</b></div>}
     </section>
-    <div className="game-day-note">Current worth counts only closed, resolved trades whose returned funds are explicitly confirmed in the wallet. A closed status or recorded profit alone does not count. Auto pieces run the selection scan when Start next week is clicked; any selected contract is staged in Play Box and still requires an explicit commit.</div>
+    <div className="game-day-note">Current worth starts at the piece allocation and increases by the settled payout. The one-minute monitor checks committed matches while the app is open. A losing result deactivates the piece and moves it to the inactive set.</div>
   </div>;
 }
