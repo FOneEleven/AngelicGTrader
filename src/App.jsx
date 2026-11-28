@@ -60,11 +60,32 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
       const pieceEntries = await Promise.all(profiles.map(async (profile) => {
         const trades = await readSeasonTrades(root, profile);
         const currentWeek = profile.nextScheduledWeek || 'week1';
+        const placedTrade = trades.find((trade) => trade.week === currentWeek && trade.sourceRecordId);
+        let savedProfile = profile;
+        // Repair older Dashboard placements that created the trade but did not
+        // also persist the selected game on the shared season-piece profile.
+        if (placedTrade && (profile.selectedLines?.[0]?.ticker !== placedTrade.ticker || profile.selectedLines?.[0]?.sourceRecordId !== placedTrade.sourceRecordId)) {
+          const selectedTeam = String(placedTrade.market || '').replace(/\\s+over\\s+.*$/i, '').trim();
+          const selectedLeague = String(placedTrade.ticker || '').match(/^KX([A-Z]+)TEAMTOTAL-/i)?.[1] || '';
+          savedProfile = await updateSeasonProfile(root, profile.id, {
+            selectedLines: [{
+              ticker: placedTrade.ticker, event: placedTrade.matchup || '', team: selectedTeam,
+              league: selectedLeague, line: placedTrade.line ?? null, side: placedTrade.side || '',
+              sourceRecordId: placedTrade.sourceRecordId, placedTradeId: placedTrade.id,
+            }],
+            selectionResolution: {
+              ...(profile.selectionResolution || {}),
+              status: 'selected', phase: 'placed-from-dashboard', resolvedAt: placedTrade.timestamp || new Date().toISOString(),
+              selectedGames: 1, message: 'Existing Dashboard bet linked to this season piece.',
+            },
+          });
+        }
         const committed = trades.some((trade) => trade.week === currentWeek && /^(open|pending|placed)$/i.test(String(trade.status || '')));
-        return { id: profile.id, earnings: trades.reduce((sum, trade) => sum + (Number(trade.earnings ?? trade.profit) || 0), 0), committed };
+        return { id: profile.id, profile: savedProfile, earnings: trades.reduce((sum, trade) => sum + (Number(trade.earnings ?? trade.profit) || 0), 0), committed };
       }));
+      const currentProfiles = pieceEntries.map((entry) => entry.profile);
       if (!cancelled) {
-        setSeasonProfiles(profiles);
+        setSeasonProfiles(currentProfiles);
         setPieceEarnings(Object.fromEntries(pieceEntries.map((entry) => [entry.id, entry.earnings])));
         setPieceCommitments(Object.fromEntries(pieceEntries.map((entry) => [entry.id, entry.committed])));
       }
