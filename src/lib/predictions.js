@@ -31,7 +31,7 @@ function parseLine(subtitle = '') {
   return m ? Number(m[1]) : null;
 }
 
-// Prefer expected_expiration_time; fall back to close_time for legacy cache rows.
+// Only occurrence_datetime is accepted as the actual event start.
 function resolveGameTime(m) {
   // Fail closed when the provider has no explicit event occurrence timestamp.
   return m.occurrenceTime || '';
@@ -45,7 +45,7 @@ export function computePredictions(markets, opts = {}) {
   const teamTotals = markets.filter((m) => {
     if (!TEAM_TOTAL.test(m.ticker || '')) return false;
     const status = String(m.status || '').toLowerCase();
-    if (['closed', 'settled', 'finalized', 'resolved'].includes(status) || m.isClosed === true) return false;
+    if ((status && !['open', 'active'].includes(status)) || m.isClosed === true) return false;
     const eventStart = resolveGameTime(m);
     const eventStartMs = eventStart ? Date.parse(eventStart) : NaN;
     if (!Number.isFinite(eventStartMs) || eventStartMs <= now) return false;
