@@ -661,7 +661,7 @@ export default function App() {
           <PredictionHistory dataFolder={dataFolder} refreshKey={refreshKey} />
         )}
         {active === 'Game Day' && (
-          <GameDay dataFolder={dataFolder} onActivity={handleActivity} onStartWeek={handleStartWeek} onNavigate={setActive} />
+          <GameDay dataFolder={dataFolder} refreshKey={refreshKey} onActivity={handleActivity} onStartWeek={handleStartWeek} onNavigate={setActive} />
         )}
         {active === 'Season Manager' && (
           <Recommendations dataFolder={dataFolder} paperMode={paperMode} kalshiAccount={kalshiAccount} onActivity={handleActivity} onStartWeek={handleStartWeek} onNavigate={setActive} />
