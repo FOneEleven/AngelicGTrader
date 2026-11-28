@@ -460,7 +460,7 @@ async function finalInterrogate(body) {
     },
   };
 
-  const instructions = \`
+  const instructions = `
 You are AngelicGTrader's FINAL INTERROGATOR.
 
 SCOREBOARD VERIFICATION IS MANDATORY:
@@ -507,7 +507,7 @@ MATCHUP AND VERDICT:
 - REVIEW when genuinely critical facts about the event or matchup cannot be verified.
 - The scoreboard is the source of truth for event status. Market close and expiration are contract timestamps, not game-start evidence.
 - Return only the requested structured object.
-\`.trim();
+`.trim();
 
   const response = await fetch(OPENAI_URL, {
     method: 'POST',
