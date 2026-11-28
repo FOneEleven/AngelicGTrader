@@ -1,8 +1,9 @@
 // Browser client for the Azure FinalInterrogation function.
+import { getCachedFinalInterrogation, setCachedFinalInterrogation } from './finalInterrogationCache';
 const BASE = import.meta.env.VITE_FINAL_INTERROGATION_URL
   || 'https://angelicgtrader-dvhgf4dhc6hahqhs.westus3-01.azurewebsites.net/api/FinalInterrogation';
 
-export async function finalInterrogateCandidate({ candidate, market, teamStats, opponentStats, baselinePrediction, pieceInstruction, season }) {
+export async function finalInterrogateCandidate({ candidate, market, teamStats, opponentStats, baselinePrediction, pieceInstruction, season, root }) {
   if (!candidate || !market || !teamStats || !opponentStats) {
     throw new Error('candidate, market, teamStats, and opponentStats are required');
   }
@@ -15,6 +16,12 @@ export async function finalInterrogateCandidate({ candidate, market, teamStats, 
   const marketCloseMs = market.closeTime ? Date.parse(market.closeTime) : NaN;
   if (Number.isFinite(marketCloseMs) && marketCloseMs <= Date.now()) {
     throw new Error('Market is already closed; no new position can be evaluated.');
+  }
+  // Validate kickoff and market-open status above before allowing a cached review.
+  const cacheInput = { candidate, market, teamStats, opponentStats, baselinePrediction, pieceInstruction, season };
+  if (root) {
+    const cached = await getCachedFinalInterrogation(root, cacheInput).catch(() => null);
+    if (cached) return { ...cached, cacheHit: true };
   }
   const response = await fetch(BASE, {
     method: 'POST',
@@ -34,5 +41,6 @@ export async function finalInterrogateCandidate({ candidate, market, teamStats, 
   if (!data.interrogation || !['KEEP', 'REJECT', 'REVIEW'].includes(data.verdict)) {
     throw new Error('FinalInterrogation returned an invalid review');
   }
+  if (root) await setCachedFinalInterrogation(root, cacheInput, data).catch(() => {});
   return data;
 }
