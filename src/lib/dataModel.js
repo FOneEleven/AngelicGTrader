@@ -497,7 +497,7 @@ export async function writeInactivePieces(root, pieces) {
 }
 
 export async function archiveInactivePiece(root, profile, trades, reason) {
-  const currentWorth = Number(profile.currentWorth ?? profile.quotaValue ?? profile.initialBalance ?? profile.balance) || 0;
+  const currentWorth = confirmedWalletReturns(trades || []);
   const snapshot = {
     ...profile, activePlayer: false, status: 'inactive', currentWorth,
     inactiveSince: profile.inactiveSince || new Date().toISOString(),
