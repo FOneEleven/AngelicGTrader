@@ -301,8 +301,8 @@ export default function App() {
     };
     const next = [...current, item];
     await writePlayBox(dataFolder.handle, next);
-    const selectedLine = { predictionKey: selection.predictionKey || null, ticker: selection.ticker, event: selection.event || selection.matchup || '', team: selection.team || '', league: selection.league || '', line: selection.line ?? null, side: selection.side || '', playBoxItemId: item.id, playBoxStatus: 'in-play-box', sourceRecordId: selection.sourceRecordId || null };
-    await updateSeasonProfile(dataFolder.handle, profile.id, { selectedLines: [selectedLine], selectionResolution: { ...(profile.selectionResolution || {}), status: 'in-play-box', phase: 'queued-for-batch-commit', resolvedAt: new Date().toISOString(), selectedGames: 1, message: 'Selection staged in Play Box; no bet has been committed.' } });
+    const selectedLine = { predictionKey: selection.predictionKey || null, ticker: selection.ticker, event: selection.event || selection.matchup || '', team: selection.team || '', league: selection.league || '', line: selection.line ?? null, side: selection.side || '', week, playBoxItemId: item.id, playBoxStatus: 'in-play-box', sourceRecordId: selection.sourceRecordId || null };
+    await updateSeasonProfile(dataFolder.handle, profile.id, { selectedLines: [selectedLine], selectionResolution: { ...(profile.selectionResolution || {}), status: 'in-play-box', phase: 'queued-for-batch-commit', resolvedAt: new Date().toISOString(), week, selectedGames: 1, message: 'Selection staged in Play Box; no bet has been committed.' } });
     setPlayBox(next);
     handleActivity();
     return item;
@@ -415,8 +415,8 @@ export default function App() {
               fillCount: liveResult?.fill_count ?? null, remainingCount: liveResult?.remaining_count ?? null,
             });
           }
-          const line = { ...(profile.selectedLines?.[0] || {}), ticker: item.ticker, event: item.event || item.matchup || '', team: item.team || '', league: item.league || '', line: item.line, side: item.side, playBoxItemId: item.id, playBoxStatus: 'committed', orderGroupId, placedTradeId: tradeId, orderId: liveResult?.order_id || null, resolutionDetails: sharedResolution };
-          await updateSeasonProfile(dataFolder.handle, profile.id, { selectedLines: [line], selectionResolution: { ...(profile.selectionResolution || {}), status: 'committed', phase: isPaper ? 'paper-order-confirmed' : 'kalshi-order-confirmed', resolvedAt: new Date().toISOString(), selectedGames: 1, orderGroupId, orderId: liveResult?.order_id || null, combinedOrderStake: totalStake, message: (isPaper ? 'Paper bet committed.' : 'Kalshi order accepted.') + ' Shared order group: ' + orderGroupId } });
+          const line = { ...(profile.selectedLines?.[0] || {}), ticker: item.ticker, event: item.event || item.matchup || '', team: item.team || '', league: item.league || '', line: item.line, side: item.side, week: item.week, playBoxItemId: item.id, playBoxStatus: 'committed', orderGroupId, placedTradeId: tradeId, orderId: liveResult?.order_id || null, resolutionDetails: sharedResolution };
+          await updateSeasonProfile(dataFolder.handle, profile.id, { selectedLines: [line], selectionResolution: { ...(profile.selectionResolution || {}), status: 'committed', phase: isPaper ? 'paper-order-confirmed' : 'kalshi-order-confirmed', resolvedAt: new Date().toISOString(), week: item.week, selectedGames: 1, orderGroupId, orderId: liveResult?.order_id || null, combinedOrderStake: totalStake, message: (isPaper ? 'Paper bet committed.' : 'Kalshi order accepted.') + ' Shared order group: ' + orderGroupId } });
           successfulIds.add(item.id);
         }
       }
