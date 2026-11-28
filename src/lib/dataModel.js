@@ -245,7 +245,7 @@ export async function createSeasonProfile(root, profile) {
   const season = (await latestSeason(root)) + 1;
   await createSeason(root, season);
   const createdAt = new Date().toISOString();
-  const saved = { ...profile, season, id: 'season-' + season, createdAt, status: 'active', activePlayer: true, auto: false, strategy: profile.strategy || 'midpoint', selectionStrategy: profile.selectionStrategy || '', safe: profile.safe === true, selectedLines: Array.isArray(profile.selectedLines) ? profile.selectedLines : [], quotaValue: Number(profile.quotaValue ?? profile.balance) || 0, gridBand: profile.gridBand || 'pre-even', riskPreference: profile.riskPreference || 'probability', diversityMode: profile.diversityMode || 'allow-overlap', splitCount: Number(profile.splitCount) || 2, piecePrompt: profile.piecePrompt || '', pieceMessages: Array.isArray(profile.pieceMessages) ? profile.pieceMessages : [], nextScheduledWeek: 'week1', name: profile.name || ('Season ' + season + '-' + profile.nonce) };
+  const saved = { ...profile, season, id: 'season-' + season, createdAt, status: 'active', activePlayer: true, auto: false, originalAllocation: Number(profile.originalAllocation ?? profile.initialBalance ?? profile.balance ?? profile.quotaValue) || 0, initialBalance: Number(profile.initialBalance ?? profile.balance ?? profile.quotaValue) || 0, strategy: profile.strategy || 'midpoint', selectionStrategy: profile.selectionStrategy || '', safe: profile.safe === true, selectedLines: Array.isArray(profile.selectedLines) ? profile.selectedLines : [], quotaValue: Number(profile.quotaValue ?? profile.balance) || 0, gridBand: profile.gridBand || 'pre-even', riskPreference: profile.riskPreference || 'probability', diversityMode: profile.diversityMode || 'allow-overlap', splitCount: Number(profile.splitCount) || 2, piecePrompt: profile.piecePrompt || '', pieceMessages: Array.isArray(profile.pieceMessages) ? profile.pieceMessages : [], nextScheduledWeek: 'week1', name: profile.name || ('Season ' + season + '-' + profile.nonce) };
   const seasonDir = await root.getDirectoryHandle(SEASON_PREFIX + season, { create: false });
   await writeText(seasonDir, 'season-profile.json', JSON.stringify(saved, null, 2) + '\n');
   const profiles = await listSeasonProfiles(root);
@@ -317,6 +317,8 @@ export async function splitSeasonPiece(root, profile, requestedCount) {
       id: undefined,
       season: undefined,
       balance: childValue,
+      initialBalance: childValue,
+      originalAllocation: childValue,
       quotaValue: childValue,
       parentPieceId: profile.id,
       parentSeason: profile.season,
