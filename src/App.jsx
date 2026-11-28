@@ -111,7 +111,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
       }
       if (!cancelled) {
         setPlacedRecordIds(all.filter((item) => item.sourceRecordId).map((item) => item.sourceRecordId));
-        setRecords(all.filter((item) => !['dashboard-record', 'play-box'].includes(item.source) && !(item.isQualifiedCandidate && String(item.finalVerdict || '').toUpperCase() === 'REJECT')));
+        setRecords(all.filter((item) => !['dashboard-record', 'play-box'].includes(item.source)));
       }
     })().catch(() => { if (!cancelled) setRecords([]); });
     return () => { cancelled = true; };
@@ -127,6 +127,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
   async function startDashboardWeek(profile) { onStartWeek?.(profile); }
   async function placeDashboardRecord(record) {
     const profile = seasonProfiles.find((item) => item.id === selectedPieceByRecord[record.id]);
+    if (record.isQualifiedCandidate && String(record.finalVerdict || '').toUpperCase() !== 'KEEP') { setRecordActionMessage((old) => ({ ...old, [record.id]: 'Review status is ' + String(record.finalVerdict || 'PENDING') + '; only KEEP candidates can enter the Play Box.' })); return; }
     if (!profile) { setRecordActionMessage((old) => ({ ...old, [record.id]: 'Select a season piece first.' })); return; }
     if (profile.paperMode !== true && !kalshiConnected) { setRecordActionMessage((old) => ({ ...old, [record.id]: 'Connect Kalshi before queuing a live order.' })); return; }
     if (profile.activePlayer === false || String(profile.status || 'active').toLowerCase() !== 'active') {
@@ -204,7 +205,8 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
               const committed = selectedPiece ? pieceCommitments[selectedPiece.id] === true : false;
               const alreadyPlaced = !!r.placedTradeId || placedRecordIds.includes(r.id);
               const queuedForPiece = playBox.some((item) => item.profileId === selectedId && item.sourceRecordId === r.id);
-              const canQueueSelection = !!selectedPiece && !committed && !alreadyPlaced && !!r.ticker && price > 0 && price < 100 && (selectedPiece.paperMode === true || kalshiConnected);
+              const reviewAllowsQueue = !r.isQualifiedCandidate || String(r.finalVerdict || '').toUpperCase() === 'KEEP';
+              const canQueueSelection = !!selectedPiece && reviewAllowsQueue && !committed && !alreadyPlaced && !!r.ticker && price > 0 && price < 100 && (selectedPiece.paperMode === true || kalshiConnected);
               return <tr key={r.id}>
                 <td>{new Date(r.timestamp).toLocaleString()}</td><td>{r.matchup}</td><td>{r.market}</td><td>{r.side}</td>
                 <td>{r.modelProbability == null ? (r.probability + '%') : Math.round(Number(r.modelProbability) * 100) + '%'}</td>
@@ -214,7 +216,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
                     <option value="">Select piece</option>
                     {eligiblePieces.map((p) => <option key={p.id} value={p.id}>{p.name + ' · ' + (p.paperMode ? 'Paper' : 'Live') + ' · ' + String.fromCharCode(36) + Number(p.originalAllocation ?? p.initialBalance ?? p.balance ?? p.quotaValue).toFixed(2) + (pieceCommitments[p.id] ? ' · Committed' : '')}</option>)}
                   </select>
-                  <button className="secondary-btn" disabled={!selectedPiece || placingRecordId === r.id || alreadyPlaced || queuedForPiece || !canQueueSelection} onClick={() => placeDashboardRecord(r)}>{placingRecordId === r.id ? 'Adding…' : queuedForPiece ? 'In Play Box' : selectedPiece ? 'Add to Play Box' : 'Select piece'}</button>
+                  <button className="secondary-btn" disabled={!selectedPiece || placingRecordId === r.id || alreadyPlaced || queuedForPiece || !canQueueSelection} onClick={() => placeDashboardRecord(r)}>{placingRecordId === r.id ? 'Adding…' : queuedForPiece ? 'In Play Box' : r.isQualifiedCandidate && !reviewAllowsQueue ? 'Review only' : selectedPiece ? 'Add to Play Box' : 'Select piece'}</button>
                   {recordActionMessage[r.id] && <small className="record-action-message">{recordActionMessage[r.id]}</small>}
                   {committed && <small className="record-action-message">Piece already committed this week.</small>}
                   {queuedForPiece && <small className="record-action-message">This piece is in the Play Box.</small>}{alreadyPlaced && <small className="record-action-message">Already committed.</small>}
