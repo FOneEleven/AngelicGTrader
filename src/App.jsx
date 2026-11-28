@@ -77,7 +77,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
       }
       if (!cancelled) {
         setPlacedRecordIds(all.filter((item) => item.sourceRecordId).map((item) => item.sourceRecordId));
-        setRecords(all.filter((item) => item.source !== 'dashboard-record'));
+        setRecords(all.filter((item) => item.source !== 'dashboard-record' && !(item.isQualifiedCandidate && String(item.finalVerdict || '').toUpperCase() === 'REJECT')));
       }
     })().catch(() => { if (!cancelled) setRecords([]); });
     return () => { cancelled = true; };
@@ -171,7 +171,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
             {records.map((r) => {
               const price = Number(r.price);
               const payout = price > 0 ? (100 / price).toFixed(2) + 'x' : '—';
-              const eligiblePieces = seasonProfiles.filter((p) => p.activePlayer !== false && String(p.status || 'active').toLowerCase() === 'active' && Number(p.quotaValue ?? p.initialBalance ?? p.balance) > 0);
+              const eligiblePieces = seasonProfiles.filter((p) => p.activePlayer !== false && String(p.status || 'active').toLowerCase() === 'active' && Number(p.quotaValue ?? p.initialBalance ?? p.balance) > 0 && pieceCommitments[p.id] !== true);
               const selectedId = selectedPieceByRecord[r.id] || '';
               const selectedPiece = eligiblePieces.find((p) => p.id === selectedId);
               const committed = selectedPiece ? pieceCommitments[selectedPiece.id] === true : false;
@@ -197,17 +197,6 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
           </tbody></table></div>
         ) : <div className="empty-state"><div className="empty-icon"><ClipboardList size={22}/></div><b>No records yet</b><span>Use Record in AI Predictions to add an entry here.</span></div>}
         <div className="table-foot"><span>Saved locally in your season/week records</span><span>{records.length} records</span></div>
-      </section>
-      <section className="panel side-panel">
-        <div className="panel-heading"><div><h2>System checks</h2><p>Integration status</p></div><span className="check-ring"><ShieldCheck size={17}/></span></div>
-        {[
-          ['Dashboard','Running locally','ok'],
-          ['Market API','Connected · cached','ok'],
-          ['Sports data','Not connected','wait'],
-          ['TXT history','Ready for local files','ok'],
-          [paperMode ? 'Paper trader' : 'Live trader','Awaiting data feeds','wait'],
-        ].map(([name, status, state]) => <div className="check-row" key={name}><span className={`check-dot ${state}`}></span><div><b>{name}</b><small>{status}</small></div></div>)}
-        <div className="side-tip"><Zap size={16}/><span>Next: connect market discovery and sports data, then start recording timestamped paper predictions.</span></div>
       </section>
     </div>
     <section className="season-pieces-section">
