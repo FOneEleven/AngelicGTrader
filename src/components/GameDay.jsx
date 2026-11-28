@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Trophy, RefreshCw, Users, CalendarDays } from 'lucide-react';
 import SeasonPieceEntry from './SeasonPieceEntry';
-import { listSeasonProfiles, readSeasonTrades, updateSeasonProfile, advanceSeasonWeek, confirmedWalletReturns, readInactivePieces, removeInactivePiece, readPlayBox, writePlayBox, archiveInactivePiece } from '../lib/dataModel';
+import { listSeasonProfiles, readSeasonTrades, updateSeasonProfile, advanceSeasonWeek, confirmedWalletReturns, readInactivePieces, readPlayBox, writePlayBox, archiveInactivePiece } from '../lib/dataModel';
 
 const FILTERS = [{ id: 'active', label: 'Active' }, { id: 'all', label: 'All' }, { id: 'winners', label: 'Highest winners' }];
 const isLoss = (trade) => /^(lost|loss|settled_loss|settled-loss)$/i.test(String(trade.outcome || trade.status || '')) || Number(trade.earnings ?? trade.profit ?? 0) < 0;
@@ -110,7 +110,7 @@ export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigat
   const activePieces = useMemo(() => profiles.filter((profile) => profile.activePlayer !== false && String(profile.status || 'active').toLowerCase() === 'active').map((profile) => {
     const trades = tradesByPiece[profile.id] || [];
     const walletReturned = confirmedWalletReturns(trades);
-    const currentWorth = Number(profile.currentWorth ?? walletReturned);
+    const currentWorth = walletReturned;
     return { ...profile, trades, earnings: currentWorth, walletReturned, currentWorth };
   }), [profiles, tradesByPiece]);
 
