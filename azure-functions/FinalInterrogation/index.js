@@ -320,8 +320,8 @@ async function fetchGameWeather(league,event){
  const data=await fetchJson(url.toString(),12000),h=data.hourly||{},get=k=>nearestHourlyValue(h.time,h[k],event.eventStartTime);
  const tc=get('temperature_2m'),precip=get('precipitation'),rain=get('rain'),snow=get('snowfall'),gust=get('wind_gusts_10m'),code=get('weather_code'),tf=tc==null?null:tc*9/5+32,gm=gust==null?null:gust/1.609344;
  const ice=[56,57,66,67].includes(code),freezing=tf!=null&&tf<=32&&((precip||0)>0||(snow||0)>0||ice),heavyRain=!ice&&((rain||0)>=5||(precip||0)>=7.5||[65,82].includes(code));
- const windPenalty=gm==null||gm<25?0:gm>=30?5:2,heavyRainPenalty=heavyRain?2:0,freezingPenalty=freezing?5:0,icePenalty=ice?10:0;
- return {available:true,indoor:false,venue:venue[0],temperatureF:tf==null?null:Math.round(tf),windGustMph:gm==null?null:Math.round(gm),precipitationMm:precip,rainMm:rain,snowfallCm:snow,weatherCode:code,heavyRain,freezing,ice,windPenaltyPoints:windPenalty,heavyRainPenaltyPoints:heavyRainPenalty,freezingPenaltyPoints:freezingPenalty,icePenaltyPoints:icePenalty,penaltyPoints:windPenalty+heavyRainPenalty+freezingPenalty+icePenalty,source:'Open-Meteo',forecastFor:event.eventStartTime};
+ const windPenalty=gm==null||gm<25?0:gm>=30?5:2,heavyRainPenalty=heavyRain?2:0,freezingPenalty=freezing?5:0,icePenalty=ice?10:0,precipitationPenalty=ice?10:freezing?5:heavyRain?2:0;
+ return {available:true,indoor:false,venue:venue[0],temperatureF:tf==null?null:Math.round(tf),windGustMph:gm==null?null:Math.round(gm),precipitationMm:precip,rainMm:rain,snowfallCm:snow,weatherCode:code,heavyRain,freezing,ice,windPenaltyPoints:windPenalty,heavyRainPenaltyPoints:heavyRainPenalty,freezingPenaltyPoints:freezingPenalty,icePenaltyPoints:icePenalty,precipitationPenaltyPoints:precipitationPenalty,penaltyPoints:windPenalty+precipitationPenalty,source:'Open-Meteo',forecastFor:event.eventStartTime};
 }
 async function fetchStartingQbContext(event){const url=new URL(ESPN_BASE+'/football/nfl/summary');url.searchParams.set('event',String(event.eventId));try{const d=await fetchJson(url.toString(),12000);return {source:'ESPN game summary',injuries:d.injuries||[],rosters:d.rosters||[],depthCharts:d.depthCharts||d.depthcharts||[],gameInfo:d.gameInfo||{}};}catch(e){return {source:'ESPN game summary',unavailable:true,reason:e.message||String(e)};}}
 
@@ -496,7 +496,7 @@ async function finalInterrogate(body) {
     pieceInstruction: String(body.pieceInstruction || '').slice(0, 2000),
     policy: {
       opponentStrengthMotivation: 'If BOTH team percentiles are >=78, apply -3 pp. If BOTH are <=64, apply +3 pp. Otherwise 0; unknown percentile means 0.',
-      weatherMotivation: 'Use supplied game-time Open-Meteo data. Gusts 25–29 mph: -2 pp; 30 mph or higher: -5 pp. Heavy rain: -2 pp; freezing precipitation: -5 pp; ice/freezing rain: -10 pp. Stack separate deductions. Indoor stadium: no weather penalty. Missing forecast: 0 and disclose unknown.',
+      weatherMotivation: 'Use supplied game-time Open-Meteo data. Gusts 25–29 mph: -2 pp; 30 mph or higher: -5 pp. Precipitation severity is exclusive: heavy rain -2 pp, freezing precipitation -5 pp, ice/freezing rain -10 pp (use only the most severe applicable category). Stack the precipitation penalty with wind. Indoor stadium: no weather penalty. Missing forecast: 0 and disclose unknown.',
       startingQuarterbackMotivation: 'Use supplied ESPN summary injury/roster/depth-chart evidence. If the team lacks its starting QB for this game, apply -12 pp. Only return false if evidence confirms the starter unavailable or no starter is designated. Unknown evidence means null and 0 pp; never guess.',
       objective: 'Serious, competitive contests with strong fantasy upside.',
     },
