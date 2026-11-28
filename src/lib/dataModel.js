@@ -505,6 +505,9 @@ export async function archiveInactivePiece(root, profile, trades, reason) {
     participatedMatches: (trades || []).map((trade) => ({
       id: trade.id, matchup: trade.matchup, market: trade.market, ticker: trade.ticker,
       line: trade.line, side: trade.side, outcome: trade.outcome || null,
+      team: trade.scoreTeam || trade.team || null, opponent: trade.scoreOpponent || trade.opponent || null,
+      teamScore: trade.scoreTeamPoints ?? null, opponentScore: trade.scoreOpponentPoints ?? null,
+      scoreComparison: trade.scoreComparison || null,
       status: trade.status, stake: Number(trade.stake) || 0,
       payout: Number(trade.walletReturnedAmount) || 0,
       resolvedAt: trade.resolvedAt || null, week: trade.week,
