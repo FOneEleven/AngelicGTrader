@@ -82,7 +82,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
         }
         const committed = trades.some((trade) => trade.week === currentWeek && /^(open|pending|placed|submitted)$/i.test(String(trade.status || '')));
         const confirmedReturns = trades.reduce((sum, trade) => sum + (trade.walletReturnConfirmed === true ? (Number(trade.walletReturnedAmount) || 0) : 0), 0);
-        const currentWorth = Number(savedProfile.currentWorth ?? confirmedWalletReturns(trades));
+        const currentWorth = confirmedWalletReturns(trades);
         return { id: profile.id, profile: savedProfile, earnings: currentWorth, committed };
       }));
       const currentProfiles = pieceEntries.map((entry) => entry.profile);
@@ -365,9 +365,9 @@ export default function App() {
             if (!updatedTrade) continue;
             profileTrades = profileTrades.map((item) => item.id === trade.id ? updatedTrade : item);
             if (won) {
-              const baseWorth = confirmedWalletReturns(profileTrades);
+              const earnedWorth = confirmedWalletReturns(profileTrades);
               currentProfile = await updateSeasonProfile(root, profile.id, {
-                currentWorth: Math.round((baseWorth + payout) * 100) / 100,
+                currentWorth: Math.round(earnedWorth * 100) / 100,
                 selectedLines: [],
                 lastPayout: payout,
                 lastResolvedAt: resolvedAt,
