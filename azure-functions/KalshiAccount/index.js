@@ -230,6 +230,29 @@ app.http('KalshiAccount', {
         for (const fill of allFills) unique.set(String(fill.fill_id || fill.trade_id || fill.id || JSON.stringify(fill)), fill);
         return response(200, { connected: true, environment, fills: Array.from(unique.values()), apiResponses: allPages, truncated });
       }
+      if (body.action === 'order-status') {
+        const orderIds = [...new Set((Array.isArray(body.orderIds) ? body.orderIds : []).map((value) => String(value || '').trim()).filter(Boolean))].slice(0, 50);
+        if (!orderIds.length) return response(400, { error: 'Provide one or more Kalshi order IDs.' });
+        const orders = await Promise.all(orderIds.map(async (orderId) => {
+          if (!/^[A-Za-z0-9_-]{1,128}$/.test(orderId)) return { orderId, error: 'Invalid order ID.' };
+          const requestPath = PREFIX + '/portfolio/orders/' + encodeURIComponent(orderId);
+          const headers = signRequest(keyId, signingPem, 'GET', requestPath, setStage);
+          setStage('retrieve Kalshi order status ' + orderId);
+          const upstream = await fetch(host + requestPath, { method: 'GET', headers, signal: AbortSignal.timeout(15000) });
+          const payload = await upstream.json().catch(() => ({}));
+          if (!upstream.ok) return { orderId, error: payload?.error?.message || 'Kalshi order lookup returned HTTP ' + upstream.status };
+          const order = payload.order || payload;
+          return {
+            orderId,
+            ticker: order.ticker || '',
+            status: order.status || '',
+            fill_count: order.fill_count ?? order.fill_count_fp ?? '0.00',
+            remaining_count: order.remaining_count ?? order.remaining_count_fp ?? null,
+          };
+        }));
+        return response(200, { connected: true, environment, orders });
+      }
+
       const path = PREFIX + '/portfolio/balance';
       const headers = signRequest(keyId, signingPem, 'GET', path, setStage);
 
