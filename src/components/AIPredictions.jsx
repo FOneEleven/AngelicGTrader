@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BrainCircuit, ExternalLink, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { readCache } from '../lib/marketCache';
-import { readSettings, appendTrade, readTrades, readAIPredictionSelections, deleteTrade, latestSeason, listSeasonProfiles, updateSeasonProfile, readSeasonTrades, confirmedWalletReturns } from '../lib/dataModel';
+import { readSettings, appendTrade, readTrades, readAIPredictionSelections, deleteTrade, latestSeason, listSeasonProfiles, updateSeasonProfile, readSeasonTrades, confirmedWalletReturns, appendQualifiedCandidate } from '../lib/dataModel';
 import { computePredictions } from '../lib/predictions';
 import { fetchTeamStatistics } from '../lib/sportsStats';
 import { fetchMLBTeamStatistics } from '../lib/mlbStats';
 import { analyzeMarket } from '../lib/analyzeMarket';
 import { teamStatsCacheKey, getCachedTeamStats, setCachedTeamStats } from '../lib/teamStatsCache';
 import { getCachedAnalysis, setCachedAnalysis } from '../lib/analysisCache';
+import { finalInterrogateCandidate } from '../lib/finalInterrogation';
 
 const TEAM_TOTAL = /^KX([A-Z0-9]+?)TEAMTOTAL-/;
 
@@ -533,30 +534,91 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         }
       }
 
-      // Strategy-qualified games are the high-value pool. Apply the piece's
-      // risk preference a second time to choose one final play for this scan.
-      const rankedCandidates = [...selectionList].sort((a, b) => {
-        if (risk === 'probability') return b.probability - a.probability || b.edge - a.edge || b.payoutMultiple - a.payoutMultiple;
-        if (risk === 'value') return b.edge - a.edge || b.payoutMultiple - a.payoutMultiple || b.probability - a.probability;
-        // Balanced: favor edge, while using probability as the tie-breaker.
-        return b.edge - a.edge || b.probability - a.probability || b.payoutMultiple - a.payoutMultiple;
+      // Final interrogation is a separate post-qualification challenge. The
+      // scanner's existing gates above remain untouched. Every qualified choice
+      // is interrogated and written to Records/Prediction History before ranking.
+      const interrogatedCandidates = [];
+      for (const candidate of selectionList) {
+        const prediction = orderedPredictions.find((item) => item.key === candidate.predictionKey);
+        const line = prediction?.lines?.find((item) => item.ticker === candidate.ticker);
+        const stats = statsByKey[candidate.predictionKey];
+        const baseline = analysisByTicker.get(candidate.ticker) || analyses[candidate.ticker];
+        let review = null;
+        let verdict = 'REVIEW';
+        let finalProbability = candidate.side === 'YES' ? candidate.probability : 1 - candidate.probability;
+        let reviewError = '';
+        try {
+          if (!prediction || !line || !stats || !baseline?.prediction) throw new Error('Candidate context or baseline analysis is missing.');
+          const league = leagueFor(prediction);
+          const market = {
+            ticker: candidate.ticker,
+            title: prediction.team + ' over ' + line.line + (league === 'MLB' ? ' runs' : ' points'),
+            league, team: prediction.team, opponent: stats.opponent?.name || '',
+            line: line.line, yesAsk: line.yesAsk, noAsk: line.noAsk,
+            closeTime: prediction.closeTime || prediction.expectedExpiration || null,
+            gameTime: prediction.gameTime || prediction.expectedExpiration || null,
+          };
+          review = await finalInterrogateCandidate({
+            candidate, market,
+            teamStats: { ...stats.team, modelInputs: stats.modelInputs, recentGames: stats.recentGames, dataQuality: stats.dataQuality },
+            opponentStats: stats.opponent,
+            baselinePrediction: baseline.prediction,
+            pieceInstruction: piecePrompt || seasonProfile.piecePrompt || '',
+            season: stats.season || new Date().getFullYear(),
+          });
+          verdict = review.verdict;
+          finalProbability = Number(review.interrogation.probabilityYes);
+          if (!Number.isFinite(finalProbability) || finalProbability < 0 || finalProbability > 1) throw new Error('Final interrogation returned an invalid probability.');
+        } catch (error) {
+          reviewError = error.message || String(error);
+          review = { verdict: 'REVIEW', interrogation: { verdict: 'REVIEW', reasoning: ['Final interrogation could not complete.'], missingData: [reviewError] }, error: reviewError };
+          verdict = 'REVIEW';
+        }
+        const sideProbability = candidate.side === 'YES' ? finalProbability : 1 - finalProbability;
+        const reviewed = { ...candidate, finalVerdict: verdict, finalProbabilityYes: finalProbability, finalSideProbability: sideProbability, finalInterrogation: review, finalInterrogatedAt: new Date().toISOString(), finalReviewError: reviewError };
+        interrogatedCandidates.push(reviewed);
+        try {
+          await appendQualifiedCandidate(root, {
+            id: 'qualified-' + seasonProfile.id + '-' + candidate.ticker + '-' + candidate.side,
+            timestamp: new Date().toISOString(),
+            seasonPieceId: seasonProfile.id, season: seasonProfile.season, week,
+            matchup: prediction ? prediction.team + ' vs ' + (stats?.opponent?.name || 'opponent') : candidate.event,
+            market: prediction ? prediction.team + ' over ' + candidate.line + (candidate.league === 'MLB' ? ' runs' : ' pts') : candidate.ticker,
+            ticker: candidate.ticker, line: candidate.line, side: candidate.side,
+            price: candidate.ask * 100, probability: candidate.probability,
+            marketProbability: candidate.ask, edge: candidate.edge,
+            payoutMultiple: candidate.payoutMultiple, strategy: candidate.strategy, risk: candidate.risk,
+            status: 'qualified-' + verdict.toLowerCase(),
+            finalVerdict: verdict, finalProbabilityYes: finalProbability,
+            baselineAnalysis: baseline?.prediction || null, finalInterrogation: review,
+          });
+        } catch (error) {
+          setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'RECORD SAVE FAILED · ' + candidate.ticker + ' · ' + error.message }].slice(-40));
+        }
+        setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'FINAL INTERROGATION · ' + candidate.team + ' · ' + candidate.side + ' ' + candidate.line + ' · verdict=' + verdict + ' · final side probability=' + (sideProbability * 100).toFixed(1) + '%' + (reviewError ? ' · error=' + reviewError : '') }].slice(-40));
+      }
+      const rankedCandidates = interrogatedCandidates.filter((item) => item.finalVerdict === 'KEEP').sort((a, b) => {
+        if (risk === 'probability') return b.finalSideProbability - a.finalSideProbability || b.edge - a.edge || b.payoutMultiple - a.payoutMultiple;
+        if (risk === 'value') return b.edge - a.edge || b.payoutMultiple - a.payoutMultiple || b.finalSideProbability - a.finalSideProbability;
+        return b.edge - a.edge || b.finalSideProbability - a.finalSideProbability || b.payoutMultiple - a.payoutMultiple;
       });
       const finalSelection = rankedCandidates[0] || null;
       const orderedSelections = finalSelection ? [finalSelection] : [];
+      const finalSelectionList = interrogatedCandidates;
       if (finalSelection) {
         setSliderIdx((old) => ({ ...old, [finalSelection.predictionKey]: finalSelection.index }));
         setSideByKey((old) => ({ ...old, [finalSelection.predictionKey]: finalSelection.side }));
       }
       const selectedLines = orderedSelections.map(({ predictionKey, ticker, event, team, league, line, side }) => ({ predictionKey, ticker, event, team, league, line, side }));
       const resolvedAt = new Date().toISOString();
-      const selectionResolution = { status: orderedSelections.length ? 'selected' : 'none', phase: 'complete', resolvedAt, checkedGames: orderedPredictions.length, scannedLines, evaluatedSides, qualifiedGames: [...new Set(selectionList.map((item) => item.predictionKey))].length, qualifiedCandidates: selectionList.length, selectionList, selectedGames: orderedSelections.length, selectedByRisk: risk, message: orderedSelections.length ? 'Selected 1 game from ' + selectionList.length + ' strategy-qualified candidate(s) using ' + risk + ' risk.' : 'No qualifying game found in the current dataset.' };
+      const selectionResolution = { status: orderedSelections.length ? 'selected' : 'none', phase: 'final-interrogation-complete', resolvedAt, checkedGames: orderedPredictions.length, scannedLines, evaluatedSides, qualifiedGames: [...new Set(selectionList.map((item) => item.predictionKey))].length, qualifiedCandidates: selectionList.length, selectionList: finalSelectionList, selectedGames: orderedSelections.length, selectedByRisk: risk, finalInterrogation: true, keptCandidates: rankedCandidates.length, rejectedCandidates: interrogatedCandidates.filter((item) => item.finalVerdict === 'REJECT').length, reviewCandidates: interrogatedCandidates.filter((item) => item.finalVerdict === 'REVIEW').length, message: orderedSelections.length ? 'Selected 1 matchup-vetted game from ' + selectionList.length + ' strategy-qualified candidate(s).' : 'No candidate passed final matchup interrogation.' };
       try { const updatedProfile = await updateSeasonProfile(root, seasonProfile.id, { selectionList, selectedLines, selectionResolution }); setSeasonProfile(updatedProfile); } catch (e) { setError(e.message || 'Could not save piece selections'); }
       if (orderedSelections.length) {
-        setProgress('Selection complete · 1 game selected from ' + selectionList.length + ' qualified candidates using ' + risk + ' risk.');
-        setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SELECTION RESOLVED · scanned ' + scannedLines + ' lines and evaluated ' + evaluatedSides + ' side(s); ' + orderedSelections.length + ' qualified candidate(s) saved to this piece; final selection=' + (finalSelection ? finalSelection.ticker + ' ' + finalSelection.side : 'none') + ' using risk=' + risk + '.' }].slice(-40));
+        setProgress('Selection complete · 1 matchup-vetted game selected from ' + selectionList.length + ' qualified candidates; ' + rankedCandidates.length + ' passed final interrogation.');
+        setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SELECTION RESOLVED · scanned ' + scannedLines + ' lines and evaluated ' + evaluatedSides + ' side(s); ' + interrogatedCandidates.length + ' qualified candidates interrogated and recorded; ' + rankedCandidates.length + ' passed final review; final selection=' + (finalSelection ? finalSelection.ticker + ' ' + finalSelection.side : 'none') + ' using risk=' + risk + '.' }].slice(-40));
         onActivity?.('WEEK_SCAN_COMPLETE', '1 final selection chosen from ' + selectionList.length + ' qualified candidates for ' + seasonProfile.name);
       } else {
-        const message = 'No qualifying game found in the current dataset.';
+        const message = selectionList.length ? 'No candidate passed final matchup interrogation.' : 'No qualifying game found in the current dataset.';
         setProgress(message + (isAuto ? ' Next automatic scan in 60 seconds.' : ' Auto is off; waiting for the next manual scan.'));
         setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'NO SELECTION · checked ' + orderedPredictions.length + ' prediction entries and their available lines; none passed the piece strategy/risk rules.' }].slice(-40));
         if (isAuto) {
