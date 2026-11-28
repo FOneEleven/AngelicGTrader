@@ -21,6 +21,8 @@ const schema = {
     baseProbabilityYes: { type: 'number' },
     motivationAdjustmentPoints: { type: 'number' },
     motivationAssessment: { type: 'string' },
+    teamPercentile: { type: ['number', 'null'] },
+    teamPercentileRationale: { type: 'string' },
     opponentPercentile: { type: ['number', 'null'] },
     opponentPercentileRationale: { type: 'string' },
     matchupGrade: { type: 'string', enum: ['A', 'B', 'C', 'D'] },
@@ -34,6 +36,7 @@ const schema = {
   required: [
     'verdict', 'probabilityYes', 'baseProbabilityYes',
     'motivationAdjustmentPoints', 'motivationAssessment',
+    'teamPercentile', 'teamPercentileRationale',
     'opponentPercentile', 'opponentPercentileRationale',
     'matchupGrade', 'closingTimeAssessment', 'fantasyUpsideAssessment',
     'reasoning', 'advantages', 'risks', 'missingData',
@@ -296,6 +299,8 @@ function eligibilityResult(verdict, reason, market, scoreboard) {
       baseProbabilityYes: 0.5,
       motivationAdjustmentPoints: 0,
       motivationAssessment: '0 pp — not evaluated because event eligibility was not established.',
+      teamPercentile: null,
+      teamPercentileRationale: 'Not evaluated.',
       opponentPercentile: null,
       opponentPercentileRationale: 'Not evaluated.',
       matchupGrade: 'D',
@@ -450,7 +455,7 @@ async function finalInterrogate(body) {
     season: body.season || null,
     pieceInstruction: String(body.pieceInstruction || '').slice(0, 2000),
     policy: {
-      opponentStrengthMotivation: 'Opponent percentile affects motivation only, never the verdict. Percentile 10–40 inclusive adds +3 percentage points. Percentile above 40 subtracts 3 percentage points only when there is no meaningful playoff, seeding, elimination, or standings incentive. If a high-percentile opponent has meaningful playoff incentive, apply 0 points. Below 10 or unknown percentile applies 0 points.',
+      opponentStrengthMotivation: 'Compare both teams’ league-relative strength percentiles (0 weakest, 100 strongest). If BOTH teams are at or above the 78th percentile (top 22%), apply -3 motivation points. If BOTH teams are at or below the 64th percentile (bottom 64%), apply +3 motivation points. Otherwise apply 0. If either percentile is unknown, apply 0. These percentile bands affect motivation only and must never affect KEEP, REJECT, or REVIEW.',
       objective: 'Serious, competitive contests with strong fantasy upside.',
     },
   };
@@ -473,23 +478,26 @@ MARKET LIQUIDATION:
 
 MOTIVATION ADJUSTMENTS — PRESERVE THESE EXISTING RULES:
 - Start with candidateBaseline.probabilityYes as the base probability and independently challenge it.
-- Opponent percentile affects motivation only; it MUST NOT determine KEEP, REJECT, or REVIEW.
-- If opponentPercentile is 10–40 inclusive, apply +3 percentage points to motivation.
-- If opponentPercentile is above 40 AND there is no meaningful playoff, seeding, elimination, or standings incentive for the selected team, apply -3 percentage points.
-- If opponentPercentile is above 40 but the selected team has a meaningful playoff/seeding/elimination/standings incentive, apply 0 points.
-- If opponentPercentile is below 10 or unknown, apply 0 points from percentile.
+- Compare the selected team's teamPercentile with the opponentPercentile. Percentiles are league-relative: 0 = weakest, 100 = strongest.
+- If BOTH teams are at or above the 78th percentile (top 22%), apply -3 percentage points to motivation.
+- If BOTH teams are at or below the 64th percentile (bottom 64%), apply +3 percentage points to motivation.
+- If the teams fall outside those matching bands, apply 0 points.
+- If either team's percentile is unknown, apply 0 points.
+- These percentile bands affect motivation only. They MUST NOT determine or alter KEEP, REJECT, or REVIEW.
+- Do not add missing percentile information to missingData; missing percentile alone is not a critical fact and MUST NOT cause REVIEW.
 - Do not invent standings, playoff status, injuries, or motivation.
 - motivationAssessment MUST explicitly record the conclusion, evidence, and exact adjustment, including "0 pp" and why when no adjustment applies. Do not leave it blank or merely say "motivation considered".
 - Return baseProbabilityYes, motivationAdjustmentPoints, and adjusted probabilityYes.
 - probabilityYes must equal clamp(baseProbabilityYes + adjustmentPoints / 100, 0, 1).
 
 OPPONENT QUALITY AND MOTIVATION:
-- Estimate opponent league-relative strength percentile from supplied standings, record, efficiency, and season/recent statistics. 0 = weakest, 100 = strongest.
-- Do not fabricate a percentile. If evidence is insufficient, use null and explain that the percentile could not be established. This alone is not a missing critical fact and MUST NOT cause REVIEW or REJECT.
-- Percentile 10–40 inclusive contributes +3 motivation points.
-- Percentile above 40 contributes -3 motivation points only when there is no meaningful playoff, seeding, elimination, or standings incentive. If meaningful incentive exists, contribute 0.
-- Percentile below 10 or unknown contributes 0 motivation points.
-- The percentile is a motivation input only. It is never a matchup eligibility gate and never independently changes the verdict.
+- Estimate BOTH selected-team teamPercentile and opponentPercentile from supplied league standings, record, efficiency, and season/recent statistics. 0 = weakest, 100 = strongest.
+- Do not fabricate either percentile. If evidence is insufficient, use null and explain which percentile could not be established.
+- If BOTH percentiles are >=78, motivationAdjustmentPoints must be -3.
+- If BOTH percentiles are <=64, motivationAdjustmentPoints must be +3.
+- Otherwise, or if either percentile is unknown, motivationAdjustmentPoints must be 0.
+- Percentile bands affect motivation only. They are never a matchup eligibility gate and must never independently change the verdict.
+- Missing percentile alone is not a critical missing fact, must not be listed in missingData, and MUST NOT cause REVIEW.
 
 MATCHUP AND VERDICT:
 - Assess normal rotation, competitive intensity, pace, scoring environment, usage/volume, recent form, and fantasy upside from supplied evidence.
@@ -580,12 +588,12 @@ MATCHUP AND VERDICT:
       marketCloseTime: market.closeTime || null,
       currentAsk,
       currentPayoutMultiple: Number.isFinite(currentPayout) ? currentPayout : null,
-      opponentPercentileMotivationBand: [10, 40],
+      teamPercentileMotivationBands: { top22Threshold: 78, bottom64Threshold: 64 },
       motivationAdjustmentPoints,
       motivationAssessment: result.motivationAssessment,
       baseProbabilityYes,
       finalProbabilityYes: result.probabilityYes,
-      motivationAdjustments: { inRangeBonusPoints: 3, highPercentileNoPlayoffIncentivePenaltyPoints: -3 },
+      motivationAdjustments: { bothTop22Points: -3, bothBottom64Points: 3, otherwisePoints: 0 },
     },
   };
 }
