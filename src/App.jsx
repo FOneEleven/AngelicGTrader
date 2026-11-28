@@ -184,7 +184,18 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
                 <td><div className="record-place-control">
                   <select value={selectedId} onChange={(event) => setSelectedPieceByRecord((old) => ({ ...old, [r.id]: event.target.value }))}>
                     <option value="">Select piece</option>
-                    {eligiblePieces.map((p) => <option key={p.id} value={p.id}>{p.name + ' · ' + (p.paperMode ? 'Paper' : 'Live') + ' ·  <div className="empty-state"><div className="empty-icon"><ClipboardList size={22}/></div><b>No records yet</b><span>Use Record in AI Predictions to add an entry here.</span></div>}
+                    {eligiblePieces.map((p) => <option key={p.id} value={p.id}>{p.name + ' · ' + (p.paperMode ? 'Paper' : 'Live') + ' · ' + String.fromCharCode(36) + Number(p.quotaValue ?? p.initialBalance ?? p.balance).toFixed(2) + (pieceCommitments[p.id] ? ' · Committed' : '')}</option>)}
+                  </select>
+                  <button className="secondary-btn" disabled={!selectedPiece || placingRecordId === r.id || alreadyPlaced || (selectedPiece.paperMode && !canPlacePaper) || !selectedPiece.paperMode} onClick={() => placeDashboardRecord(r)}>{placingRecordId === r.id ? 'Placing…' : selectedPiece?.paperMode ? 'Place bet' : 'Live unavailable'}</button>
+                  {recordActionMessage[r.id] && <small className="record-action-message">{recordActionMessage[r.id]}</small>}
+                  {committed && <small className="record-action-message">Piece already committed this week.</small>}
+                  {alreadyPlaced && <small className="record-action-message">Already placed.</small>}
+                </div></td>
+                <td><button className="danger-text-btn" onClick={async () => { await deleteTrade(dataFolder.handle, r.id); setRecords((old) => old.filter((item) => item.id !== r.id)); onActivity?.('RECORD_REMOVED', 'Record removed · ' + r.market); }}>Remove</button></td>
+              </tr>;
+            })}
+          </tbody></table></div>
+        ) : <div className="empty-state"><div className="empty-icon"><ClipboardList size={22}/></div><b>No records yet</b><span>Use Record in AI Predictions to add an entry here.</span></div>}
         <div className="table-foot"><span>Saved locally in your season/week records</span><span>{records.length} records</span></div>
       </section>
       <section className="panel side-panel">
