@@ -140,7 +140,7 @@ export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigat
     <div className="page-heading"><div><div className="eyebrow">WORKSPACE</div><h1>Game Day</h1><p>Compare earnings, active pieces, and their next scheduled week.</p></div><button className="secondary-btn" onClick={load}><RefreshCw size={14}/> Refresh</button></div>
     {error && <div className="notice error-notice"><b>{error}</b></div>}
     <section className="panel game-day-earnings">
-      <div className="panel-heading"><div><h2>Earnings</h2><p>Confirmed money returned to the wallet by each season piece</p></div><div className="game-day-filters">{FILTERS.map((item) => <button key={item.id} className={`seg-btn ${filter === item.id ? 'active' : ''}`} onClick={() => setFilter(item.id)}>{item.label}</button>)}</div></div>
+      <div className="panel-heading"><div><h2>Earnings</h2><p>Current worth for each season piece, including settled payouts</p></div><div className="game-day-filters">{FILTERS.map((item) => <button key={item.id} className={`seg-btn ${filter === item.id ? 'active' : ''}`} onClick={() => setFilter(item.id)}>{item.label}</button>)}</div></div>
       <EarningsGraph pieces={visiblePieces}/>
       <div className="game-day-chart-foot"><span>{visiblePieces.length} pieces shown</span><button className="text-btn" onClick={() => { setHiddenIds([]); setFilter('all'); }}>Show all pieces</button></div>
       <div className="game-day-piece-carousel" aria-label="Season pieces carousel">
