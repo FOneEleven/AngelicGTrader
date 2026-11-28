@@ -59,6 +59,24 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
       const profiles = await listSeasonProfiles(root);
       const pieceEntries = await Promise.all(profiles.map(async (profile) => {
         const trades = await readSeasonTrades(root, profile);
+        // A verified losing resolution is authoritative: retire the piece even if
+        // an older/stale profile snapshot still says active.
+        const losingResolution = trades.find((trade) =>
+          String(trade.resolutionStatus || '').toLowerCase() === 'resolved' &&
+          (String(trade.outcome || '').toLowerCase() === 'lost' || String(trade.status || '').toLowerCase() === 'lost')
+        );
+        if (losingResolution && profile.activePlayer !== false) {
+          const reason = losingResolution.scoreComparison
+            ? losingResolution.scoreComparison + ' · actual score ' + (losingResolution.scoreTeam || 'team') + ' ' + (losingResolution.scoreTeamPoints ?? '—') + ' vs ' + (losingResolution.scoreOpponent || 'opponent') + ' ' + (losingResolution.scoreOpponentPoints ?? '—') + '; selected ' + String(losingResolution.side || '').toUpperCase() + ' did not win.'
+            : 'The selected contract resolved as a loss.';
+          profile = await updateSeasonProfile(root, profile.id, {
+            activePlayer: false, status: 'inactive', selectedLines: [],
+            currentWorth: confirmedWalletReturns(trades),
+            inactiveSince: losingResolution.resolvedAt || new Date().toISOString(),
+            inactiveReason: reason,
+          });
+          await archiveInactivePiece(root, profile, trades, reason);
+        }
         const currentWeek = profile.nextScheduledWeek || 'week1';
         const placedTrade = trades.find((trade) => trade.week === currentWeek && trade.sourceRecordId);
         let savedProfile = profile;
@@ -268,7 +286,9 @@ export default function App() {
       let changed = false;
       try {
         const profiles = await listSeasonProfiles(root);
-        const activeProfiles = profiles.filter((profile) => profile.activePlayer !== false);
+        const activeProfiles = profiles.filter((profile =>
+          profile.activePlayer !== false && String(profile.status || 'active').toLowerCase() === 'active'
+        ));
         const tradesByProfile = await Promise.all(activeProfiles.map(async (profile) => [profile, await readSeasonTrades(root, profile)]));
         const firstWeekIds = new Set();
         for (const entry of tradesByProfile) {
