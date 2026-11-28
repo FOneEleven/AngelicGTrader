@@ -650,8 +650,8 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest, onQ
           const selectedMarket = selectedPrediction?.lines?.find((item) => item.ticker === finalSelection.ticker);
           await onQueueSelection?.(updatedProfile, {
             predictionKey: finalSelection.predictionKey, ticker: finalSelection.ticker,
-            event: finalSelection.event, team: finalSelection.team, league: finalSelection.league,
-            line: finalSelection.line, side: finalSelection.side,
+            event: finalSelection.event, team: finalSelection.team, opponent: stats.opponent?.name || '', league: finalSelection.league,
+            line: finalSelection.line, side: finalSelection.side, gameTime: selectedPrediction?.occurrenceTime || selectedPrediction?.gameTime || null,
             market: finalSelection.team + ' over ' + finalSelection.line + (finalSelection.league === 'MLB' ? ' runs' : ' pts'),
             matchup: finalSelection.team + ' vs ' + (stats.opponent?.name || 'opponent'),
             price: finalSelection.ask * 100, probability: finalSelection.finalSideProbability,
