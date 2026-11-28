@@ -484,21 +484,31 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
             }
             if (!scannedTickers.has(line.ticker)) { scannedTickers.add(line.ticker); scannedLines += 1; }
             evaluatedSides += 1;
-            if (!analysis?.prediction) continue;
-
-            // Stop a directional pass only when model probability falls below
-            // the strategy floor. Payout may be too low at this rung but improve
-            // farther along the ladder, so payout failure must never stop scanning.
+            // Report every rung with the live model probability, payout, and
+            // both strategy floors. Payout failure does not stop the pass.
             // YES scans left-to-right; NO scans right-to-left.
-            const probability = probabilityFor(analysis, pass.side);
+            const probability = analysis?.prediction ? probabilityFor(analysis, pass.side) : null;
             const ask = askFor(line, pass.side);
-            const payout = ask > 0 ? 1 / ask : 0;
+            const payout = ask > 0 ? 1 / ask : null;
             const probabilityFloor = isBaseball ? 0.90 : gate.probability;
+            const payoutFloor = isBaseball ? null : gate.payout;
+            const probabilityText = probability == null ? 'n/a' : (probability * 100).toFixed(1) + '%';
+            const payoutText = payout == null ? 'n/a' : payout.toFixed(2) + 'x';
+            const floorsText = 'probability floor=' + (probabilityFloor * 100).toFixed(1) + '% · payout floor=' + (payoutFloor == null ? 'N/A (MLB)' : '>' + payoutFloor.toFixed(2) + 'x');
+            if (!analysis?.prediction) {
+              setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'LINE CHECK · ' + p.team + ' · ' + pass.side + ' ' + line.line + ' · probability=n/a · payout=' + payoutText + ' · ' + floorsText + ' · result=analysis unavailable; continuing.' }].slice(-40));
+              continue;
+            }
             if (probability != null && probability < probabilityFloor) {
-              setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'PASS STOP · ' + p.team + ' · ' + pass.side + ' · line ' + line.line + ' probability=' + Math.round(probability * 100) + '% fell below floor=' + Math.round(probabilityFloor * 100) + '%. Stopping this direction and moving to the next side or ladder.' }].slice(-40));
+              setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'LINE CHECK · ' + p.team + ' · ' + pass.side + ' ' + line.line + ' · probability=' + probabilityText + ' · payout=' + payoutText + ' · ' + floorsText + ' · result=STOP: probability below floor.' }].slice(-40));
+              setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'PASS STOP · ' + p.team + ' · ' + pass.side + ' · line ' + line.line + ' probability=' + probabilityText + ' fell below floor=' + (probabilityFloor * 100).toFixed(1) + '%. Stopping this direction and moving to the next side or ladder.' }].slice(-40));
               break;
             }
             const candidate = qualifies(p, line, analysis, pass.side, stats);
+            const payoutPass = isBaseball || (payout != null && payout > gate.payout);
+            const probabilityPass = probability != null && probability >= probabilityFloor;
+            const lineResult = candidate ? 'QUALIFIED' : !probabilityPass ? 'probability unavailable' : !payoutPass ? 'payout below floor; continuing scan' : 'other strategy/edge filter not met';
+            setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'LINE CHECK · ' + p.team + ' · ' + pass.side + ' ' + line.line + ' · probability=' + probabilityText + ' · payout=' + payoutText + ' · ' + floorsText + ' · result=' + lineResult + (ask == null ? ' · ask unavailable' : ' · ask=' + (ask * 100).toFixed(1) + '¢') }].slice(-40));
             if (candidate) {
               selectionList.push(candidate);
               setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'QUALIFIED · ' + p.team + ' · ' + pass.side + ' ' + line.line + ' · probability=' + Math.round(candidate.probability * 100) + '% · ask=' + Math.round(candidate.ask * 100) + '¢ · payout=' + candidate.payoutMultiple.toFixed(2) + 'x · edge=' + Math.round(candidate.edge * 100) + '¢' }].slice(-40));
