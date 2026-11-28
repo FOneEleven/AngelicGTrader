@@ -391,9 +391,10 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
 
   useEffect(() => {
     const isAuto = seasonProfile?.auto === true;
-    if (!scanRequest?.requestId && !isAuto) return;
     if (scanRequest?.requestId && seasonProfile?.id !== scanRequest.profileId) return;
-    const attemptKey = (scanRequest?.requestId || ('auto-' + seasonProfile?.id)) + ':' + autoRetryCount + ':' + predictionDatasetSignature;
+    // Every completed dataset gets one piece-selection pass, even when Auto is off.
+    // Auto controls only the 60-second retry after a no-selection result.
+    const attemptKey = (scanRequest?.requestId || ('dataset-' + seasonProfile?.id)) + ':' + autoRetryCount + ':' + predictionDatasetSignature;
     if (handledScanRef.current === attemptKey) return;
     if (!seasonProfile || !statsResolved) return;
     handledScanRef.current = attemptKey;
@@ -418,19 +419,28 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       const gate = { ...(gates[mode] || gates.standard) };
       if (risk === 'probability') { gate.probability += 0.02; }
       if (risk === 'value') { gate.probability = Math.max(0.5, gate.probability - 0.02); gate.payout += 0.1; }
+      let scannedLines = 0;
+      let evaluatedSides = 0;
       for (const p of orderedPredictions) {
         const gameTime = p.gameTime || p.expectedExpiration || p.closeTime;
         if (gameTime && Number.isFinite(Date.parse(gameTime)) && Date.parse(gameTime) <= Date.now()) continue;
         const stats = statsByKey[p.key];
         if (!stats) continue;
-        for (const line of p.lines) {
-          setProgress('Scanning ' + p.team + ' line ' + line.line + ' · ' + p.league);
+        for (let lineIndex = 0; lineIndex < p.lines.length; lineIndex += 1) {
+          const line = p.lines[lineIndex];
+          // Move the visible ladder slider to the line currently being evaluated.
+          setSliderIdx((old) => ({ ...old, [p.key]: lineIndex }));
+          setProgress('Evaluating ' + p.team + ' · line ' + line.line + ' · ' + p.league + ' · YES and NO');
           const analysis = await analyzeSelectedLine(p, line);
+          scannedLines += 1;
           if (!analysis?.prediction) continue;
           const isBaseball = leagueFor(p) === 'MLB';
           if (isBaseball && !baseballEnabled) continue;
+          // Baseball retains its dedicated NO-only strategy. NFL/NBA test both sides.
           const sides = isBaseball ? ['NO'] : ['YES', 'NO'];
           for (const side of sides) {
+            setSideByKey((old) => ({ ...old, [p.key]: side }));
+            evaluatedSides += 1;
             const probability = probabilityFor(analysis, side);
             const ask = askFor(line, side);
             const payout = ask > 0 ? 1 / ask : 0;
@@ -464,11 +474,11 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       setSideByKey((old) => ({ ...old, ...Object.fromEntries(orderedSelections.map((item) => [item.predictionKey, item.side])) }));
       const selectedLines = orderedSelections.map(({ predictionKey, ticker, event, team, league, line, side }) => ({ predictionKey, ticker, event, team, league, line, side }));
       const resolvedAt = new Date().toISOString();
-      const selectionResolution = { status: orderedSelections.length ? 'selected' : 'none', resolvedAt, checkedGames: orderedPredictions.length, selectedGames: orderedSelections.length, message: orderedSelections.length ? orderedSelections.length + ' qualifying game(s) found.' : 'No qualifying game found in the current dataset.' };
+      const selectionResolution = { status: orderedSelections.length ? 'selected' : 'none', resolvedAt, checkedGames: orderedPredictions.length, scannedLines, evaluatedSides, selectedGames: orderedSelections.length, message: orderedSelections.length ? orderedSelections.length + ' qualifying game(s) found.' : 'No qualifying game found in the current dataset.' };
       try { const updatedProfile = await updateSeasonProfile(root, seasonProfile.id, { selectedLines, selectionResolution }); setSeasonProfile(updatedProfile); } catch (e) { setError(e.message || 'Could not save piece selections'); }
       if (orderedSelections.length) {
         setProgress('Selection resolved · ' + orderedSelections.length + ' qualifying game(s) found. Earliest upcoming game is first.');
-        setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SELECTION RESOLVED · ' + orderedSelections.length + ' qualifying game(s) saved to this piece.' }].slice(-40));
+        setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SELECTION RESOLVED · scanned ' + scannedLines + ' lines and evaluated ' + evaluatedSides + ' side(s); ' + orderedSelections.length + ' qualifying game(s) saved to this piece.' }].slice(-40));
         onActivity?.('WEEK_SCAN_COMPLETE', orderedSelections.length + ' qualifying selections found for ' + seasonProfile.name);
       } else {
         const message = 'No qualifying game found in the current dataset.';
