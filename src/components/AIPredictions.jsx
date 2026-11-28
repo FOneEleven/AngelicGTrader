@@ -179,7 +179,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest, onQ
       const activeWeek = activeProfile?.nextScheduledWeek || week;
       if (activeWeek !== week) setWeek(activeWeek);
       setTrades(await readTrades(root, activeProfile?.season || activeSeason || season, activeWeek));
-    })().catch((e) => setError(e.message));
+    })().catch((e) => { setMarketsLoaded(true); setError(e.message); });
   }, [root, season, week, scanRequest?.requestId]);
 
   const { predictions } = useMemo(() => ({
