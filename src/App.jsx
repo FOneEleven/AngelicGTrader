@@ -661,7 +661,7 @@ export default function App() {
   }, [dataFolder, playBox, committingPlayBox, handleActivity, kalshiAccount, ladderKeyFor]);
 
   const handleScanResolved = useCallback(async (result = {}) => {
-    if (result.autoPlay && dataFolder?.handle && result.profileId) {
+    if ((result.autoPlay || scanRequest?.autoPlay) && dataFolder?.handle && result.profileId) {
       try {
         const profiles = await listSeasonProfiles(dataFolder.handle);
         const profile = profiles.find((item) => item.id === result.profileId);
@@ -679,7 +679,7 @@ export default function App() {
     setAutoPlayLock(false); setScanRequest(null); setActive('Dashboard'); handleActivity();
   }, [dataFolder, handleActivity]);
 
-  const handleStartWeek = useCallback(async (profile) => {
+  const handleStartWeek = useCallback(async (profile, { auto = false } = {}) => {
     if (!dataFolder?.handle || !profile) return;
     try {
       // Reset Dashboard records before advancing the piece or starting its scan.
@@ -689,13 +689,13 @@ export default function App() {
         ? await updateSeasonProfile(dataFolder.handle, profile.id, { nextScheduledWeek: 'week1' })
         : profile;
       handleActivity();
-      setAutoPlayLock(profile.auto === true);
-      setScanRequest({ profileId: scheduledProfile.id, requestId: scheduledProfile.id + '-' + Date.now(), autoPlay: profile.auto === true });
+      setAutoPlayLock(auto);
+      setScanRequest({ profileId: scheduledProfile.id, requestId: scheduledProfile.id + '-' + Date.now(), autoPlay: auto });
       setActive('AI Predictions');
     } catch (e) {
       console.error(e);
     }
-  }, [dataFolder, handleActivity]);
+  }, [dataFolder, handleActivity, scanRequest]);
 
   // Auto mode selects one eligible active piece at random every minute.
   useEffect(() => {
@@ -732,7 +732,7 @@ export default function App() {
           const profile = candidates[Math.floor(Math.random() * candidates.length)];
           const attempts = (Number(profile.autoAttempts) || 0) + 1;
           const attempted = await updateSeasonProfile(root, profile.id, { autoAttempts: attempts, autoLastAttemptAt: new Date().toISOString() });
-          await handleStartWeek({ ...attempted, auto: true, autoAttempts: attempts });
+          await handleStartWeek({ ...attempted, auto: true, autoAttempts: attempts }, { auto: true });
         }
       } catch (error) { console.warn('Auto-play scheduler failed:', error); }
       finally { running = false; }
