@@ -39,6 +39,7 @@ export default function SeasonPieceEntry({ profile, earnings = 0, onUpdate, onSt
   const baseballEnabled = profile.baseballNoStrategy === true || profile.selectionStrategy === 'baseball-no';
   const activeRisk = riskByCondition[worth.condition] || '';
   const ready = Boolean(activeStrategy && activeRisk);
+  const inPlayBox = profile.selectedLines?.[0]?.playBoxStatus === 'in-play-box';
   const messages = Array.isArray(profile.pieceMessages) ? profile.pieceMessages : [];
 
   async function sendMessage(event) {
@@ -72,9 +73,9 @@ export default function SeasonPieceEntry({ profile, earnings = 0, onUpdate, onSt
       <small>{profile.pieceType} · {profile.baseName} base · {profile.strategy || 'midpoint'} ladder</small>
       <small>Next scheduled: {profile.nextScheduledWeek || 'week1'}</small>
       {!ready && <div className="piece-not-ready" role="status">NOT READY FOR PLAY · SET STRATEGY AND RISK FOR {WORTH_CONDITIONS.find((x) => x.id === worth.condition)?.label.toUpperCase()}</div>}
-      {profile.selectedLines?.[0] && <small className="season-piece-selected-game">Selected game: {profile.selectedLines[0].team || profile.selectedLines[0].event || profile.selectedLines[0].ticker} · {profile.selectedLines[0].league || 'Market'} · {profile.selectedLines[0].line ?? 'ladder'} · {profile.selectedLines[0].side}</small>}
+      {profile.selectedLines?.[0] && <small className="season-piece-selected-game">Selected game: {profile.selectedLines[0].team || profile.selectedLines[0].event || profile.selectedLines[0].ticker} · {profile.selectedLines[0].league || 'Market'} · {profile.selectedLines[0].line ?? 'ladder'} · {profile.selectedLines[0].side} · {profile.selectedLines[0].playBoxStatus === 'in-play-box' ? 'IN PLAY BOX' : profile.selectedLines[0].playBoxStatus === 'committed' ? 'COMMITTED' : 'SELECTED'}</small>}
       {profile.activePlayer !== false && <div className="season-piece-controls">
-        <button className="secondary-btn" disabled={busy || !ready} onClick={() => onStartWeek?.(profile)}>Start next week</button>
+        <button className="secondary-btn" disabled={busy || !ready || inPlayBox} onClick={() => onStartWeek?.(profile)}>{inPlayBox ? 'In Play Box' : 'Start next week'}</button>
         <button className="secondary-btn" onClick={() => onNavigate?.('Game Day')}><CalendarDays size={13}/> Go To Gameday</button>
         <button className="secondary-btn piece-expand-button" onClick={() => setExpanded((value) => !value)}><ChevronDown size={13}/> {expanded ? 'Close piece' : 'Open piece'}</button>
       </div>}

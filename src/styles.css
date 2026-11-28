@@ -1725,3 +1725,17 @@ tr.row-mid td {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Staged multi-piece Play Box and automatic-play navigation lock */
+.play-box-panel { margin-bottom: 18px; }
+.play-box-panel .panel-heading { align-items: center; }
+.play-box-panel .table-wrap { margin-top: 10px; }
+.play-box-panel .status-pill { white-space: nowrap; }
+.auto-play-lock-banner,.auto-play-loading { display:flex; align-items:center; gap:10px; border:1px solid rgba(198,157,78,.42); background:rgba(198,157,78,.10); color:#f1d18c; }
+.auto-play-lock-banner { margin:10px 22px 0; padding:11px 14px; border-radius:9px; font-size:12px; }
+.auto-play-loading { margin-bottom:12px; }
+.auto-play-loading span { display:block; margin-top:3px; color:#c2b38f; font-size:11px; }
+.nav-item:disabled { opacity:.45; cursor:not-allowed; pointer-events:none; }
+.spin { animation:agt-spin 1.2s linear infinite; flex:0 0 auto; }
+@keyframes agt-spin { to { transform:rotate(360deg); } }

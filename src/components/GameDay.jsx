@@ -139,10 +139,10 @@ export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigat
       <div className="panel-heading"><div><h2>Next scheduled week</h2><p>Only records linked to their own season piece appear here.</p></div><CalendarDays size={18}/></div>
       {visiblePieces.filter((p) => p.activePlayer !== false).map((piece) => {
         const matches = piece.trades.filter((trade) => trade.week === (piece.nextScheduledWeek || 'week1'));
-        return <div className="game-day-schedule-piece" key={piece.id}><div><b>{piece.name}</b><small>{piece.nextScheduledWeek || 'week1'}</small></div>{matches.length ? matches.map((trade) => <div className="game-day-match" key={trade.id}><b>{trade.matchup}</b><span>{trade.market} · {trade.side} · {trade.status}</span></div>) : <span className="game-day-no-matches">No records assigned to this piece for this week yet.</span>}</div>;
+        return <div className="game-day-schedule-piece" key={piece.id}><div><b>{piece.name}</b><small>{piece.nextScheduledWeek || 'week1'}</small></div>{matches.length ? matches.map((trade) => <div className="game-day-match" key={trade.id}><b>{trade.matchup}</b><span>{trade.market} · {trade.side} · {trade.status}</span></div>) : piece.selectedLines?.[0]?.playBoxStatus === 'in-play-box' ? <div className="game-day-match"><b>{piece.selectedLines[0].team || piece.selectedLines[0].event || piece.selectedLines[0].ticker}</b><span>{piece.selectedLines[0].league} · {piece.selectedLines[0].line} · {piece.selectedLines[0].side} · IN PLAY BOX</span></div> : <span className="game-day-no-matches">No records assigned to this piece for this week yet.</span>}</div>;
       })}
       {!visiblePieces.some((p) => p.activePlayer !== false) && <div className="empty-state"><Users size={22}/><b>No active pieces in this view</b></div>}
     </section>
-    <div className="game-day-note">Current worth counts only closed, resolved trades whose returned funds are explicitly confirmed in the wallet. A closed status or recorded profit alone does not count. Auto is a saved piece setting; automated execution is not enabled yet.</div>
+    <div className="game-day-note">Current worth counts only closed, resolved trades whose returned funds are explicitly confirmed in the wallet. A closed status or recorded profit alone does not count. Auto pieces run the selection scan when Start next week is clicked; any selected contract is staged in Play Box and still requires an explicit commit.</div>
   </div>;
 }
