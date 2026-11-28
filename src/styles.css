@@ -1757,3 +1757,10 @@ tr.row-mid td {
 .inactive-piece-matches>b{font-size:10px;color:#c9bda8;text-transform:uppercase;letter-spacing:.06em}
 .inactive-piece-match{display:grid;gap:3px;padding:7px;background:#171a20;border-radius:6px}
 .inactive-piece-match span{font-size:11px;color:#e0e4eb}
+
+
+/* Retired season pieces remain visible in the Game Day carousel only. */
+.season-piece-card.season-inactive{position:relative;opacity:.68;filter:grayscale(.82);overflow:hidden;border-color:#626b78}
+.season-piece-retired-banner{position:absolute;z-index:3;top:0;left:0;right:0;padding:6px 10px;text-align:center;background:rgba(115,123,135,.76);color:#f0f2f5;font:700 9px 'Space Grotesk';letter-spacing:.2em;backdrop-filter:grayscale(1);border-bottom:1px solid rgba(220,225,232,.28)}
+.season-piece-card.season-inactive .season-piece-art,.season-piece-card.season-inactive .season-piece-info{opacity:.72}
+.season-piece-card.season-inactive .season-piece-controls{display:none}
