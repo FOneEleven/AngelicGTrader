@@ -433,7 +433,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       const gates = { standard: { probability: 0.76, payout: 1.34 }, value: { probability: 0.70, payout: 1.51 }, highroller: { probability: 0.61, payout: 1.67 } };
       if (!mode || !risk) { setProgress('Piece is not ready for play: configure strategy and risk for its current worth condition.'); setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SCAN STOPPED · strategy or risk is not configured for ' + worthCondition }].slice(-40)); return; }
       const gate = { ...(gates[mode] || gates.standard) };
-      if (risk === 'probability') { gate.payout = Math.max(0, gate.payout - 0.1); }
+      if (risk === 'probability') { gate.payout = 1.20; }
       if (risk === 'value') { gate.probability = Math.max(0.5, gate.probability - 0.06); }
       let scannedLines = 0;
       let evaluatedSides = 0;
@@ -597,7 +597,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       if (!mode || !risk) { setError('This piece is not ready for play. Set strategy and risk for its current worth condition.'); return; }
       const gates = { standard: { probability: 0.76, payout: 1.34 }, value: { probability: 0.70, payout: 1.51 }, highroller: { probability: 0.61, payout: 1.67 } };
       const gate = { ...(gates[mode] || gates.standard) };
-      if (risk === 'probability') { gate.payout = Math.max(0, gate.payout - 0.1); }
+      if (risk === 'probability') { gate.payout = 1.20; }
       if (risk === 'value') { gate.probability = Math.max(0.5, gate.probability - 0.06); }
       const payout = ask > 0 ? 1 / ask : 0;
       if (mode === 'value' && !pieceQuotaFilled) { setError('Value strategy requires this piece to have filled its monetary quota.'); return; }
