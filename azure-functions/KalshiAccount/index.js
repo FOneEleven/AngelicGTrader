@@ -49,7 +49,31 @@ function decryptCredential(envelope, setStage) {
   let rsaPrivateKey;
   try {
     const pem = normalizePem(process.env.KALSHI_ENCRYPTION_PRIVATE_KEY, 'KALSHI_ENCRYPTION_PRIVATE_KEY');
-    rsaPrivateKey = crypto.createPrivateKey({ key: pem, format: 'pem' });
+    try {
+      rsaPrivateKey = crypto.createPrivateKey({ key: pem, format: 'pem' });
+    } catch (parseError) {
+      // Report structural metadata only. Never log or return PEM contents or key material.
+      const begin = pem.match(/-----BEGIN ([^-]+)-----/);
+      const end = pem.match(/-----END ([^-]+)-----/);
+      const body = pem.replace(/-----BEGIN [^-]+-----|-----END [^-]+-----|\\s/g, '');
+      const decoded = Buffer.from(body, 'base64');
+      const canonicalBase64 = decoded.toString('base64').replace(/=+$/, '');
+      const bodyBase64Valid = /^[A-Za-z0-9+/]+={0,2}$/.test(body) &&
+        body.replace(/=+$/, '') === canonicalBase64;
+      const diagnostic = {
+        pemHeader: begin ? begin[1] : 'missing',
+        pemFooter: end ? end[1] : 'missing',
+        headerFooterMatch: !!begin && !!end && begin[1] === end[1],
+        characterCount: pem.length,
+        lineCount: pem.split('\\n').length,
+        bodyCharacterCount: body.length,
+        base64BodyValid: bodyBase64Valid,
+        decodedDerByteCount: decoded.length,
+        decodedDerPrefix: decoded.subarray(0, 8).toString('hex'),
+      };
+      parseError.message += ' [safe PEM diagnostics: ' + JSON.stringify(diagnostic) + ']';
+      throw parseError;
+    }
     if (rsaPrivateKey.asymmetricKeyType !== 'rsa' && rsaPrivateKey.asymmetricKeyType !== 'rsa-pss') {
       throw new Error('Expected an RSA private key; received ' + rsaPrivateKey.asymmetricKeyType + '.');
     }
