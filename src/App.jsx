@@ -274,7 +274,7 @@ export default function App() {
     readPlayBox(dataFolder.handle).then(setPlayBox).catch(() => setPlayBox([]));
   }, [dataFolder, refreshKey]);
 
-  // Resolve committed selections every minute while this application window remains open.
+  // Resolve paper selections and live orders every minute while the app is open.
   useEffect(() => {
     const root = dataFolder?.handle;
     if (!root) return undefined;
@@ -286,131 +286,198 @@ export default function App() {
       let changed = false;
       try {
         const profiles = await listSeasonProfiles(root);
-        const activeProfiles = profiles.filter((profile =>
+        const activeProfiles = profiles.filter((profile) =>
           profile.activePlayer !== false && String(profile.status || 'active').toLowerCase() === 'active'
-        ));
+        );
         const tradesByProfile = await Promise.all(activeProfiles.map(async (profile) => [profile, await readSeasonTrades(root, profile)]));
-        const firstWeekIds = new Set();
-        for (const entry of tradesByProfile) {
-          const [profile, trades] = entry;
-          const hasResolvedWin = trades.some((trade) => trade.outcome === 'won' || (trade.resolutionStatus === 'resolved' && trade.walletReturnConfirmed === true));
-          if (!hasResolvedWin && profile.nextScheduledWeek !== 'week1') {
-            entry[0] = await updateSeasonProfile(root, profile.id, {
-              nextScheduledWeek: 'week1',
-              selectedLines: (profile.selectedLines || []).map((line) => ({ ...line, week: 'week1' })),
-              selectionResolution: { ...(profile.selectionResolution || {}), week: 'week1' },
-            });
-            firstWeekIds.add(profile.id);
-          }
-        }
-        if (firstWeekIds.size) {
-          const queued = await readPlayBox(root);
-          const normalized = queued.map((item) => firstWeekIds.has(item.profileId) ? { ...item, week: 'week1' } : item);
-          if (normalized.some((item, index) => item !== queued[index])) await writePlayBox(root, normalized);
-        }
-        const pending = tradesByProfile.flatMap(([profile, trades]) => trades
-          .filter((trade) => trade.ticker && !['closed', 'resolved', 'lost', 'won'].includes(String(trade.status || '').toLowerCase()) && String(trade.resolutionStatus || '').toLowerCase() !== 'resolved')
-          .map((trade) => ({ profile, trade })));
-        const liveOrderIds = pending.filter(({ trade }) => !trade.paper && trade.orderId).map(({ trade }) => trade.orderId);
-        if (liveOrderIds.length) {
-          try {
-            const orderStatuses = await fetchKalshiOrderStatuses(root, liveOrderIds);
-            const orderById = new Map(orderStatuses.map((order) => [order.orderId, order]));
-            for (const entry of pending) {
-              if (entry.trade.paper || !entry.trade.orderId) continue;
-              const order = orderById.get(entry.trade.orderId);
-              if (!order || order.error) continue;
-              entry.trade = { ...entry.trade, fillCount: order.fill_count, remainingCount: order.remaining_count };
-              await updateTradeRecord(root, entry.trade.id, { fillCount: order.fill_count, remainingCount: order.remaining_count, kalshiOrderStatus: order.status });
-            }
-          } catch (orderError) {
-            console.warn('Kalshi live fill verification failed:', orderError);
-          }
-        }
-        const scoreGames = pending.map(({ profile, trade }) => {
-          const selected = profile.selectedLines?.find((line) => line.ticker === trade.ticker) || {};
-          const team = trade.team || selected.team || String(trade.market || '').replace(/\s+over\s+.*$/i, '').trim();
-          const matchupParts = String(trade.matchup || selected.event || '').split(/\s+vs\.?\s+/i);
-          const opponent = trade.opponent || selected.opponent || (matchupParts.length > 1
-            ? (matchupParts[0].toLowerCase().includes(String(team).toLowerCase()) ? matchupParts[1] : matchupParts[0])
-            : '');
-          return {
-            ticker: trade.ticker,
-            league: trade.league || selected.league || String(trade.ticker || '').match(/^KX([A-Z]+)TEAMTOTAL-/i)?.[1] || '',
-            team, opponent, line: trade.line ?? selected.line, side: trade.side,
-            gameTime: trade.gameTime || selected.gameTime || trade.resolutionDetails?.scoreboard?.eventStartTime || trade.resolutionDetails?.scoreboard?.event?.eventStartTime || null,
-          };
-        });
-        const scoreResults = await fetchGameScoreResolutions(scoreGames);
-        const marketByTicker = new Map(scoreResults.map((result) => [result.ticker, result]));
+        const work = [];
         for (const [profile, trades] of tradesByProfile) {
-          let currentProfile = profile;
-          let profileTrades = trades;
-          const profilePending = pending.filter((entry) => entry.profile.id === profile.id);
-          for (const { trade } of profilePending) {
-            const market = marketByTicker.get(trade.ticker);
-            if (!market?.verified || !market.resolved || market.status !== 'FINAL' || typeof market.won !== 'boolean') continue;
-            const result = market.actualYes ? 'yes' : 'no';
-            const won = market.won;
-            const priceCents = Number(trade.price) || Number(trade.marketProbability) * 100;
-            const payoutMultiple = Number(trade.payoutMultiple) || (priceCents > 0 ? 100 / priceCents : 0);
-            const liveFilled = Number(trade.fillCount);
-            const contracts = trade.paper
-              ? (Number(trade.stake) > 0 && priceCents > 0 ? Number(trade.stake) / (priceCents / 100) : 0)
-              : (Number.isFinite(liveFilled) && liveFilled > 0 ? liveFilled : 0);
-            const payout = won ? Math.round(contracts * 100) / 100 : 0;
-            const resolvedAt = new Date().toISOString();
-            const updatedTrade = await updateTradeRecord(root, trade.id, {
-              status: won ? 'closed' : 'lost',
-              outcome: won ? 'won' : 'lost',
-              resolutionStatus: 'resolved',
-              resolutionResult: result,
-              resolutionMarketStatus: market.status,
-              scoreVerified: true,
-              scoreEventId: market.event?.eventId || null,
-              scoreEventName: market.event?.eventName || null,
-              scoreTeam: market.team,
-              scoreOpponent: market.opponent,
-              scoreTeamPoints: market.teamScore,
-              scoreOpponentPoints: market.opponentScore,
-              scoreLine: market.line,
-              scoreSide: market.side,
-              scoreComparison: market.comparison,
-              resolvedAt,
-              walletReturnConfirmed: won,
-              walletReturnedAmount: payout,
-              payout,
-              payoutMultiple,
-            });
-            if (!updatedTrade) continue;
-            profileTrades = profileTrades.map((item) => item.id === trade.id ? updatedTrade : item);
-            if (won) {
-              const earnedWorth = confirmedWalletReturns(profileTrades);
-              currentProfile = await updateSeasonProfile(root, profile.id, {
-                currentWorth: Math.round(earnedWorth * 100) / 100,
-                selectedLines: [],
-                lastPayout: payout,
-                lastResolvedAt: resolvedAt,
-                lastResolvedMatch: trade.matchup || trade.market || trade.ticker,
-                selectionResolution: { ...(currentProfile.selectionResolution || {}), status: 'won', phase: 'market-settled', resolvedAt, payout, result, message: 'Selected contract settled in the piece’s favor.' },
+          const trackedTickers = new Set(trades.map((trade) => trade.ticker).filter(Boolean));
+          for (const trade of trades) {
+            if (!trade.ticker || ['closed','resolved','lost','won','unfilled','cancelled','canceled'].includes(String(trade.status || '').toLowerCase()) ||
+                String(trade.resolutionStatus || '').toLowerCase() === 'resolved') continue;
+            work.push({ profile, trade, paper: trade.paper === true, source: 'trade' });
+          }
+          // A paper selection is itself a committed position. It does not need a Play Box
+          // commit or a trades.txt row before resolution monitoring begins.
+          if (profile.paperMode === true) {
+            for (const selected of (profile.selectedLines || [])) {
+              if (!selected?.ticker || trackedTickers.has(selected.ticker) ||
+                  ['won','lost','resolved'].includes(String(profile.selectionResolution?.status || '').toLowerCase())) continue;
+              work.push({
+                profile, paper: true, source: 'selected-line',
+                trade: {
+                  id: 'paper-selection-' + profile.id + '-' + (selected.playBoxItemId || selected.ticker),
+                  timestamp: selected.selectedAt || profile.selectionResolution?.resolvedAt || new Date().toISOString(),
+                  matchup: selected.event || selected.matchup || '',
+                  market: selected.market || selected.team || '',
+                  ticker: selected.ticker, team: selected.team || '', opponent: selected.opponent || '',
+                  league: selected.league || '', line: selected.line, side: selected.side,
+                  price: selected.price ?? selected.marketProbability * 100,
+                  marketProbability: selected.marketProbability,
+                  stake: Number(selected.stake ?? selected.allocation ?? profile.quotaValue ?? profile.initialBalance ?? profile.balance) || 0,
+                  paper: true, status: 'open', week: selected.week || profile.nextScheduledWeek || 'week1',
+                  gameTime: selected.gameTime || null, selection: selected,
+                },
               });
-              currentProfile = await advanceSeasonWeek(root, currentProfile);
-              changed = true;
-            } else {
-              currentProfile = await updateSeasonProfile(root, profile.id, {
-                activePlayer: false,
-                status: 'inactive',
-                currentWorth: confirmedWalletReturns(profileTrades),
-                selectedLines: [],
-                inactiveSince: resolvedAt,
-                inactiveReason: market.comparison + ' · actual score ' + market.team + ' ' + market.teamScore + ' vs ' + market.opponent + ' ' + market.opponentScore + '; selected ' + String(trade.side).toUpperCase() + ' did not win.',
-                selectionResolution: { ...(currentProfile.selectionResolution || {}), status: 'lost', phase: 'market-settled', resolvedAt, result, message: 'Selected contract did not satisfy the settled market result.' },
-              });
-              await archiveInactivePiece(root, currentProfile, profileTrades, currentProfile.inactiveReason);
-              changed = true;
-              break;
             }
           }
+        }
+
+        const live = work.filter((entry) => !entry.paper && entry.trade.orderId);
+        const orderById = new Map();
+        if (live.length) {
+          try {
+            const statuses = await fetchKalshiOrderStatuses(root, live.map(({ trade }) => trade.orderId));
+            statuses.forEach((order) => orderById.set(order.orderId, order));
+          } catch (error) {
+            console.warn('Kalshi live fill verification failed:', error);
+          }
+        }
+
+        // Refresh authoritative Kalshi market status/result first. A settled YES/NO
+        // result takes precedence; scoreboard FINAL is the fallback for closed markets
+        // whose settlement result has not propagated yet.
+        const tickers = [...new Set(work.map(({ trade }) => trade.ticker))];
+        const marketByTicker = new Map();
+        try {
+          const markets = await fetchMarketResolutions(tickers);
+          markets.forEach((market) => marketByTicker.set(market.ticker, market));
+        } catch (error) {
+          console.warn('Kalshi market resolution lookup failed:', error);
+        }
+        const scoreGames = work.map(({ trade }) => ({
+          ticker: trade.ticker, league: trade.league,
+          team: trade.team, opponent: trade.opponent,
+          line: trade.line, side: trade.side, gameTime: trade.gameTime,
+        }));
+        const scoreByTicker = new Map();
+        try {
+          const scores = await fetchGameScoreResolutions(scoreGames);
+          scores.forEach((score) => scoreByTicker.set(score.ticker, score));
+        } catch (error) {
+          console.warn('Game score lookup failed:', error);
+        }
+
+        for (const entry of work) {
+          const { profile, trade, paper, source } = entry;
+          const market = marketByTicker.get(trade.ticker);
+          const score = scoreByTicker.get(trade.ticker);
+          const marketStatus = String(market?.status || '').toLowerCase();
+          const marketResult = String(market?.result || '').toLowerCase();
+          let won = null;
+          let resolutionSource = '';
+          let result = '';
+          if (['yes','no'].includes(marketResult) && ['settled','finalized','finalised','resolved','closed'].includes(marketStatus)) {
+            const actualYes = marketResult === 'yes';
+            won = String(trade.side).toUpperCase() === 'YES' ? actualYes : !actualYes;
+            result = marketResult;
+            resolutionSource = 'kalshi-market-settlement';
+          } else if (score?.verified && score?.resolved && score.status === 'FINAL' && typeof score.won === 'boolean') {
+            won = score.won;
+            result = score.actualYes ? 'yes' : 'no';
+            resolutionSource = 'verified-final-score';
+          }
+
+          if (!paper) {
+            const order = orderById.get(trade.orderId);
+            if (order && !order.error) {
+              const fillCount = Number(order.fill_count) || 0;
+              const remainingCount = Number(order.remaining_count) || 0;
+              await updateTradeRecord(root, trade.id, {
+                fillCount, remainingCount, kalshiOrderStatus: order.status,
+                orderLifecycle: fillCount > 0 && remainingCount > 0 ? 'partially-filled' :
+                  fillCount > 0 ? 'filled' :
+                  /cancel|expire|reject/i.test(String(order.status || '')) ? 'unfilled' : 'open',
+              });
+              trade.fillCount = fillCount;
+              trade.remainingCount = remainingCount;
+              trade.kalshiOrderStatus = order.status;
+              if (fillCount <= 0 && /cancel|expire|reject/i.test(String(order.status || ''))) {
+                await updateTradeRecord(root, trade.id, { status: 'unfilled', resolutionStatus: 'not-applicable', walletReturnConfirmed: false });
+                await updateSeasonProfile(root, profile.id, {
+                  selectedLines: [],
+                  selectionResolution: { ...(profile.selectionResolution || {}), status: 'unfilled', phase: 'order-ended-unfilled', message: 'Live order ended without any filled contracts.' },
+                });
+                changed = true;
+                continue;
+              }
+              if (fillCount <= 0) continue;
+            } else {
+              // Never infer live exposure from an accepted order alone. Wait until fills
+              // can be verified from Kalshi before scoring or retiring the piece.
+              continue;
+            }
+          }
+
+          if (typeof won !== 'boolean') continue;
+          const resolvedAt = new Date().toISOString();
+          const priceCents = Number(trade.price) || Number(trade.marketProbability) * 100;
+          const filledContracts = paper
+            ? (Number(trade.stake) > 0 && priceCents > 0 ? Number(trade.stake) / (priceCents / 100) : 0)
+            : Math.max(0, Number(trade.fillCount) || 0);
+          const payout = won ? Math.round(filledContracts * 100) / 100 : 0;
+          let resolvedTrade = trade;
+          if (source === 'selected-line') {
+            await appendTrade(root, profile.season, trade.week, {
+              ...trade, id: trade.id, timestamp: resolvedAt, source: 'paper-selected-line',
+              status: won ? 'closed' : 'lost', outcome: won ? 'won' : 'lost',
+              resolutionStatus: 'resolved', resolutionResult: result,
+              resolutionMarketStatus: marketStatus || score?.status || 'FINAL',
+              scoreVerified: resolutionSource === 'verified-final-score',
+              scoreTeam: score?.team || trade.team, scoreOpponent: score?.opponent || trade.opponent,
+              scoreTeamPoints: score?.teamScore ?? null, scoreOpponentPoints: score?.opponentScore ?? null,
+              scoreLine: trade.line, scoreSide: trade.side, scoreComparison: score?.comparison || ('Kalshi settled ' + result),
+              resolvedAt, walletReturnConfirmed: won, walletReturnedAmount: payout, payout,
+            });
+            resolvedTrade = await updateTradeRecord(root, trade.id, {
+              status: won ? 'closed' : 'lost', outcome: won ? 'won' : 'lost',
+              resolutionStatus: 'resolved', resolutionResult: result,
+              resolutionMarketStatus: marketStatus || score?.status || 'FINAL',
+              resolutionSource, scoreVerified: resolutionSource === 'verified-final-score',
+              scoreEventId: score?.event?.eventId || null, scoreEventName: score?.event?.eventName || null,
+              scoreTeam: score?.team || trade.team, scoreOpponent: score?.opponent || trade.opponent,
+              scoreTeamPoints: score?.teamScore ?? null, scoreOpponentPoints: score?.opponentScore ?? null,
+              scoreLine: trade.line, scoreSide: trade.side, scoreComparison: score?.comparison || ('Kalshi settled ' + result),
+              resolvedAt, walletReturnConfirmed: won, walletReturnedAmount: payout, payout,
+            });
+          } else {
+            resolvedTrade = await updateTradeRecord(root, trade.id, {
+              status: won ? 'closed' : 'lost', outcome: won ? 'won' : 'lost',
+              resolutionStatus: 'resolved', resolutionResult: result,
+              resolutionMarketStatus: marketStatus || score?.status || 'FINAL',
+              resolutionSource, scoreVerified: resolutionSource === 'verified-final-score',
+              scoreEventId: score?.event?.eventId || null, scoreEventName: score?.event?.eventName || null,
+              scoreTeam: score?.team || trade.team, scoreOpponent: score?.opponent || trade.opponent,
+              scoreTeamPoints: score?.teamScore ?? null, scoreOpponentPoints: score?.opponentScore ?? null,
+              scoreLine: trade.line, scoreSide: trade.side, scoreComparison: score?.comparison || ('Kalshi settled ' + result),
+              resolvedAt, walletReturnConfirmed: won, walletReturnedAmount: payout, payout,
+            });
+          }
+          if (!resolvedTrade) continue;
+          const profileTrades = (await readSeasonTrades(root, profile)).map((item) => item.id === trade.id ? resolvedTrade : item);
+          if (won) {
+            const earnedWorth = confirmedWalletReturns(profileTrades);
+            let updated = await updateSeasonProfile(root, profile.id, {
+              currentWorth: Math.round(earnedWorth * 100) / 100,
+              selectedLines: [],
+              lastPayout: payout, lastResolvedAt: resolvedAt,
+              lastResolvedMatch: trade.matchup || trade.market || trade.ticker,
+              selectionResolution: { ...(profile.selectionResolution || {}), status: 'won', phase: 'market-settled', resolvedAt, payout, result, resolutionSource, message: 'Selected position settled in the piece’s favor.' },
+            });
+            updated = await advanceSeasonWeek(root, updated);
+          } else {
+            const updated = await updateSeasonProfile(root, profile.id, {
+              activePlayer: false, status: 'inactive',
+              currentWorth: confirmedWalletReturns(profileTrades), selectedLines: [],
+              inactiveSince: resolvedAt,
+              inactiveReason: (score?.comparison || ('Kalshi market settled ' + result)) + '; selected ' + String(trade.side).toUpperCase() + ' did not win.',
+              selectionResolution: { ...(profile.selectionResolution || {}), status: 'lost', phase: 'market-settled', resolvedAt, result, resolutionSource, message: 'Selected position did not win.' },
+            });
+            await archiveInactivePiece(root, updated, profileTrades, updated.inactiveReason);
+            break;
+          }
+          changed = true;
         }
       } catch (error) {
         console.warn('Season resolution check failed:', error);
@@ -423,7 +490,6 @@ export default function App() {
     const timer = window.setInterval(checkResolutions, 60_000);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [dataFolder]);
-
 
 
   const groups = ['WORKSPACE'];
