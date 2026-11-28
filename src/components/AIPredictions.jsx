@@ -114,6 +114,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
   const [paperMode, setPaperMode] = useState(true);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState('');
+  const [batchStatus, setBatchStatus] = useState({ phase: 'idle', message: 'No ladder batch running.', batch: 0, total: 0, ladders: 0, lines: 0 });
   const [debugEntries, setDebugEntries] = useState([]);
   const [autoRetryCount, setAutoRetryCount] = useState(0);
   const [autoRetryAt, setAutoRetryAt] = useState(null);
@@ -131,7 +132,6 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
   const [selectedEntries, setSelectedEntries] = useState([]);
   const [piecePrompt, setPiecePrompt] = useState('');
   const [pieceQuotaFilled, setPieceQuotaFilled] = useState(false);
-  const [reassessPredictionKey, setReassessPredictionKey] = useState('');
   const [otherPieceTickers, setOtherPieceTickers] = useState([]);
   const handledScanRef = useRef(null);
   const lastStatsRefreshRef = useRef(null);
@@ -306,9 +306,15 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         for (let offset = 0; offset < ladderTasks.length; offset += 5) {
           if (cancelled) return;
           const batch = ladderTasks.slice(offset, offset + 5);
-          setProgress('OpenAI ladder batch: ' + (Math.floor(offset / 5) + 1) + ' · ' + batch.length + ' complete ladders');
-          setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'LADDER BATCH · sending ' + batch.length + ' complete ladders · ' + batch.reduce((sum, item) => sum + item.markets.length, 0) + ' total lines' }].slice(-40));
+          const batchNumber = Math.floor(offset / 5) + 1;
+          const batchLines = batch.reduce((sum, item) => sum + item.markets.length, 0);
+          const batchTotal = Math.ceil(ladderTasks.length / 5);
+          setProgress('OpenAI ladder batch ' + batchNumber + ' / ' + batchTotal + ' · request sent');
+          setBatchStatus({ phase: 'sending', message: 'Request sent to AnalyzeMarket; waiting for OpenAI results.', batch: batchNumber, total: batchTotal, ladders: batch.length, lines: batchLines });
+          setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'BATCH REQUEST SENT · batch ' + batchNumber + '/' + batchTotal + ' · ladders=' + batch.length + ' · lines=' + batchLines }].slice(-40));
           const responseMap = await analyzeMarketBatch(batch.map(({ cacheRows, ...ladder }) => ladder));
+          setBatchStatus({ phase: 'received', message: 'Response received; validating and caching every line.', batch: batchNumber, total: batchTotal, ladders: batch.length, lines: batchLines });
+          setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'BATCH RESPONSE RECEIVED · batch ' + batchNumber + '/' + batchTotal + ' · returned ticker results=' + responseMap.size }].slice(-40));
           for (const ladder of batch) {
             for (const row of ladder.cacheRows) {
               const data = responseMap.get(row.market.ticker);
@@ -319,16 +325,22 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
             }
             completedLadders += 1;
           }
-          if (!cancelled) setProgress('OpenAI ladder analysis: ' + completedLadders + ' / ' + ladderTasks.length + ' ladders · ' + completedLines + ' lines');
+          if (!cancelled) {
+            setProgress('OpenAI ladder analysis: ' + completedLadders + ' / ' + ladderTasks.length + ' ladders · ' + completedLines + ' lines');
+            setBatchStatus({ phase: 'complete', message: 'Batch received, validated, and cached successfully.', batch: batchNumber, total: batchTotal, ladders: batch.length, lines: batchLines });
+            setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'BATCH COMPLETE · batch ' + batchNumber + '/' + batchTotal + ' · cached=' + batchLines + ' lines' }].slice(-40));
+          }
         }
         if (cancelled) return;
         setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'REFRESH COMPLETE · valid stats=' + Object.keys(nextStats).length + ' · stats errors=' + Object.keys(nextErrors).length + ' · AI analyses=' + Object.keys(nextAnalyses).length }].slice(-40));
+        setBatchStatus((old) => ({ ...old, phase: 'complete', message: 'All ladder batches completed; all returned lines are cached.' }));
         setStatsByKey(nextStats); setAnalyses(nextAnalyses); setAnalysisErrors(nextErrors); setStatsResolved(true); setProgress('');
       } catch (e) {
         if (!cancelled) {
-          setStatsByKey(nextStats); setAnalyses(nextAnalyses); setAnalysisErrors(nextErrors); setStatsResolved(true);
-          setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'REFRESH ERROR · ' + (e.message || String(e)) }].slice(-40));
-          setError(e.message || 'Prediction analysis failed'); setProgress('');
+          setStatsByKey(nextStats); setAnalyses(nextAnalyses); setAnalysisErrors(nextErrors); setStatsResolved(false);
+          setBatchStatus((old) => ({ ...old, phase: 'error', message: 'Batch failed: ' + (e.message || String(e)) }));
+          setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'REFRESH ERROR · ' + (e.message || String(e)) + ' · qualification scan blocked because ladder analysis is incomplete.' }].slice(-40));
+          setError(e.message || 'Prediction analysis failed'); setProgress('Ladder analysis failed; qualification scan was not started.');
         }
       } finally {
         refreshRecord.completed = true;
@@ -360,7 +372,6 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
   function commitSliderSelection(p, value) {
     const next = Math.max(0, Math.min(Number(value) || 0, p.lines.length - 1));
     setSliderIdx((old) => ({ ...old, [p.key]: next }));
-    analyzeSelectedLine(p, p.lines[next]);
   }
 
   async function analyzeSelectedLine(p, line) {
@@ -764,6 +775,14 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         <div><div className="eyebrow">WORKSPACE</div><h1>AI Predictions</h1><p>Scanner-selected team-total ladders with league-specific statistics, MLB batting-weather screening, and OpenAI probability analysis.</p></div>
         <div className="status-pill">{busy ? 'Analyzing markets' : 'Analysis ready'}</div>
       </div>
+      <div className="notice" style={{display:'block',marginBottom:12}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
+          <div style={{display:'flex',alignItems:'center',gap:8}}><RefreshCw size={16}/><b>OpenAI ladder processing</b></div>
+          <span className="status-pill">{batchStatus.phase === 'sending' ? 'Request sent' : batchStatus.phase === 'received' ? 'Response received' : batchStatus.phase === 'error' ? 'Batch error' : batchStatus.phase === 'complete' ? 'Complete' : 'Idle'}</span>
+        </div>
+        <div style={{marginTop:6}}>{batchStatus.message}</div>
+        {batchStatus.batch > 0 && <small style={{display:'block',marginTop:4}}>Batch {batchStatus.batch} / {batchStatus.total} · {batchStatus.ladders} ladders · {batchStatus.lines} lines</small>}
+      </div>
       {!root && <div className="notice"><div className="notice-icon"><BrainCircuit size={18}/></div><div><b>Connect a data folder</b><span>ESPN and OpenAI results are cached in its meta folder.</span></div></div>}
       {error && <div className="notice error-notice"><b>{error}</b></div>}
       {(progress || debugEntries.length > 0) && <div className="notice" style={{display:'block'}}><div style={{display:'flex',alignItems:'center',gap:8}}><RefreshCw size={16}/><b>{progress || 'Refresh diagnostics'}</b></div>{autoRetryAt && <div style={{marginTop:6,fontVariantNumeric:'tabular-nums'}}>Next auto scan in {autoRetrySeconds}s</div>}<details open style={{marginTop:8}}><summary style={{cursor:'pointer',fontWeight:600}}>Debug details ({debugEntries.length})</summary><div style={{marginTop:8,maxHeight:220,overflowY:'auto',fontFamily:'monospace',fontSize:11,lineHeight:1.5,whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{debugEntries.map((item,index)=><div key={index}>[{item.time}] {item.message}</div>)}</div></details></div>}
@@ -796,7 +815,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
                       step="1"
                       value={idx}
                       style={{flex:'1 1 auto',width:130,minWidth:0,margin:0}}
-                      onChange={(e)=>{setSliderIdx((old)=>({...old,[p.key]:Number(e.target.value)}));setReassessPredictionKey(p.key);}}
+                      onChange={(e)=>{setSliderIdx((old)=>({...old,[p.key]:Number(e.target.value)}));}}
                       onPointerUp={(e)=>{setReassessPredictionKey(p.key);commitSliderSelection(p,e.currentTarget.value);}}
                       onKeyUp={(e)=>{if(['ArrowLeft','ArrowRight','Home','End','PageUp','PageDown'].includes(e.key)){setReassessPredictionKey(p.key);commitSliderSelection(p,e.currentTarget.value);}}}
                     />
