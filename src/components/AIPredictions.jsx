@@ -531,7 +531,6 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       // is interrogated and written to Records/Prediction History before ranking.
       const uniqueQualifiedCandidates = [...new Map(selectionList.map((candidate) => [candidate.ticker + '|' + candidate.side, candidate])).values()];
       const interrogatedCandidates = [];
-      const interrogationByTeam = new Map();
       // Never reuse a prior scan's matchup verdict: kickoff, current asks, and
       // late-market selling conditions must be checked from the current refresh.
       for (const candidate of uniqueQualifiedCandidates) {
@@ -567,31 +566,25 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
             title: prediction.team + ' over ' + line.line + (league === 'MLB' ? ' runs' : ' points'),
             league, team: prediction.team, opponent: stats.opponent?.name || '',
             line: line.line, yesAsk: line.yesAsk, noAsk: line.noAsk,
-            closeTime: prediction.closeTime || prediction.expectedExpiration || null,
-            gameTime: prediction.gameTime || prediction.expectedExpiration || null,
+            closeTime: prediction.closeTime || null,
+            expectedExpiration: prediction.expectedExpiration || null,
+            occurrenceTime: prediction.occurrenceTime || prediction.gameTime || null,
+            gameTime: prediction.occurrenceTime || prediction.gameTime || null,
+            marketStatus: prediction.status || 'unknown',
           };
-          const teamReviewKey = candidate.predictionKey;
-          const existingTeamReview = interrogationByTeam.get(teamReviewKey);
-          if (existingTeamReview) {
-            // Matchup-level interrogation is shared by all qualified lines for
-            // this team. Keep each line's own full-ladder probability.
-            review = existingTeamReview.review;
-            verdict = existingTeamReview.verdict;
-            finalProbability = Number(baseline.prediction.probabilityYes);
-          } else {
-            review = await finalInterrogateCandidate({
-              candidate, market,
-              teamStats: { ...stats.team, modelInputs: stats.modelInputs, recentGames: stats.recentGames, dataQuality: stats.dataQuality },
-              opponentStats: stats.opponent,
-              baselinePrediction: baseline.prediction,
-              pieceInstruction: piecePrompt || seasonProfile.piecePrompt || '',
-              season: stats.season || new Date().getFullYear(),
-            });
-            verdict = review.verdict;
-            finalProbability = Number(review.interrogation.probabilityYes);
-            if (!Number.isFinite(finalProbability) || finalProbability < 0 || finalProbability > 1) throw new Error('Final interrogation returned an invalid probability.');
-            interrogationByTeam.set(teamReviewKey, { review, verdict });
-          }
+          // Interrogate each contract independently so its current selected-side
+          // ask and payout are assessed; do not reuse a different rung's price context.
+          review = await finalInterrogateCandidate({
+            candidate, market,
+            teamStats: { ...stats.team, modelInputs: stats.modelInputs, recentGames: stats.recentGames, dataQuality: stats.dataQuality },
+            opponentStats: stats.opponent,
+            baselinePrediction: baseline.prediction,
+            pieceInstruction: piecePrompt || seasonProfile.piecePrompt || '',
+            season: stats.season || new Date().getFullYear(),
+          });
+          verdict = review.verdict;
+          finalProbability = Number(review.interrogation.probabilityYes);
+          if (!Number.isFinite(finalProbability) || finalProbability < 0 || finalProbability > 1) throw new Error('Final interrogation returned an invalid probability.');
         } catch (error) {
           reviewError = error.message || String(error);
           review = { verdict: 'REVIEW', interrogation: { verdict: 'REVIEW', reasoning: ['Final interrogation could not complete.'], missingData: [reviewError] }, error: reviewError };
