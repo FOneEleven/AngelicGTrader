@@ -38,7 +38,7 @@ The HTTP trigger's `function.json` is configured with `authLevel: "anonymous"`; 
 
 ## AI Predictions pipeline
 
-The AI Predictions screen uses the market entries already loaded into the existing market cache. It resolves the opposing team from the same event's team-total markets, then:
+The AI Predictions screen uses the market entries already loaded into the existing market cache. It resolves the opposing team from the same event's team-total markets. Only Kalshi `occurrence_datetime` is accepted as the actual contest start; `close_time` and `expected_expiration_time` are contract lifecycle timestamps and are never substituted for kickoff. Started contests, missing occurrence times, and closed markets are excluded before statistics or AI interrogation. Each qualified contract receives its own final interrogation using its current ask and payout. The final interrogation applies +4 percentage points for evidence-backed meaningful team motivation, -6 points for a high-profile team with little at stake and credible low-urgency risk, and requires a verifiable opponent strength percentile from 10–40 (0 weakest, 100 strongest). Missing opponent-percentile evidence cannot receive KEEP. Rising payout during a contest is treated as possible liquidation/late-selling pressure, never as evidence of safety. The AI Predictions screen then:
 
 1. Checks `meta/team-stats-cache.txt` before requesting ESPN. Cache keys include league, team, opponent, season, and season type; entries expire after six hours.
 2. Supplies the cached/fetched ESPN team and opponent statistics to `POST /api/AnalyzeMarket` for every market line in each displayed entry.
