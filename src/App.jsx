@@ -298,31 +298,7 @@ export default function App() {
                 String(trade.resolutionStatus || '').toLowerCase() === 'resolved') continue;
             work.push({ profile, trade, paper: trade.paper === true, source: 'trade' });
           }
-          // A paper selection is itself a committed position. It does not need a Play Box
-          // commit or a trades.txt row before resolution monitoring begins.
-          if (profile.paperMode === true || (profile.selectedLines || []).some((line) => line?.paper === true)) {
-            for (const selected of (profile.selectedLines || [])) {
-              const selectedWeek = selected?.week || profile.nextScheduledWeek || 'week1';
-              if (!selected?.ticker || trackedSelections.has(String(selected.ticker) + '|' + String(selectedWeek)) ||
-                  ['won','lost','resolved'].includes(String(profile.selectionResolution?.status || '').toLowerCase())) continue;
-              work.push({
-                profile, paper: true, source: 'selected-line',
-                trade: {
-                  id: 'paper-selection-' + profile.id + '-' + (selected.playBoxItemId || selected.ticker),
-                  timestamp: selected.selectedAt || profile.selectionResolution?.resolvedAt || new Date().toISOString(),
-                  matchup: selected.event || selected.matchup || '',
-                  market: selected.market || selected.team || '',
-                  ticker: selected.ticker, team: selected.team || '', opponent: selected.opponent || '',
-                  league: selected.league || '', line: selected.line, side: selected.side,
-                  price: selected.price ?? selected.marketProbability * 100,
-                  marketProbability: selected.marketProbability,
-                  stake: Number(selected.stake ?? selected.allocation ?? profile.quotaValue ?? profile.initialBalance ?? profile.balance) || 0,
-                  paper: true, status: 'open', week: selectedWeek,
-                  gameTime: selected.gameTime || null, selection: selected,
-                },
-              });
-            }
-          }
+          // Only committed trades are monitored; Play Box selections are not exposure.
         }
 
         const live = work.filter((entry) => !entry.paper && entry.trade.orderId);
@@ -528,12 +504,18 @@ export default function App() {
     if (conflictingLine) throw new Error('This ladder already has a different line or side in the Play Box. Kalshi orders are grouped only for the same contract.');
     const trades = await readSeasonTrades(dataFolder.handle, profile);
     const week = profile.nextScheduledWeek || 'week1';
-    if (trades.some((trade) => trade.week === week && /^(open|pending|placed|submitted)$/i.test(String(trade.status || '')))) throw new Error('This piece already has a committed bet for this week.');
+    const selectedStatus = String(profile.selectedLines?.[0]?.playBoxStatus || '').toLowerCase();
+    const resolutionStatus = String(profile.selectionResolution?.status || '').toLowerCase();
+    if (selectedStatus === 'committed' || resolutionStatus === 'committed' ||
+        trades.some((trade) => trade.week === week && !/^(unfilled|cancelled|canceled)$/i.test(String(trade.status || '')) &&
+          !/^(resolved|not-applicable)$/i.test(String(trade.resolutionStatus || '')))) {
+      throw new Error('This piece already has a committed bet and cannot be added to the Play Box.');
+    }
     const item = {
       ...selection,
       id: 'play-' + (globalThis.crypto?.randomUUID?.() || Date.now() + '-' + Math.random().toString(16).slice(2)),
       profileId: profile.id, pieceName: profile.name, season: profile.season, week,
-      paper: profile.paperMode === true, allocation: Math.round(Number(profile.quotaValue ?? profile.initialBalance ?? profile.balance) * 100) / 100,
+      paper: profile.paperMode === true, allocation: Math.round(Number(profile.originalAllocation ?? profile.initialBalance ?? profile.balance ?? profile.quotaValue) * 100) / 100,
       addedAt: new Date().toISOString(), ladderKey,
     };
     const next = [...current, item];
@@ -678,9 +660,24 @@ export default function App() {
     } finally { setCommittingPlayBox(false); }
   }, [dataFolder, playBox, committingPlayBox, handleActivity, kalshiAccount, ladderKeyFor]);
 
-  const handleScanResolved = useCallback(() => {
+  const handleScanResolved = useCallback(async (result = {}) => {
+    if (result.autoPlay && dataFolder?.handle && result.profileId) {
+      try {
+        const profiles = await listSeasonProfiles(dataFolder.handle);
+        const profile = profiles.find((item) => item.id === result.profileId);
+        if (profile) {
+          const attempts = Math.max(0, Number(profile.autoAttempts) || 0);
+          const patch = result.selected
+            ? { autoAttempts: 0, autoTimeoutUntil: null, autoLastResult: 'selected' }
+            : attempts >= 3
+              ? { autoAttempts: 0, autoTimeoutUntil: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(), autoLastResult: result.reason || 'no-selection' }
+              : { autoLastResult: result.reason || 'no-selection' };
+          await updateSeasonProfile(dataFolder.handle, profile.id, patch);
+        }
+      } catch (error) { console.warn('Auto-play attempt state could not be saved:', error); }
+    }
     setAutoPlayLock(false); setScanRequest(null); setActive('Dashboard'); handleActivity();
-  }, [handleActivity]);
+  }, [dataFolder, handleActivity]);
 
   const handleStartWeek = useCallback(async (profile) => {
     if (!dataFolder?.handle || !profile) return;
@@ -699,6 +696,50 @@ export default function App() {
       console.error(e);
     }
   }, [dataFolder, handleActivity]);
+
+  // Auto mode selects one eligible active piece at random every minute.
+  useEffect(() => {
+    const root = dataFolder?.handle;
+    if (!root) return undefined;
+    let cancelled = false;
+    let running = false;
+    const tick = async () => {
+      if (cancelled || running || autoPlayLock || scanRequest || committingPlayBox) return;
+      running = true;
+      try {
+        const profiles = await listSeasonProfiles(root);
+        const queue = await readPlayBox(root);
+        const candidates = [];
+        for (let profile of profiles) {
+          if (profile.auto !== true || profile.activePlayer === false || String(profile.status || 'active').toLowerCase() !== 'active') continue;
+          const timeout = Date.parse(profile.autoTimeoutUntil || '');
+          if (Number.isFinite(timeout) && timeout > Date.now()) continue;
+          if (Number.isFinite(timeout) && timeout <= Date.now()) {
+            profile = await updateSeasonProfile(root, profile.id, { autoAttempts: 0, autoTimeoutUntil: null });
+          }
+          if (queue.some((item) => item.profileId === profile.id)) continue;
+          const week = profile.nextScheduledWeek || 'week1';
+          const trades = await readSeasonTrades(root, profile);
+          const committed = trades.some((trade) => trade.week === week &&
+            !/^(unfilled|cancelled|canceled)$/i.test(String(trade.status || '')) &&
+            !/^(resolved|not-applicable)$/i.test(String(trade.resolutionStatus || '')));
+          const lineStatus = String(profile.selectedLines?.[0]?.playBoxStatus || '').toLowerCase();
+          const resolutionStatus = String(profile.selectionResolution?.status || '').toLowerCase();
+          if (committed || lineStatus === 'committed' || resolutionStatus === 'committed' || lineStatus === 'in-play-box') continue;
+          candidates.push(profile);
+        }
+        if (candidates.length) {
+          const profile = candidates[Math.floor(Math.random() * candidates.length)];
+          const attempts = (Number(profile.autoAttempts) || 0) + 1;
+          const attempted = await updateSeasonProfile(root, profile.id, { autoAttempts: attempts, autoLastAttemptAt: new Date().toISOString() });
+          await handleStartWeek({ ...attempted, auto: true, autoAttempts: attempts });
+        }
+      } catch (error) { console.warn('Auto-play scheduler failed:', error); }
+      finally { running = false; }
+    };
+    const timer = window.setInterval(tick, 60_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [dataFolder, autoPlayLock, scanRequest, committingPlayBox, refreshKey]);
 
   return <div className="app-shell">
     <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
