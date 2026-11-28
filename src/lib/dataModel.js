@@ -477,3 +477,98 @@ export async function readAllRecords(root) {
     return { id, timestamp, matchup, market, side, price, probability, stake, paper: paper === 'paper', status, ...metadata };
   }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 }
+
+
+// --- Resolution and inactive-piece archive ---
+const INACTIVE_PIECES_FILE = 'inactive-pieces.json';
+
+export async function readInactivePieces(root) {
+  const dir = await root.getDirectoryHandle(META, { create: true });
+  const text = await readText(dir, INACTIVE_PIECES_FILE);
+  if (!text) return [];
+  try { const parsed = JSON.parse(text); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
+}
+
+export async function writeInactivePieces(root, pieces) {
+  const dir = await root.getDirectoryHandle(META, { create: true });
+  const next = Array.isArray(pieces) ? pieces : [];
+  await writeText(dir, INACTIVE_PIECES_FILE, JSON.stringify(next, null, 2) + '\n');
+  return next;
+}
+
+export async function archiveInactivePiece(root, profile, trades, reason) {
+  const currentWorth = Number(profile.currentWorth ?? profile.quotaValue ?? profile.initialBalance ?? profile.balance) || 0;
+  const snapshot = {
+    ...profile, activePlayer: false, status: 'inactive', currentWorth,
+    inactiveSince: profile.inactiveSince || new Date().toISOString(),
+    inactiveReason: reason || 'Selected market did not satisfy the contract.',
+    participatedMatches: (trades || []).map((trade) => ({
+      id: trade.id, matchup: trade.matchup, market: trade.market, ticker: trade.ticker,
+      line: trade.line, side: trade.side, outcome: trade.outcome || null,
+      status: trade.status, stake: Number(trade.stake) || 0,
+      payout: Number(trade.walletReturnedAmount) || 0,
+      resolvedAt: trade.resolvedAt || null, week: trade.week,
+    })),
+  };
+  const current = await readInactivePieces(root);
+  const next = [...current.filter((item) => item.id !== snapshot.id), snapshot];
+  await writeInactivePieces(root, next);
+  return snapshot;
+}
+
+export async function removeInactivePiece(root, profileId) {
+  const next = (await readInactivePieces(root)).filter((item) => item.id !== profileId);
+  await writeInactivePieces(root, next);
+  return next;
+}
+
+export async function updateTradeRecord(root, tradeId, patch) {
+  if (!tradeId) throw new Error('A trade ID is required.');
+  let updatedTrade = null;
+  const seasons = await listSeasons(root);
+  for (const season of seasons) {
+    const seasonDir = await root.getDirectoryHandle(SEASON_PREFIX + season, { create: false });
+    for (const week of WEEKS) {
+      let weekDir;
+      try { weekDir = await seasonDir.getDirectoryHandle(week, { create: false }); } catch { continue; }
+      const text = await readText(weekDir, 'trades.txt');
+      if (!text) continue;
+      let changed = false;
+      const lines = text.split('\n').map((line) => {
+        if (!line || line.startsWith('#')) return line;
+        const fields = line.split('\t');
+        if (fields[0] !== tradeId) return line;
+        let metadata = {};
+        try { metadata = fields.length > 10 ? JSON.parse(fields.slice(10).join('\t')) : {}; } catch {}
+        const next = { ...metadata, ...patch };
+        fields[9] = patch.status ?? fields[9];
+        fields.splice(10, fields.length - 10, JSON.stringify(next));
+        updatedTrade = {
+          id: fields[0], timestamp: fields[1], matchup: fields[2], market: fields[3],
+          side: fields[4], price: fields[5], probability: fields[6], stake: fields[7],
+          paper: fields[8] === 'paper', status: fields[9], ...next, week,
+        };
+        changed = true;
+        return fields.join('\t');
+      });
+      if (changed) await writeText(weekDir, 'trades.txt', lines.join('\n'));
+    }
+  }
+  if (!updatedTrade) return null;
+  const dir = await root.getDirectoryHandle(META, { create: true });
+  const records = await readText(dir, 'records.txt');
+  if (records) {
+    const lines = records.split('\n').map((line) => {
+      if (!line || line.startsWith('#')) return line;
+      const fields = line.split('\t');
+      if (fields[0] !== tradeId) return line;
+      let metadata = {};
+      try { metadata = fields.length > 10 ? JSON.parse(fields.slice(10).join('\t')) : {}; } catch {}
+      fields[9] = patch.status ?? fields[9];
+      fields.splice(10, fields.length - 10, JSON.stringify({ ...metadata, ...patch }));
+      return fields.join('\t');
+    });
+    await writeText(dir, 'records.txt', lines.join('\n'));
+  }
+  return updatedTrade;
+}
