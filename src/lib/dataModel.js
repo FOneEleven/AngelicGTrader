@@ -167,7 +167,7 @@ export async function appendTrade(root, season, week, trade) {
     trade.stake,
     trade.paper ? 'paper' : 'live',
     trade.status || 'open',
-    JSON.stringify({ strategy: trade.strategy ?? null, ticker: trade.ticker ?? null, line: trade.line ?? null, marketProbability: trade.marketProbability ?? null, modelProbability: trade.modelProbability ?? null, edge: trade.edge ?? null, modelVersion: trade.modelVersion ?? null, context: trade.context ?? null, reasoning: trade.reasoning ?? null, seasonPieceId: trade.seasonPieceId ?? null, week: trade.week ?? week, earnings: trade.earnings ?? null, profit: trade.profit ?? null, outcome: trade.outcome ?? null }),
+    JSON.stringify({ strategy: trade.strategy ?? null, selectionStrategy: trade.selectionStrategy ?? null, riskPreference: trade.riskPreference ?? null, diversityMode: trade.diversityMode ?? null, ticker: trade.ticker ?? null, line: trade.line ?? null, marketProbability: trade.marketProbability ?? null, modelProbability: trade.modelProbability ?? null, edge: trade.edge ?? null, modelVersion: trade.modelVersion ?? null, context: trade.context ?? null, reasoning: trade.reasoning ?? null, seasonPieceId: trade.seasonPieceId ?? null, week: trade.week ?? week, earnings: trade.earnings ?? null, profit: trade.profit ?? null, outcome: trade.outcome ?? null, resolutionStatus: trade.resolutionStatus ?? null, walletReturnedAmount: trade.walletReturnedAmount ?? null, walletReturnConfirmed: trade.walletReturnConfirmed === true, walletConfirmedAt: trade.walletConfirmedAt ?? null, sourceRecordId: trade.sourceRecordId ?? null, payoutMultiple: trade.payoutMultiple ?? null, source: trade.source ?? null }),
   ].join('\t') + '\n';
   const w = await file.createWritable();
   await w.write(existing + header + row);
@@ -220,14 +220,14 @@ export async function listSeasonProfiles(root) {
   const metaDir = await root.getDirectoryHandle(META, { create: true });
   const text = await readText(metaDir, SEASON_PROFILES_FILE);
   if (!text) return [];
-  try { const parsed = JSON.parse(text); return Array.isArray(parsed) ? parsed.map((profile) => ({ activePlayer: true, auto: false, strategy: 'midpoint', nextScheduledWeek: 'week1', ...profile })).sort((a, b) => Number(a.season) - Number(b.season)) : []; } catch { return []; }
+  try { const parsed = JSON.parse(text); return Array.isArray(parsed) ? parsed.map((profile) => ({ activePlayer: true, auto: false, strategy: 'midpoint', selectionStrategy: '', safe: false, selectedLines: [], quotaValue: Number(profile.balance) || 0, gridBand: 'pre-even', riskPreference: 'probability', diversityMode: 'allow-overlap', splitCount: 2, piecePrompt: '', pieceMessages: [], nextScheduledWeek: 'week1', ...profile })).sort((a, b) => Number(a.season) - Number(b.season)) : []; } catch { return []; }
 }
 
 export async function createSeasonProfile(root, profile) {
   const season = (await latestSeason(root)) + 1;
   await createSeason(root, season);
   const createdAt = new Date().toISOString();
-  const saved = { ...profile, season, id: 'season-' + season, createdAt, status: 'active', activePlayer: true, auto: false, strategy: profile.strategy || 'midpoint', nextScheduledWeek: 'week1', name: profile.name || ('Season ' + season + '-' + profile.nonce) };
+  const saved = { ...profile, season, id: 'season-' + season, createdAt, status: 'active', activePlayer: true, auto: false, strategy: profile.strategy || 'midpoint', selectionStrategy: profile.selectionStrategy || '', safe: profile.safe === true, selectedLines: Array.isArray(profile.selectedLines) ? profile.selectedLines : [], quotaValue: Number(profile.quotaValue ?? profile.balance) || 0, gridBand: profile.gridBand || 'pre-even', riskPreference: profile.riskPreference || 'probability', diversityMode: profile.diversityMode || 'allow-overlap', splitCount: Number(profile.splitCount) || 2, piecePrompt: profile.piecePrompt || '', pieceMessages: Array.isArray(profile.pieceMessages) ? profile.pieceMessages : [], nextScheduledWeek: 'week1', name: profile.name || ('Season ' + season + '-' + profile.nonce) };
   const seasonDir = await root.getDirectoryHandle(SEASON_PREFIX + season, { create: false });
   await writeText(seasonDir, 'season-profile.json', JSON.stringify(saved, null, 2) + '\n');
   const profiles = await listSeasonProfiles(root);
@@ -252,6 +252,18 @@ export async function updateSeasonProfile(root, profileId, patch) {
   return updated;
 }
 
+// Only cash actually credited back to the connected wallet counts toward piece worth.
+// A resolved/closed label alone is insufficient: walletReturnConfirmed must be explicit.
+export function confirmedWalletReturns(trades = []) {
+  return trades.reduce((total, trade) => {
+    const closed = /^(closed|settled|resolved)$/i.test(String(trade.status || ''));
+    const resolved = String(trade.resolutionStatus || '').toLowerCase() === 'resolved';
+    const confirmed = trade.walletReturnConfirmed === true && closed && resolved;
+    const amount = Number(trade.walletReturnedAmount);
+    return confirmed && Number.isFinite(amount) && amount > 0 ? total + amount : total;
+  }, 0);
+}
+
 export async function readSeasonTrades(root, profile) {
   if (!profile) return [];
   const trades = [];
@@ -262,6 +274,55 @@ export async function readSeasonTrades(root, profile) {
     }
   }
   return trades.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+}
+
+
+export async function splitSeasonPiece(root, profile, requestedCount) {
+  const count = Math.max(2, Math.min(20, Math.floor(Number(requestedCount) || 0)));
+  if (!profile?.id || !Number.isFinite(Number(profile.balance)) || Number(profile.balance) <= 0) {
+    throw new Error('This piece has no available value to split.');
+  }
+  if (profile.splitInto?.length || profile.activePlayer === false) {
+    throw new Error('This piece is already inactive or has already been split.');
+  }
+
+  const totalValue = Math.round(Number(profile.balance) * 100) / 100;
+  const baseCents = Math.floor(totalValue * 100 / count);
+  const remainder = Math.round(totalValue * 100) - baseCents * count;
+  const children = [];
+
+  for (let i = 0; i < count; i += 1) {
+    const childCents = baseCents + (i < remainder ? 1 : 0);
+    const childValue = childCents / 100;
+    const child = await createSeasonProfile(root, {
+      ...profile,
+      id: undefined,
+      season: undefined,
+      balance: childValue,
+      quotaValue: childValue,
+      parentPieceId: profile.id,
+      parentSeason: profile.season,
+      splitIndex: i + 1,
+      splitCount: count,
+      splitInto: undefined,
+      activePlayer: true,
+      status: 'active',
+      createdFromSplitAt: new Date().toISOString(),
+      name: profile.name + ' · ' + (i + 1) + '/' + count,
+    });
+    children.push(child);
+  }
+
+  const updatedParent = await updateSeasonProfile(root, profile.id, {
+    balance: 0,
+    activePlayer: false,
+    status: 'split',
+    splitCount: count,
+    splitInto: children.map((child) => child.id),
+    splitAt: new Date().toISOString(),
+  });
+
+  return { parent: updatedParent, children };
 }
 
 export async function advanceSeasonWeek(root, profile) {
@@ -325,6 +386,65 @@ export async function writeAIPredictionSelections(root, selections) {
   return unique;
 }
 
+
+// Save every scanner-qualified candidate after its final matchup interrogation.
+// These are review/history entries, not trades: they are not added to weekly trades
+// and therefore cannot affect piece worth or wallet-return accounting.
+export async function appendQualifiedCandidate(root, candidate) {
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  const file = await metaDir.getFileHandle('records.txt', { create: true });
+  const existing = await (await file.getFile()).text().catch(() => '');
+  const id = candidate.id || ('qualified-' + candidate.seasonPieceId + '-' + candidate.ticker + '-' + candidate.side);
+  const row = [
+    id, candidate.timestamp || new Date().toISOString(), candidate.matchup || '',
+    candidate.market || '', candidate.side || '', Math.round(Number(candidate.price) || 0),
+    Math.round((Number(candidate.probability) || 0) * 100), 0, 'paper',
+    candidate.status || 'qualified-review',
+    JSON.stringify({
+      isQualifiedCandidate: true, ticker: candidate.ticker || null,
+      line: candidate.line ?? null, marketProbability: candidate.marketProbability ?? null,
+      modelProbability: candidate.probability ?? null, edge: candidate.edge ?? null,
+      finalSideProbability: candidate.finalSideProbability ?? null, finalEdge: candidate.finalEdge ?? null,
+      payoutMultiple: candidate.payoutMultiple ?? null, seasonPieceId: candidate.seasonPieceId || null,
+      season: candidate.season ?? null, week: candidate.week || null,
+      strategy: candidate.strategy || null, risk: candidate.risk || null,
+      baselineAnalysis: candidate.baselineAnalysis || null,
+      finalInterrogation: candidate.finalInterrogation || null,
+      finalVerdict: candidate.finalVerdict || 'REVIEW',
+      finalProbabilityYes: candidate.finalProbabilityYes ?? null,
+      motivationAdjustmentPoints: candidate.finalInterrogation?.interrogation?.motivationAdjustmentPoints ?? 0,
+      motivationAssessment: candidate.finalInterrogation?.interrogation?.motivationAssessment || 'Not supplied by final interrogation.',
+    }),
+  ].join('\t');
+  const lines = existing.split('\n').filter(Boolean);
+  const header = '# id\ttimestamp\tmatchup\tmarket\tside\tprice\tprobability\tstake\tpaper\tstatus\tmetadata_json';
+  const withoutPrevious = lines.filter((line) => line.startsWith('#') || line.split('\t')[0] !== id);
+  if (!withoutPrevious.some((line) => line.startsWith('#'))) withoutPrevious.unshift(header);
+  const writer = await file.createWritable();
+  await writer.write(withoutPrevious.join('\n') + '\n' + row + '\n');
+  await writer.close();
+  return { ...candidate, id, isQualifiedCandidate: true };
+}
+
+// Clear the Dashboard's canonical record feed when a new season-piece week starts.
+// Weekly trade files are deliberately preserved for season accounting and history.
+export async function clearDashboardRecords(root) {
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  await writeText(metaDir, 'dashboard-records-reset.txt', new Date().toISOString() + '\n');
+  return true;
+}
+
+export async function readDashboardRecords(root) {
+  const records = await readAllRecords(root);
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  const resetValue = await readText(metaDir, 'dashboard-records-reset.txt');
+  const resetAt = resetValue ? Date.parse(resetValue.trim()) : NaN;
+  if (!Number.isFinite(resetAt)) return records;
+  return records.filter((record) => {
+    const timestamp = Date.parse(record.timestamp || '');
+    return Number.isFinite(timestamp) && timestamp > resetAt;
+  });
+}
 
 // Read the canonical record feed shared by every dashboard view.
 export async function readAllRecords(root) {

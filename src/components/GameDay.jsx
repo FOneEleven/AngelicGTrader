@@ -1,17 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Trophy, RefreshCw, X, Users, CalendarDays } from 'lucide-react';
-import SeasonToken from './SeasonToken';
-import { listSeasonProfiles, readSeasonTrades, updateSeasonProfile, advanceSeasonWeek } from '../lib/dataModel';
+import { Trophy, RefreshCw, Users, CalendarDays } from 'lucide-react';
+import SeasonPieceEntry from './SeasonPieceEntry';
+import { listSeasonProfiles, readSeasonTrades, updateSeasonProfile, advanceSeasonWeek, confirmedWalletReturns } from '../lib/dataModel';
 
 const FILTERS = [{ id: 'active', label: 'Active' }, { id: 'all', label: 'All' }, { id: 'winners', label: 'Highest winners' }];
 const isLoss = (trade) => /^(lost|loss|settled_loss|settled-loss)$/i.test(String(trade.outcome || trade.status || '')) || Number(trade.earnings ?? trade.profit ?? 0) < 0;
-
-function earningsFor(trades) {
-  return trades.reduce((sum, trade) => {
-    const value = Number(trade.earnings ?? trade.profit ?? 0);
-    return sum + (Number.isFinite(value) ? value : 0);
-  }, 0);
-}
 
 function EarningsGraph({ pieces }) {
   const width = Math.max(560, pieces.length * 150 + 100), height = 300;
@@ -52,7 +45,7 @@ function EarningsGraph({ pieces }) {
   </div>;
 }
 
-export default function GameDay({ dataFolder, onActivity }) {
+export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigate }) {
   const root = dataFolder?.handle;
   const [profiles, setProfiles] = useState([]);
   const [tradesByPiece, setTradesByPiece] = useState({});
@@ -83,7 +76,8 @@ export default function GameDay({ dataFolder, onActivity }) {
 
   const pieces = useMemo(() => profiles.map((profile) => {
     const trades = tradesByPiece[profile.id] || [];
-    return { ...profile, trades, earnings: earningsFor(trades) };
+    const walletReturned = confirmedWalletReturns(trades);
+    return { ...profile, trades, earnings: walletReturned, walletReturned };
   }), [profiles, tradesByPiece]);
 
   const visiblePieces = useMemo(() => {
@@ -106,10 +100,15 @@ export default function GameDay({ dataFolder, onActivity }) {
   async function startNextWeek(profile) {
     setBusyId(profile.id);
     try {
-      const updated = await advanceSeasonWeek(root, profile);
-      setProfiles((old) => old.map((p) => p.id === updated.id ? updated : p));
-      onActivity?.('WEEK_START', updated.name + ' scheduled for ' + updated.nextScheduledWeek);
-    } catch (e) { setError(e.message || 'Could not schedule next week'); }
+      if (onStartWeek) {
+        await onStartWeek(profile);
+        await load();
+      } else {
+        const updated = await advanceSeasonWeek(root, profile);
+        setProfiles((old) => old.map((p) => p.id === updated.id ? updated : p));
+        onActivity?.('WEEK_START', updated.name + ' scheduled for ' + updated.nextScheduledWeek);
+      }
+    } catch (e) { setError(e.message || 'Could not start next week'); }
     finally { setBusyId(''); }
   }
 
@@ -119,20 +118,21 @@ export default function GameDay({ dataFolder, onActivity }) {
     <div className="page-heading"><div><div className="eyebrow">WORKSPACE</div><h1>Game Day</h1><p>Compare earnings, active pieces, and their next scheduled week.</p></div><button className="secondary-btn" onClick={load}><RefreshCw size={14}/> Refresh</button></div>
     {error && <div className="notice error-notice"><b>{error}</b></div>}
     <section className="panel game-day-earnings">
-      <div className="panel-heading"><div><h2>Earnings</h2><p>Money earned by each season piece</p></div><div className="game-day-filters">{FILTERS.map((item) => <button key={item.id} className={`seg-btn ${filter === item.id ? 'active' : ''}`} onClick={() => setFilter(item.id)}>{item.label}</button>)}</div></div>
+      <div className="panel-heading"><div><h2>Earnings</h2><p>Confirmed money returned to the wallet by each season piece</p></div><div className="game-day-filters">{FILTERS.map((item) => <button key={item.id} className={`seg-btn ${filter === item.id ? 'active' : ''}`} onClick={() => setFilter(item.id)}>{item.label}</button>)}</div></div>
       <EarningsGraph pieces={visiblePieces}/>
       <div className="game-day-chart-foot"><span>{visiblePieces.length} pieces shown</span><button className="text-btn" onClick={() => { setHiddenIds([]); setFilter('all'); }}>Show all pieces</button></div>
       <div className="game-day-piece-list">
-        {visiblePieces.map((piece) => <article className="game-day-piece" key={piece.id}>
-          <SeasonToken pieceType={piece.pieceType} baseColor={piece.baseColor} size={76}/>
-          <div className="game-day-piece-main"><b>{piece.name}</b><span>{piece.activePlayer === false ? 'Inactive' : 'Active'} · {piece.paperMode ? 'Paper' : 'Live'} · {piece.strategy || 'midpoint'}</span><strong>$ {piece.earnings.toFixed(2)} earned</strong><small>Next week: {piece.nextScheduledWeek || 'week1'} · {piece.trades.length} records</small>
-            {piece.activePlayer !== false && <div className="season-piece-controls">
-              <button className="secondary-btn" disabled={busyId === piece.id} onClick={() => startNextWeek(piece)}>Start next week</button>
-              <label className={`auto-switch ${piece.auto ? 'enabled' : ''}`}><input type="checkbox" checked={!!piece.auto} onChange={(e) => updatePiece(piece, { auto: e.target.checked })}/><span className="auto-switch-track"></span><b>Auto</b></label>
-            </div>}
-          </div>
-          <button className="remove-piece-btn" title="Remove piece from this graph" onClick={() => setHiddenIds((old) => [...new Set([...old,piece.id])])}><X size={14}/></button>
-        </article>)}
+        {visiblePieces.map((piece) => <SeasonPieceEntry
+          key={piece.id}
+          profile={piece}
+          earnings={piece.walletReturned}
+          compact
+          busy={busyId === piece.id}
+          onUpdate={updatePiece}
+          onStartWeek={startNextWeek}
+          onNavigate={onNavigate}
+          onHide={(item) => setHiddenIds((old) => [...new Set([...old, item.id])])}
+        />)}
       </div>
     </section>
     <section className="panel game-day-schedule">
@@ -143,6 +143,6 @@ export default function GameDay({ dataFolder, onActivity }) {
       })}
       {!visiblePieces.some((p) => p.activePlayer !== false) && <div className="empty-state"><Users size={22}/><b>No active pieces in this view</b></div>}
     </section>
-    <div className="game-day-note">Earnings are calculated from settled record profit/earnings values. Open records do not count as winnings. Auto is a saved piece setting; automated execution is not enabled yet.</div>
+    <div className="game-day-note">Current worth counts only closed, resolved trades whose returned funds are explicitly confirmed in the wallet. A closed status or recorded profit alone does not count. Auto is a saved piece setting; automated execution is not enabled yet.</div>
   </div>;
 }

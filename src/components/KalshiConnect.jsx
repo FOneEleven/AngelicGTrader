@@ -105,7 +105,7 @@ export default function KalshiConnect({ dataFolderHandle, onAccountChange }) {
     const result = await response.json().catch(() => ({}));
     if (!response.ok || !result.connected) throw new Error(result.error || 'Kalshi account verification failed.');
     setBalance(result);
-    onAccountChange?.({ accountName: connection.nickname || 'Kalshi Account', balanceDollars: result.balanceDollars, portfolioValueDollars: result.portfolioValueDollars });
+    onAccountChange?.({ connected: true, accountName: connection.nickname || 'Kalshi Account', balanceDollars: result.balanceDollars, portfolioValueDollars: result.portfolioValueDollars });
     return result;
   }
 
@@ -210,7 +210,7 @@ export default function KalshiConnect({ dataFolderHandle, onAccountChange }) {
   async function disconnect() {
     if (!dataFolderHandle) return;
     await removeConnection(dataFolderHandle);
-    setSaved(null); setBalance(null); setError(''); setNotice('Local Kalshi connection removed. You can also revoke the API key in Kalshi settings.');
+    setSaved(null); setBalance(null); setError(''); onAccountChange?.(null); setNotice('Local Kalshi connection removed. You can also revoke the API key in Kalshi settings.');
   }
 
   return <section className="kalshi-connect">

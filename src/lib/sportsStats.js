@@ -19,7 +19,7 @@ const BASE = import.meta.env.VITE_SPORTS_STATS_URL
   || 'https://angelicgtrader-dvhgf4dhc6hahqhs.westus3-01.azurewebsites.net/api/GetTeamStatistics';
 
 export async function fetchTeamStatistics({
-  league, team, opponent, season, seasonType = '2',
+  league, team, opponent, season, seasonType = '2', onProgress,
 }) {
   if (!league || !team) throw new Error('league and team are required');
 
@@ -32,8 +32,19 @@ export async function fetchTeamStatistics({
   if (season != null && season !== '') url.searchParams.set('season', String(season));
   if (seasonType != null && seasonType !== '') url.searchParams.set('seasontype', String(seasonType));
 
-  const response = await fetch(url, { headers: { Accept: 'application/json' } });
-  const data = await response.json().catch(() => ({}));
+  onProgress?.('ESPN league statistics: ' + resolvedTeam + (resolvedOpponent ? ' vs ' + resolvedOpponent : '') + ' {5}');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  let response, data;
+  try {
+    response = await fetch(url, { headers: { Accept: 'application/json' }, signal: controller.signal });
+    data = await response.json().catch(() => ({}));
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('ESPN statistics timed out after 5 seconds for ' + resolvedTeam + '.');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!response.ok) {
     throw new Error(data.error || `Team statistics request failed (${response.status})`);
   }

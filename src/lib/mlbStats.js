@@ -3,10 +3,22 @@
 const MLB_API = 'https://statsapi.mlb.com/api/v1';
 const WEATHER_API = 'https://api.open-meteo.com/v1/forecast';
 
-async function getJson(url, label) {
-  const response = await fetch(url, { headers: { Accept: 'application/json' } });
-  if (!response.ok) throw new Error(label + ' request failed (' + response.status + ')');
-  return response.json();
+async function getJson(url, label, onProgress) {
+  onProgress?.(label + ' {5}');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  let response, data;
+  try {
+    response = await fetch(url, { headers: { Accept: 'application/json' }, signal: controller.signal });
+    if (!response.ok) throw new Error(label + ' request failed (' + response.status + ')');
+    data = await response.json();
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error(label + ' timed out after 5 seconds.');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+  return data;
 }
 function keyName(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -44,16 +56,16 @@ function sameMatch(game, team, opponent) {
   return ((home === a || home.includes(a) || a.includes(home)) && (away === b || away.includes(b) || b.includes(away)))
     || ((home === b || home.includes(b) || b.includes(home)) && (away === a || away.includes(a) || a.includes(home)));
 }
-async function teamStats(teamId, group, season, split) {
+async function teamStats(teamId, group, season, split, onProgress, teamLabel) {
   const url = new URL(MLB_API + '/teams/' + teamId + '/stats');
   url.searchParams.set('stats', split);
   url.searchParams.set('group', group);
   url.searchParams.set('season', String(season));
   if (split === 'lastXGames') url.searchParams.set('limit', '10');
-  const data = await getJson(url.toString(), 'MLB ' + group + ' statistics');
+  const data = await getJson(url.toString(), 'MLB ' + group + ' statistics: ' + teamLabel, onProgress);
   return statSplit(data, split);
 }
-async function fetchWeather(latitude, longitude, date, gameDateTime) {
+async function fetchWeather(latitude, longitude, date, gameDateTime, onProgress, matchup) {
   const url = new URL(WEATHER_API);
   url.searchParams.set('latitude', String(latitude));
   url.searchParams.set('longitude', String(longitude));
@@ -64,7 +76,7 @@ async function fetchWeather(latitude, longitude, date, gameDateTime) {
   url.searchParams.set('timezone', 'UTC');
   url.searchParams.set('start_date', date);
   url.searchParams.set('end_date', date);
-  const data = await getJson(url.toString(), 'MLB weather forecast');
+  const data = await getJson(url.toString(), 'MLB weather report: ' + matchup, onProgress);
   const hourly = data.hourly || {};
   const times = hourly.time || [];
   if (!times.length) throw new Error('Weather provider returned no hourly forecast for game day.');
@@ -99,13 +111,13 @@ async function fetchWeather(latitude, longitude, date, gameDateTime) {
   };
 }
 
-export async function fetchMLBTeamStatistics({ team, opponent, gameTime }) {
+export async function fetchMLBTeamStatistics({ team, opponent, gameTime, onProgress }) {
   if (!team || !opponent || !gameTime) throw new Error('MLB requires team, opponent, and scheduled game time.');
   const date = isoDate(gameTime);
   const year = Number(date.slice(0, 4));
   const currentYear = new Date().getFullYear();
   const season = year > currentYear ? currentYear : year;
-  const teamsPayload = await getJson(MLB_API + '/teams?sportId=1&season=' + season, 'MLB teams');
+  const teamsPayload = await getJson(MLB_API + '/teams?sportId=1&season=' + season, 'MLB team lookup: ' + team + ' vs ' + opponent, onProgress);
   const teams = teamsPayload.teams || [];
   const teamRow = findTeam(teams, team);
   const opponentRow = findTeam(teams, opponent);
@@ -119,7 +131,7 @@ export async function fetchMLBTeamStatistics({ team, opponent, gameTime }) {
     scheduleUrl.searchParams.set('sportId', '1');
     scheduleUrl.searchParams.set('date', scheduleDate);
     scheduleUrl.searchParams.set('hydrate', 'team,venue,probablePitcher');
-    const schedule = await getJson(scheduleUrl.toString(), 'MLB schedule');
+    const schedule = await getJson(scheduleUrl.toString(), 'MLB schedule lookup: ' + team + ' vs ' + opponent + ' (' + scheduleDate + ')', onProgress);
     const games = (schedule.dates || []).flatMap((row) => row.games || []);
     game = games.find((row) => sameMatch(row, team, opponent));
     if (game) break;
@@ -127,10 +139,10 @@ export async function fetchMLBTeamStatistics({ team, opponent, gameTime }) {
   if (!game) throw new Error('MLB schedule has no matching game on ' + date + '.');
 
   const [hitting, recentHitting, opponentPitching, recentOpponentPitching] = await Promise.all([
-    teamStats(teamRow.id, 'hitting', season, 'season'),
-    teamStats(teamRow.id, 'hitting', season, 'lastXGames').catch(() => null),
-    teamStats(opponentRow.id, 'pitching', season, 'season'),
-    teamStats(opponentRow.id, 'pitching', season, 'lastXGames').catch(() => null),
+    teamStats(teamRow.id, 'hitting', season, 'season', onProgress, teamRow.name),
+    teamStats(teamRow.id, 'hitting', season, 'lastXGames', onProgress, teamRow.name).catch(() => null),
+    teamStats(opponentRow.id, 'pitching', season, 'season', onProgress, opponentRow.name),
+    teamStats(opponentRow.id, 'pitching', season, 'lastXGames', onProgress, opponentRow.name).catch(() => null),
   ]);
   if (!hitting || !opponentPitching) throw new Error('MLB provider did not return the required season hitting/pitching statistics.');
 
@@ -141,7 +153,7 @@ export async function fetchMLBTeamStatistics({ team, opponent, gameTime }) {
   }
   const scheduledTime = game.gameDate || gameTime;
   const weatherDate = isoDate(scheduledTime);
-  const weather = await fetchWeather(coordinates.latitude, coordinates.longitude, weatherDate, scheduledTime);
+  const weather = await fetchWeather(coordinates.latitude, coordinates.longitude, weatherDate, scheduledTime, onProgress, teamRow.name + ' vs ' + opponentRow.name);
   const teamRunsPerGame = perGame(hitting, 'runs');
   const opponentRunsAllowedPerGame = perGame(opponentPitching, 'runs');
   if (teamRunsPerGame == null || opponentRunsAllowedPerGame == null) {
