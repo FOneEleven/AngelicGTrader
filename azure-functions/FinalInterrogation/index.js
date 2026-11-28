@@ -186,9 +186,10 @@ app.http('FinalInterrogation', {
       };
       const { result, responseId } = await interrogate(input);
       const missing = [...(result.missingData || [])];
-      if (!evidence.opponentDefense.defense) missing.push('ESPN opponent schedule/defensive performance unavailable.');
-      if (evidence.opponentDefense.injuryError) missing.push('ESPN opponent injury report unavailable.');
-      if (!evidence.candidateTeamAvailability.injuries?.length && evidence.candidateTeamAvailability.injuryError) missing.push('ESPN candidate-team injury report unavailable.');
+      if (!evidence.opponentDefense.defense || Number(evidence.opponentDefense.defense.gamesSampled) < 5) missing.push('Insufficient ESPN opponent schedule results to establish defensive strength.');
+      if (evidence.opponentDefense.injuryError || evidence.opponentDefense.error) missing.push('ESPN opponent defensive injury report unavailable.');
+      if (evidence.candidateTeamAvailability.injuryError || evidence.candidateTeamAvailability.error) missing.push('ESPN candidate-team offensive availability report unavailable.');
+      result.missingData = [...new Set(missing)];
       if (missing.length && result.verdict === 'KEEP') result.verdict = 'REVIEW';
       return {
         status: 200, headers: CORS,
