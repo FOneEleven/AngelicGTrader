@@ -27,6 +27,12 @@ const schema = {
     opponentPercentileRationale: { type: 'string' },
     startingQbAvailable: { type: ['boolean', 'null'] },
     startingQbRationale: { type: 'string' },
+    defensiveAssessment: { type: 'string' },
+    defensiveInjuries: { type: 'array', items: { type: 'string' } },
+    offensiveAvailability: { type: 'string' },
+    opposingOffenseAssessment: { type: 'string' },
+    opposingOffenseInjuries: { type: 'array', items: { type: 'string' } },
+    opposingOffenseAvailability: { type: 'string' },
     matchupGrade: { type: 'string', enum: ['A', 'B', 'C', 'D'] },
     closingTimeAssessment: { type: 'string' },
     fantasyUpsideAssessment: { type: 'string' },
@@ -41,6 +47,8 @@ const schema = {
     'teamPercentile', 'teamPercentileRationale',
     'opponentPercentile', 'opponentPercentileRationale',
     'startingQbAvailable', 'startingQbRationale',
+    'defensiveAssessment', 'defensiveInjuries', 'offensiveAvailability',
+    'opposingOffenseAssessment', 'opposingOffenseInjuries', 'opposingOffenseAvailability',
     'matchupGrade', 'closingTimeAssessment', 'fantasyUpsideAssessment',
     'reasoning', 'advantages', 'risks', 'missingData',
   ],
@@ -545,6 +553,7 @@ MATCHUP AND VERDICT:
 - Assess normal rotation, competitive intensity, pace, scoring environment, usage/volume, recent form, and fantasy upside from supplied evidence.
 - Do not invent player projections, injuries, standings, or rotation news.
 - Evaluate startingQbAvailable from supplied ESPN summary. Return false only if the starting QB is confirmed unavailable; true if confirmed available; null if unverified. Explain in startingQbRationale.
+- MATCHUP NOTES MUST FOLLOW THE CONTRACT SIDE. For selectedSide YES, populate defensiveAssessment and defensiveInjuries with the opposing defense's relevant evidence, and offensiveAvailability with the selected team's offensive availability. For selectedSide NO, populate opposingOffenseAssessment, opposingOffenseInjuries, and opposingOffenseAvailability with evidence about the opponent's offense. Do not substitute a defense review for a NO-side opposing-offense review. Use only supplied team/opponent statistics and ESPN game-summary evidence; if a fact is not verified, say so and leave injury arrays empty. Never infer an injury or availability status.
 - Explicitly account for structured weather data only in NFL. NBA weather must have no effect on motivation or probability. In NFL, inclement weather is defensive-friendly: it increases NO probability and decreases YES probability by the same percentage points. Unavailable weather is unknown, not clear weather.
 - KEEP when the matchup is acceptable, motivation/rotation is credible, fantasy upside is acceptable, grade is A or B, and no material missing fact undermines the decision. Opponent percentile is not a KEEP requirement.
 - REJECT for material rotation/motivation risk or a poor matchup, not for opponent percentile alone.
