@@ -540,7 +540,8 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         const baseline = analysisByTicker.get(candidate.ticker) || analyses[candidate.ticker];
         let review = null;
         let verdict = 'REVIEW';
-        let finalProbability = candidate.side === 'YES' ? candidate.probability : 1 - candidate.probability;
+        let finalProbability = Number(baseline?.prediction?.probabilityYes);
+        if (!Number.isFinite(finalProbability) || finalProbability < 0 || finalProbability > 1) finalProbability = candidate.side === 'YES' ? candidate.probability : 1 - candidate.probability;
         let reviewError = '';
         const eventStartTime = prediction?.occurrenceTime || prediction?.gameTime || '';
         const eventStartMs = eventStartTime ? Date.parse(eventStartTime) : NaN;
@@ -625,7 +626,10 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         } catch (error) {
           setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'RECORD SAVE FAILED · ' + candidate.ticker + ' · ' + error.message }].slice(-40));
         }
-        setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'FINAL INTERROGATION · ' + candidate.team + ' · ' + candidate.side + ' ' + candidate.line + ' · verdict=' + verdict + ' · final side probability=' + (sideProbability * 100).toFixed(1) + '%' + (reviewError ? ' · error=' + reviewError : '') }].slice(-40));
+        const interrogation = review?.interrogation || {};
+        const motivationPoints = Number(interrogation.motivationAdjustmentPoints) || 0;
+        const opponentPercentile = interrogation.opponentPercentile == null ? 'unknown' : Number(interrogation.opponentPercentile).toFixed(0) + 'th';
+        setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'FINAL INTERROGATION · ' + candidate.team + ' · ' + candidate.side + ' ' + candidate.line + ' · verdict=' + verdict + ' · side probability=' + (sideProbability * 100).toFixed(1) + '% · motivation=' + (motivationPoints > 0 ? '+' : '') + motivationPoints + 'pp · opponent=' + opponentPercentile + ' percentile · ' + (interrogation.closingTimeAssessment || reviewError || 'pregame checked') }].slice(-40));
       }
       if (interrogatedCandidates.length) onActivity?.('CANDIDATES_INTERROGATED', interrogatedCandidates.length + ' qualified candidates saved to Records and Prediction History for ' + seasonProfile.name);
       const rankedCandidates = interrogatedCandidates.filter((item) => item.finalVerdict === 'KEEP').sort((a, b) => {
