@@ -234,7 +234,7 @@ export default function KalshiConnect({ dataFolderHandle, onAccountChange }) {
         <li>Open <a href="https://kalshi.com/account/profile" target="_blank" rel="noreferrer">Kalshi account settings</a> and scroll to API Keys.</li>
         <li>Select <b>Create key</b>. Name it <b>AngelicGTrader</b>.</li>
         <li>Choose <b>Ed25519</b>. This is the key type this integration expects and the recommended signing algorithm.</li>
-        <li>Use permissions that include account reads (balance) and, when we enable order placement, <b>trade write</b>.</li>
+        <li>Use permissions that include account reads (balance) and, to submit live orders from the Play Box, <b>trade write</b>.</li>
         <li>Save the Key ID and download the private key PEM. Kalshi only displays the private key once.</li>
       </ol>
     </div>}
