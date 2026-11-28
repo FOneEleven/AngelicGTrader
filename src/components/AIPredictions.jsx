@@ -185,7 +185,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       (!seasonProfile?.strategy || p.strategy === seasonProfile.strategy)
     ),
   }), [markets, selectedEntries, seasonProfile?.strategy]);
-  const predictionDatasetSignature = JSON.stringify(predictions.map((p) => ({ key: p.key, event: p.event, opponent: eventOpponent(markets, p.event, p.team), gameTime: p.gameTime || p.expectedExpiration || p.closeTime || null, lines: p.lines.map((line) => [line.ticker, line.line, line.yesAsk, line.noAsk]), recommended: p.recommended?.ticker || null })));
+  const predictionDatasetSignature = JSON.stringify(predictions.map((p) => ({ key: p.key, event: p.event, opponent: eventOpponent(markets, p.event, p.team), gameTime: p.occurrenceTime || p.gameTime || null, lines: p.lines.map((line) => [line.ticker, line.line, line.yesAsk, line.noAsk]), recommended: p.recommended?.ticker || null })));
 
   useEffect(() => {
     if (!root || !seasonProfile) return;
@@ -216,8 +216,8 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       try {
         const currentSeason = new Date().getFullYear();
         const orderedPredictions = [...predictions].sort((a, b) => {
-        const at = Date.parse(a.gameTime || a.expectedExpiration || a.closeTime || '') || Infinity;
-        const bt = Date.parse(b.gameTime || b.expectedExpiration || b.closeTime || '') || Infinity;
+        const at = Date.parse(a.occurrenceTime || a.gameTime || '') || Infinity;
+        const bt = Date.parse(b.occurrenceTime || b.gameTime || '') || Infinity;
         return at - bt;
       });
       for (const p of orderedPredictions) {
@@ -229,7 +229,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
             setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SKIP · ' + p.team + ' · ' + nextErrors[p.key] }].slice(-40));
             continue;
           }
-          const gameTime = p.gameTime || p.expectedExpiration || p.closeTime;
+          const gameTime = p.occurrenceTime || p.gameTime;
           const params = { league, team: p.team, opponent, season: currentSeason, seasonType: '2' };
           const key = teamStatsCacheKey({ ...params, season: league === 'MLB' ? gameTime : currentSeason });
           let entry = await getCachedTeamStats(root, key, league === 'MLB' ? 60 * 60 * 1000 : undefined);
@@ -274,8 +274,8 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
             title: p.team + ' over ' + line.line + (league === 'MLB' ? ' runs' : ' points'),
             league, team: p.team, opponent: stats.opponent?.name || '',
             line: line.line, yesAsk: line.yesAsk, noAsk: line.noAsk,
-            closeTime: p.closeTime || p.expectedExpiration || null,
-            gameTime: p.gameTime || p.expectedExpiration || null,
+            closeTime: p.closeTime || null,
+            gameTime: p.occurrenceTime || p.gameTime || null,
           }));
           const cachedRows = await Promise.all(marketsForLadder.map(async (market) => ({
             market, cacheKey: analysisKey(market, stats),
@@ -290,8 +290,8 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
           ladderTasks.push({
             predictionKey: p.key, league, team: p.team,
             opponent: stats.opponent?.name || '',
-            closeTime: p.closeTime || p.expectedExpiration || null,
-            gameTime: p.gameTime || p.expectedExpiration || null,
+            closeTime: p.closeTime || null,
+            gameTime: p.occurrenceTime || p.gameTime || null,
             markets: marketsForLadder,
             teamStats: { ...stats.team, modelInputs: stats.modelInputs, recentGames: stats.recentGames, dataQuality: stats.dataQuality },
             opponentStats: stats.opponent,
@@ -382,7 +382,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
     setProgress('Reassessing ' + p.team + ' over ' + line.line + ' against the piece instruction…');
     try {
       const league = leagueFor(p);
-      const market = { ticker: line.ticker, title: p.team + ' over ' + line.line + (league === 'MLB' ? ' runs' : ' points'), league, team: p.team, opponent: stats.opponent?.name || '', line: line.line, yesAsk: line.yesAsk, noAsk: line.noAsk, closeTime: p.closeTime || p.expectedExpiration || null, gameTime: p.gameTime || p.expectedExpiration || null };
+      const market = { ticker: line.ticker, title: p.team + ' over ' + line.line + (league === 'MLB' ? ' runs' : ' points'), league, team: p.team, opponent: stats.opponent?.name || '', line: line.line, yesAsk: line.yesAsk, noAsk: line.noAsk, closeTime: p.closeTime || null, gameTime: p.occurrenceTime || p.gameTime || null };
       const revised = await analyzeMarket({
         market,
         teamStats: { ...stats.team, modelInputs: stats.modelInputs, recentGames: stats.recentGames, dataQuality: stats.dataQuality },
@@ -414,8 +414,8 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       setProgress('Start next week: scanning upcoming games and every slider line…');
       const selected = {};
       const orderedPredictions = [...predictions].sort((a, b) => {
-        const at = Date.parse(a.gameTime || a.expectedExpiration || a.closeTime || '') || Infinity;
-        const bt = Date.parse(b.gameTime || b.expectedExpiration || b.closeTime || '') || Infinity;
+        const at = Date.parse(a.occurrenceTime || a.gameTime || '') || Infinity;
+        const bt = Date.parse(b.occurrenceTime || b.gameTime || '') || Infinity;
         return at - bt;
       });
       const confirmedReturns = confirmedWalletReturns(await readSeasonTrades(root, seasonProfile));
@@ -465,7 +465,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         };
       };
       for (const p of orderedPredictions) {
-        const gameTime = p.gameTime || p.expectedExpiration || p.closeTime;
+        const gameTime = p.occurrenceTime || p.gameTime;
         if (gameTime && Number.isFinite(Date.parse(gameTime)) && Date.parse(gameTime) <= Date.now()) continue;
         const stats = statsByKey[p.key];
         if (!stats) continue;
@@ -532,12 +532,8 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       const uniqueQualifiedCandidates = [...new Map(selectionList.map((candidate) => [candidate.ticker + '|' + candidate.side, candidate])).values()];
       const interrogatedCandidates = [];
       const interrogationByTeam = new Map();
-      // Reuse a completed matchup interrogation already saved on this piece.
-      for (const prior of seasonProfile.selectionList || []) {
-        if (prior.predictionKey && prior.finalInterrogation?.interrogation && ['KEEP', 'REJECT', 'REVIEW'].includes(prior.finalVerdict)) {
-          interrogationByTeam.set(prior.predictionKey, { review: prior.finalInterrogation, verdict: prior.finalVerdict });
-        }
-      }
+      // Never reuse a prior scan's matchup verdict: kickoff, current asks, and
+      // late-market selling conditions must be checked from the current refresh.
       for (const candidate of uniqueQualifiedCandidates) {
         const prediction = orderedPredictions.find((item) => item.key === candidate.predictionKey);
         const line = prediction?.lines?.find((item) => item.ticker === candidate.ticker);
@@ -547,7 +543,23 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         let verdict = 'REVIEW';
         let finalProbability = candidate.side === 'YES' ? candidate.probability : 1 - candidate.probability;
         let reviewError = '';
-        try {
+        const eventStartTime = prediction?.occurrenceTime || prediction?.gameTime || '';
+        const eventStartMs = eventStartTime ? Date.parse(eventStartTime) : NaN;
+        const marketCloseMs = prediction?.closeTime ? Date.parse(prediction.closeTime) : NaN;
+        if (!Number.isFinite(eventStartMs) || eventStartMs <= Date.now() || (Number.isFinite(marketCloseMs) && marketCloseMs <= Date.now())) {
+          verdict = 'REJECT';
+          reviewError = !Number.isFinite(eventStartMs) ? 'Official event start time is missing; fail-closed pregame check.'
+            : eventStartMs <= Date.now() ? 'Contest has already started; late-market price/payout movement is not pregame evidence.'
+            : 'Kalshi market is already closed; no new position is eligible.';
+          review = { verdict: 'REJECT', interrogation: {
+            verdict: 'REJECT', probabilityYes: Number(baseline?.prediction?.probabilityYes) || 0.5,
+            matchupGrade: 'D', reasoning: [reviewError],
+            risks: ['Late selling and rising payout during an active contest can reflect holders exiting losing positions; do not treat it as safety or value.'],
+            missingData: [], motivationAssessment: 'Not evaluated because the pregame gate failed.',
+            opponentPercentile: null, motivationAdjustmentPoints: 0,
+            closingTimeAssessment: 'Rejected: event is not eligible for pregame evaluation.',
+          } };
+        } else try {
           if (!prediction || !line || !stats || !baseline?.prediction) throw new Error('Candidate context or baseline analysis is missing.');
           const league = leagueFor(prediction);
           const market = {
@@ -765,7 +777,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
               const already = trades.some((t) => t.ticker === chosen?.ticker && t.side === side);
               const rowError = analysisErrors[p.key];
               return <tr key={p.key}>
-                <td><b>{closesIn(p.gameTime || p.expectedExpiration || p.closeTime)}</b><small style={{display:'block',marginTop:2}}>{closeDate(p.closeTime)}</small></td>
+                <td><b>{closesIn(p.occurrenceTime || p.gameTime)}</b><small style={{display:'block',marginTop:2}}>{closeDate(p.closeTime)}</small></td>
                 <td><span className="status-pill">{p.league}</span></td>
                 <td><b>{p.team}</b><small style={{display:'block',marginTop:3}}>{p.event}</small>{rowError && <small className="negative">{rowError}</small>}</td>
                 <td style={{minWidth:190,width:190}}>
