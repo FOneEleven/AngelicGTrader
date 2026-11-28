@@ -390,10 +390,16 @@ export default function App() {
           if (typeof won !== 'boolean') continue;
           const resolvedAt = new Date().toISOString();
           const priceCents = Number(trade.price) || Number(trade.marketProbability) * 100;
-          const filledContracts = paper
-            ? (Number(trade.stake) > 0 && priceCents > 0 ? Number(trade.stake) / (priceCents / 100) : 0)
+          const combinedStake = Math.max(0, Number(trade.combinedOrderStake) || Number(trade.stake) || 0);
+          const contributionShare = combinedStake > 0
+            ? Math.max(0, Math.min(1, (Number(trade.stake) || 0) / combinedStake))
+            : 1;
+          const totalContracts = paper
+            ? (combinedStake > 0 && priceCents > 0 ? combinedStake / (priceCents / 100) : 0)
             : Math.max(0, Number(trade.fillCount) || 0);
-          const payout = won ? Math.round(filledContracts * 100) / 100 : 0;
+          // The full line payout is divided among contributors in proportion to
+          // the original allocation each piece committed to that shared contract.
+          const payout = won ? Math.round(totalContracts * 100 * contributionShare * 100) / 100 : 0;
           let resolvedTrade = trade;
           if (source === 'selected-line') {
             await appendTrade(root, profile.season, trade.week, {
