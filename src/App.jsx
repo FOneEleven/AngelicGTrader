@@ -81,7 +81,9 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
           });
         }
         const committed = trades.some((trade) => trade.week === currentWeek && /^(open|pending|placed|submitted)$/i.test(String(trade.status || '')));
-        const confirmedReturns = trades.reduce((sum, trade) => sum + (trade.walletReturnConfirmed === true ? (Number(trade.walletReturnedAmount) || 0) : 0), 0);\n        const currentWorth = Number(savedProfile.currentWorth ?? ((Number(savedProfile.quotaValue ?? savedProfile.initialBalance ?? savedProfile.balance) || 0) + confirmedReturns));\n        return { id: profile.id, profile: savedProfile, earnings: currentWorth, committed };
+        const confirmedReturns = trades.reduce((sum, trade) => sum + (trade.walletReturnConfirmed === true ? (Number(trade.walletReturnedAmount) || 0) : 0), 0);
+        const currentWorth = Number(savedProfile.currentWorth ?? ((Number(savedProfile.quotaValue ?? savedProfile.initialBalance ?? savedProfile.balance) || 0) + confirmedReturns));
+        return { id: profile.id, profile: savedProfile, earnings: currentWorth, committed };
       }));
       const currentProfiles = pieceEntries.map((entry) => entry.profile);
       if (!cancelled) {
