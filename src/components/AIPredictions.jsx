@@ -558,6 +558,12 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       const uniqueQualifiedCandidates = [...new Map(selectionList.map((candidate) => [candidate.ticker + '|' + candidate.side, candidate])).values()];
       const interrogatedCandidates = [];
       const interrogationByTeam = new Map();
+      // Reuse a completed matchup interrogation already saved on this piece.
+      for (const prior of seasonProfile.selectionList || []) {
+        if (prior.predictionKey && prior.finalInterrogation?.interrogation && ['KEEP', 'REJECT', 'REVIEW'].includes(prior.finalVerdict)) {
+          interrogationByTeam.set(prior.predictionKey, { review: prior.finalInterrogation, verdict: prior.finalVerdict });
+        }
+      }
       for (const candidate of uniqueQualifiedCandidates) {
         const prediction = orderedPredictions.find((item) => item.key === candidate.predictionKey);
         const line = prediction?.lines?.find((item) => item.ticker === candidate.ticker);
