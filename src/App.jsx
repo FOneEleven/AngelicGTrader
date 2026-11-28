@@ -300,7 +300,7 @@ export default function App() {
           }
           // A paper selection is itself a committed position. It does not need a Play Box
           // commit or a trades.txt row before resolution monitoring begins.
-          if (profile.paperMode === true) {
+          if (profile.paperMode === true || (profile.selectedLines || []).some((line) => line?.paper === true)) {
             for (const selected of (profile.selectedLines || [])) {
               if (!selected?.ticker || trackedTickers.has(selected.ticker) ||
                   ['won','lost','resolved'].includes(String(profile.selectionResolution?.status || '').toLowerCase())) continue;
@@ -368,7 +368,7 @@ export default function App() {
           let won = null;
           let resolutionSource = '';
           let result = '';
-          if (['yes','no'].includes(marketResult) && ['settled','finalized','finalised','resolved','closed'].includes(marketStatus)) {
+          if (['yes','no'].includes(marketResult) && marketStatus && !['open','active','initialized','unopened','pending'].includes(marketStatus)) {
             const actualYes = marketResult === 'yes';
             won = String(trade.side).toUpperCase() === 'YES' ? actualYes : !actualYes;
             result = marketResult;
