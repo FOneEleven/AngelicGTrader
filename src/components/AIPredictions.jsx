@@ -557,8 +557,8 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
             gameTime: prediction.occurrenceTime || prediction.gameTime || null,
             marketStatus: ['open', 'active', 'closed', 'settled', 'final', 'suspended'].includes(String(prediction.status || '').toLowerCase()) ? prediction.status : '',
           };
-          // Interrogate each contract independently so its current selected-side
-          // ask and payout are assessed; do not reuse a different rung's price context.
+          // The matchup-level eligible review and motivation adjustment are shared
+          // across this entire ladder; each rung retains its own baseline and ask checks.
           review = await finalInterrogateCandidate({
             candidate, market,
             teamStats: { ...stats.team, modelInputs: stats.modelInputs, recentGames: stats.recentGames, dataQuality: stats.dataQuality },
@@ -619,7 +619,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         const scoreboardText = scoreboard.verified
           ? 'scoreboard=' + (scoreboard.source || 'verified') + '/' + (scoreboard.status || 'UNKNOWN') + ' · event=' + (scoreboard.event?.eventId || scoreboard.eventId || 'identified')
           : 'scoreboard=UNVERIFIED · ' + (scoreboard.reason || reviewError || 'no event verification details');
-        setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'FINAL INTERROGATION' + (review?.cacheHit ? ' · CACHE HIT (1h)' : '') + ' · ' + candidate.team + ' · ' + candidate.side + ' ' + candidate.line + ' · verdict=' + verdict + ' · side probability=' + (sideProbability * 100).toFixed(1) + '% · motivation=' + (motivationPoints > 0 ? '+' : '') + motivationPoints + 'pp (' + motivationText + ') · opponent=' + opponentPercentile + ' percentile · ' + scoreboardText + ' · ' + (interrogation.closingTimeAssessment || reviewError || 'pregame checked') }].slice(-40));
+        setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'FINAL INTERROGATION' + (review?.cacheHit ? ' · LADDER CACHE HIT (7m)' : '') + ' · ' + candidate.team + ' · ' + candidate.side + ' ' + candidate.line + ' · verdict=' + verdict + ' · side probability=' + (sideProbability * 100).toFixed(1) + '% · motivation=' + (motivationPoints > 0 ? '+' : '') + motivationPoints + 'pp (' + motivationText + ') · opponent=' + opponentPercentile + ' percentile · ' + scoreboardText + ' · ' + (interrogation.closingTimeAssessment || reviewError || 'pregame checked') }].slice(-40));
       }
       if (interrogatedCandidates.length) onActivity?.('CANDIDATES_INTERROGATED', interrogatedCandidates.length + ' qualified candidates saved to Records and Prediction History for ' + seasonProfile.name);
       const rankedCandidates = interrogatedCandidates.filter((item) => item.finalVerdict === 'KEEP').sort((a, b) => {
