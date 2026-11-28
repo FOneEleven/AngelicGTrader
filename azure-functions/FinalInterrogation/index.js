@@ -353,10 +353,6 @@ async function finalInterrogate(body) {
     );
   }
 
-  if (marketIsClosed(market)) {
-    return eligibilityResult('REJECT', 'The exact event was verified, but the Kalshi contract is explicitly closed or no longer tradable.', market, scoreboard);
-  }
-
   const liveEvent = scoreboard.event;
   if (scoreboard.status === 'FINAL') {
     return eligibilityResult(
@@ -381,6 +377,10 @@ async function finalInterrogate(body) {
       market,
       scoreboard,
     );
+  }
+
+  if (marketIsClosed(market)) {
+    return eligibilityResult('REJECT', 'The exact event was verified as PRE, but the Kalshi contract is explicitly closed or no longer tradable.', market, scoreboard);
   }
 
   const scoreboardStartMs = liveEvent.eventStartTime ? Date.parse(liveEvent.eventStartTime) : NaN;
