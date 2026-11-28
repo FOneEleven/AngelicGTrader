@@ -42,3 +42,20 @@ export async function submitKalshiOrders(root, orders) {
   }
   return results;
 }
+
+
+export async function fetchMarketResolutions(tickers = []) {
+  const unique = [...new Set((tickers || []).filter((ticker) => typeof ticker === 'string' && ticker.trim()))];
+  if (!unique.length) return [];
+  const results = [];
+  for (let offset = 0; offset < unique.length; offset += 50) {
+    const url = new URL(BASE);
+    url.searchParams.set('action', 'resolve');
+    url.searchParams.set('tickers', unique.slice(offset, offset + 50).join(','));
+    const response = await fetch(url.toString(), { headers: { Accept: 'application/json' }, cache: 'no-store' });
+    if (!response.ok) throw new Error('Market resolution lookup failed with HTTP ' + response.status + '.');
+    const payload = await response.json();
+    if (Array.isArray(payload.markets)) results.push(...payload.markets);
+  }
+  return results;
+}
