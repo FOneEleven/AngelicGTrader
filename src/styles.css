@@ -517,6 +517,44 @@ nav {
     overflow-x: auto
 }
 
+.record-place-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    min-width: 210px
+}
+
+.record-place-control select {
+    min-width: 145px;
+    max-width: 190px;
+    background: #151a22;
+    color: #cbd0d9;
+    border: 1px solid #343d4b;
+    border-radius: 5px;
+    padding: 7px 8px;
+    font-size: 9px
+}
+
+.record-place-control .secondary-btn {
+    padding: 7px 9px;
+    white-space: nowrap;
+    font-size: 9px
+}
+
+.record-place-control .secondary-btn:disabled {
+    opacity: .45;
+    cursor: not-allowed
+}
+
+.record-action-message {
+    flex-basis: 100%;
+    color: #c6a86a;
+    font-size: 9px;
+    white-space: normal;
+    line-height: 1.35
+}
+
 table {
     width: 100%;
     border-collapse: collapse;
