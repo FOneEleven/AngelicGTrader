@@ -59,3 +59,31 @@ export async function fetchMarketResolutions(tickers = []) {
   }
   return results;
 }
+
+
+export async function fetchKalshiOrderStatuses(root, orderIds = []) {
+  if (!root) throw new Error('Local data folder is unavailable.');
+  const unique = [...new Set((orderIds || []).filter((id) => typeof id === 'string' && id.trim()))];
+  if (!unique.length) return [];
+  const meta = await root.getDirectoryHandle('meta');
+  const file = await meta.getFileHandle('kalshi-connection.json');
+  const connection = JSON.parse(await (await file.getFile()).text());
+  if (!connection?.keyId || !connection?.envelope) throw new Error('Kalshi connection is unavailable for order-fill verification.');
+  const orders = [];
+  for (let offset = 0; offset < unique.length; offset += 50) {
+    const response = await fetch(ACCOUNT_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        action: 'order-status',
+        keyId: connection.keyId,
+        envelope: connection.envelope,
+        orderIds: unique.slice(offset, offset + 50),
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !Array.isArray(payload.orders)) throw new Error(payload.error || 'Could not verify Kalshi order fills.');
+    orders.push(...payload.orders);
+  }
+  return orders;
+}
