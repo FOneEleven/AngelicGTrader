@@ -1,10 +1,10 @@
-// Azure Functions Node.js v4: strict pregame matchup interrogation.
-// This endpoint is deliberately independent of the baseline market-analysis model.
-
 const { app } = require('@azure/functions');
 
 const OPENAI_URL = 'https://api.openai.com/v1/responses';
 const MODEL = process.env.OPENAI_MODEL || 'gpt-6.2-astra';
+const ESPN_BASE = 'https://site.api.espn.com/apis/site/v2/sports';
+const MLB_SCHEDULE_URL = 'https://statsapi.mlb.com/api/v1/schedule';
+
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -32,8 +32,9 @@ const schema = {
     missingData: { type: 'array', items: { type: 'string' } },
   },
   required: [
-    'verdict', 'probabilityYes', 'baseProbabilityYes', 'motivationAdjustmentPoints',
-    'motivationAssessment', 'opponentPercentile', 'opponentPercentileRationale',
+    'verdict', 'probabilityYes', 'baseProbabilityYes',
+    'motivationAdjustmentPoints', 'motivationAssessment',
+    'opponentPercentile', 'opponentPercentileRationale',
     'matchupGrade', 'closingTimeAssessment', 'fantasyUpsideAssessment',
     'reasoning', 'advantages', 'risks', 'missingData',
   ],
@@ -50,15 +51,251 @@ function getOutputText(response) {
   throw new Error('OpenAI returned no final interrogation text');
 }
 
-function rejected(reason, market) {
+function normalizeName(value) {
+  return String(value || '').toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]/g, '');
+}
+
+function namesMatch(a, b) {
+  const left = normalizeName(a);
+  const right = normalizeName(b);
+  return !!left && !!right && (left === right || left.includes(right) || right.includes(left));
+}
+
+function utcDate(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function shiftDate(dateString, days) {
+  const date = new Date(dateString + 'T12:00:00Z');
+  date.setUTCDate(date.getUTCDate() + days);
+  return utcDate(date);
+}
+
+function scoreboardDateRanges(eventStart) {
+  const today = utcDate(new Date());
+  const ranges = [{ start: shiftDate(today, -3), end: shiftDate(today, 10) }];
+  const hintMs = eventStart ? Date.parse(eventStart) : NaN;
+  if (Number.isFinite(hintMs)) {
+    const hintDate = utcDate(new Date(hintMs));
+    const daysFromNow = Math.abs(hintMs - Date.now()) / 86400000;
+    // A stale timestamp from a previous scan must not expand the search back
+    // indefinitely. A nearby hint can add a second broad schedule window.
+    if (daysFromNow <= 14 && !ranges.some((r) => hintDate >= r.start && hintDate <= r.end)) {
+      ranges.push({ start: shiftDate(hintDate, -3), end: shiftDate(hintDate, 3) });
+    }
+  }
+  return ranges;
+}
+
+async function fetchJson(url, timeoutMs = 12000) {
+  const response = await fetch(url, {
+    headers: { Accept: 'application/json' },
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!response.ok) throw new Error('Scoreboard HTTP ' + response.status);
+  return response.json();
+}
+
+function espnLeaguePath(league) {
+  if (league === 'NBA') return 'basketball/nba';
+  if (league === 'NFL') return 'football/nfl';
+  return null;
+}
+
+function espnCompetitorNames(competitor) {
+  const team = competitor?.team || {};
+  return [
+    team.displayName, team.shortDisplayName, team.name,
+    team.abbreviation, team.location, team.nickname,
+    competitor?.displayName,
+  ].filter(Boolean);
+}
+
+function classifyEspnStatus(event) {
+  const type = event?.status?.type || {};
+  const state = String(type.state || '').toLowerCase();
+  const name = String(type.name || '').toLowerCase();
+  const description = String(type.description || '').toLowerCase();
+
+  if (type.completed === true || state === 'post' || name.includes('final') || description.includes('final')) return 'FINAL';
+  if (state === 'in' || name.includes('progress') || name.includes('halftime') || name.includes('live')) return 'LIVE';
+  if (state === 'pre' || name.includes('scheduled') || name.includes('pre')) return 'PRE';
+  return 'UNKNOWN';
+}
+
+function normalizeEspnEvent(event, league) {
+  const competition = event.competitions?.[0];
+  const competitors = competition?.competitors || [];
+  const home = competitors.find((item) => item.homeAway === 'home') || competitors[0];
+  const away = competitors.find((item) => item.homeAway === 'away') || competitors[1];
+  const status = event.status || competition?.status || {};
   return {
-    verdict: 'REJECT',
+    source: 'ESPN',
+    league,
+    eventId: event.id || null,
+    eventName: event.name || event.shortName || '',
+    eventStartTime: event.date || null,
+    status: classifyEspnStatus({ ...event, status }),
+    statusName: status.type?.name || status.type?.description || '',
+    statusDetail: status.type?.detail || status.type?.shortDetail || '',
+    period: status.period ?? null,
+    clock: status.displayClock || null,
+    homeTeam: espnCompetitorNames(home),
+    awayTeam: espnCompetitorNames(away),
+    homeScore: home?.score ?? null,
+    awayScore: away?.score ?? null,
+    rawStatus: status.type || {},
+  };
+}
+
+async function fetchEspnScoreboard(league, ranges) {
+  const path = espnLeaguePath(league);
+  if (!path) throw new Error('Unsupported ESPN league: ' + league);
+  const results = await Promise.allSettled(ranges.map(async ({ start, end }) => {
+    const url = new URL(ESPN_BASE + '/' + path + '/scoreboard');
+    url.searchParams.set('dates', start.replace(/-/g, '') + '-' + end.replace(/-/g, ''));
+    url.searchParams.set('limit', '1000');
+    const data = await fetchJson(url.toString());
+    return (data.events || []).map((event) => normalizeEspnEvent(event, league));
+  }));
+  const events = [];
+  const failures = [];
+  for (const result of results) {
+    if (result.status === 'fulfilled') events.push(...result.value);
+    else failures.push(result.reason?.message || 'ESPN request failed');
+  }
+  const unique = new Map(events.filter((event) => event.eventId).map((event) => [event.eventId, event]));
+  if (!unique.size && failures.length === results.length) throw new Error('ESPN scoreboard unavailable: ' + failures.join('; '));
+  return [...unique.values()];
+}
+
+function classifyMlbStatus(game) {
+  const abstract = String(game.status?.abstractGameState || '').toLowerCase();
+  const detailed = String(game.status?.detailedState || '').toLowerCase();
+  if (abstract === 'final' || detailed.includes('final') || detailed.includes('completed')) return 'FINAL';
+  if (abstract === 'live' || detailed.includes('in progress') || detailed.includes('warmup')) return 'LIVE';
+  if (detailed.includes('delayed') || abstract === 'preview' || detailed.includes('scheduled') || detailed.includes('pre-game')) return 'PRE';
+  return 'UNKNOWN';
+}
+
+function normalizeMlbGame(game) {
+  const home = game.teams?.home || {};
+  const away = game.teams?.away || {};
+  const linescore = game.linescore || {};
+  return {
+    source: 'MLB Stats API',
+    league: 'MLB',
+    eventId: String(game.gamePk || ''),
+    eventName: (away.team?.name || '') + ' at ' + (home.team?.name || ''),
+    eventStartTime: game.gameDate || null,
+    status: classifyMlbStatus(game),
+    statusName: game.status?.detailedState || '',
+    statusDetail: game.status?.reason || '',
+    period: linescore.currentInning ?? null,
+    inningState: linescore.inningState || null,
+    clock: null,
+    homeTeam: [home.team?.name, home.team?.clubName, home.team?.teamName, home.team?.abbreviation].filter(Boolean),
+    awayTeam: [away.team?.name, away.team?.clubName, away.team?.teamName, away.team?.abbreviation].filter(Boolean),
+    homeScore: home.score ?? null,
+    awayScore: away.score ?? null,
+    outs: linescore.outs ?? null,
+    balls: linescore.balls ?? null,
+    strikes: linescore.strikes ?? null,
+    rawStatus: game.status || {},
+  };
+}
+
+async function fetchMlbScoreboard(ranges) {
+  const results = await Promise.allSettled(ranges.map(async ({ start, end }) => {
+    const url = new URL(MLB_SCHEDULE_URL);
+    url.searchParams.set('sportId', '1');
+    url.searchParams.set('startDate', start);
+    url.searchParams.set('endDate', end);
+    url.searchParams.set('hydrate', 'linescore');
+    const data = await fetchJson(url.toString());
+    return (data.dates || []).flatMap((entry) => (entry.games || []).map(normalizeMlbGame));
+  }));
+  const events = [];
+  const failures = [];
+  for (const result of results) {
+    if (result.status === 'fulfilled') events.push(...result.value);
+    else failures.push(result.reason?.message || 'MLB request failed');
+  }
+  const unique = new Map(events.filter((event) => event.eventId).map((event) => [event.eventId, event]));
+  if (!unique.size && failures.length === results.length) throw new Error('MLB scoreboard unavailable: ' + failures.join('; '));
+  return [...unique.values()];
+}
+
+function eventMatchesTeams(event, team, opponent) {
+  const homeMatches = event.homeTeam.some((name) => namesMatch(name, team));
+  const awayMatches = event.awayTeam.some((name) => namesMatch(name, team));
+  if (!homeMatches && !awayMatches) return false;
+  if (!opponent) return false;
+  return homeMatches
+    ? event.awayTeam.some((name) => namesMatch(name, opponent))
+    : event.homeTeam.some((name) => namesMatch(name, opponent));
+}
+
+async function verifyLiveScoreboard({ league, team, opponent, eventStart }) {
+  const normalizedLeague = String(league || '').toUpperCase();
+  if (!['NBA', 'NFL', 'MLB'].includes(normalizedLeague)) {
+    return { verified: false, status: 'UNKNOWN', reason: 'No supported live scoreboard is configured for league ' + normalizedLeague };
+  }
+  if (!team || !opponent) {
+    return { verified: false, status: 'UNKNOWN', reason: 'Both team and opponent are required to identify the exact event.' };
+  }
+
+  const ranges = scoreboardDateRanges(eventStart);
+  let events;
+  try {
+    events = normalizedLeague === 'MLB'
+      ? await fetchMlbScoreboard(ranges)
+      : await fetchEspnScoreboard(normalizedLeague, ranges);
+  } catch (error) {
+    return { verified: false, status: 'UNKNOWN', reason: error.message || 'Live scoreboard could not be reached.', checkedRanges: ranges };
+  }
+
+  const matches = events.filter((event) => eventMatchesTeams(event, team, opponent));
+  if (!matches.length) {
+    return {
+      verified: false, status: 'UNKNOWN',
+      reason: 'No exact team-versus-opponent event was found in the scoreboard search window.',
+      checkedRanges: ranges, scoreboardEventsFound: events.length,
+    };
+  }
+
+  if (matches.length > 1) {
+    return {
+      verified: false, status: 'UNKNOWN',
+      reason: 'More than one event matched the exact team and opponent in the search window. Refusing to choose the wrong game.',
+      checkedRanges: ranges,
+      matches: matches.map((event) => ({
+        eventId: event.eventId, eventName: event.eventName,
+        eventStartTime: event.eventStartTime, status: event.status,
+        homeTeam: event.homeTeam, awayTeam: event.awayTeam,
+      })),
+    };
+  }
+
+  return {
+    verified: true,
+    status: matches[0].status,
+    event: matches[0],
+    checkedRanges: ranges,
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+function eligibilityResult(verdict, reason, market, scoreboard) {
+  const event = scoreboard?.event || {};
+  return {
+    verdict,
     interrogation: {
-      verdict: 'REJECT',
+      verdict,
       probabilityYes: 0.5,
       baseProbabilityYes: 0.5,
       motivationAdjustmentPoints: 0,
-      motivationAssessment: 'Not evaluated: pregame eligibility failed.',
+      motivationAssessment: '0 pp — not evaluated because event eligibility was not established.',
       opponentPercentile: null,
       opponentPercentileRationale: 'Not evaluated.',
       matchupGrade: 'D',
@@ -66,11 +303,30 @@ function rejected(reason, market) {
       fantasyUpsideAssessment: 'Not evaluated.',
       reasoning: [reason],
       advantages: [],
-      risks: ['Late market repricing and holders selling to preserve residual value are not evidence that an outcome remains safe.'],
-      missingData: [],
+      risks: [
+        'A Kalshi market being active does not establish that the underlying game is pregame.',
+        'A rising payout multiple may reflect holders selling out of a losing position after the event has started or been decided.',
+      ],
+      missingData: verdict === 'REVIEW' ? [reason] : [],
     },
-    audit: { eventStartTime: market?.occurrenceTime || market?.gameTime || null, rejectedBeforeOpenAI: true },
+    scoreboard: scoreboard || null,
+    audit: {
+      eventStartTime: event.eventStartTime || market?.occurrenceTime || market?.gameTime || null,
+      scoreboardStatus: scoreboard?.status || 'UNKNOWN',
+      scoreboardVerified: scoreboard?.verified === true,
+      checkedRanges: scoreboard?.checkedRanges || [],
+      rejectedBeforeOpenAI: verdict === 'REJECT',
+    },
   };
+}
+
+function marketIsClosed(market) {
+  if (market.isClosed === true) return true;
+  const closeTime = market.closeTime ? Date.parse(market.closeTime) : NaN;
+  if (Number.isFinite(closeTime) && closeTime <= Date.now()) return true;
+  const status = String(market.marketStatus || market.status || '').toLowerCase();
+  // Unknown/missing status is not proof of closure. Only explicit terminal states reject.
+  return ['closed', 'settled', 'final', 'inactive', 'suspended', 'cancelled', 'canceled'].includes(status);
 }
 
 async function finalInterrogate(body) {
@@ -78,18 +334,63 @@ async function finalInterrogate(body) {
   const candidate = body.candidate || {};
   const teamStats = body.teamStats || {};
   const opponentStats = body.opponentStats || {};
-  const eventStart = market.occurrenceTime || market.gameTime || null;
-  const eventStartMs = eventStart ? Date.parse(eventStart) : NaN;
-  const marketCloseMs = market.closeTime ? Date.parse(market.closeTime) : NaN;
-  const status = String(market.marketStatus || market.status || '').toLowerCase();
+  const league = String(market.league || candidate.league || teamStats.league || '').toUpperCase();
+  const team = market.team || candidate.team || teamStats.name || '';
+  const opponent = market.opponent || candidate.opponent || opponentStats.name || '';
+  const eventStartHint = market.occurrenceTime || market.gameTime || null;
 
-  // occurrenceTime is the actual contest start. Kalshi closeTime and
-  // expectedExpiration describe the contract lifecycle and must never stand in
-  // for kickoff. Missing kickoff is an automatic fail-closed rejection.
-  if (!Number.isFinite(eventStartMs)) return rejected('Official contest start time is missing. Cannot establish that this is a pregame opportunity.', market);
-  if (eventStartMs <= Date.now()) return rejected('Contest has already started. Reject regardless of the current payout, ask, or apparent value.', market);
-  if (Number.isFinite(marketCloseMs) && marketCloseMs <= Date.now()) return rejected('Kalshi market has already closed. No new position is eligible.', market);
-  if (status && !['open', 'active'].includes(status)) return rejected('Kalshi market status is ' + status + ', not tradable open.', market);
+  if (marketIsClosed(market)) {
+    return eligibilityResult('REJECT', 'Kalshi market is explicitly closed or no longer tradable.', market);
+  }
+
+  // Do not use Kalshi occurrenceTime to decide whether the game has started.
+  // It is only a secondary schedule-search hint. The scoreboard is authoritative.
+  const scoreboard = await verifyLiveScoreboard({ league, team, opponent, eventStart: eventStartHint });
+  if (!scoreboard.verified) {
+    return eligibilityResult(
+      'REVIEW',
+      'Could not independently verify the exact event against the live scoreboard: ' + scoreboard.reason,
+      market,
+      scoreboard,
+    );
+  }
+
+  const liveEvent = scoreboard.event;
+  if (scoreboard.status === 'FINAL') {
+    return eligibilityResult(
+      'REJECT',
+      'Live scoreboard confirms this exact game is FINAL. The market payout or ask cannot make a decided game eligible.',
+      market,
+      scoreboard,
+    );
+  }
+  if (scoreboard.status === 'LIVE') {
+    return eligibilityResult(
+      'REJECT',
+      'Live scoreboard confirms this exact game is already in progress. No pregame position is eligible.',
+      market,
+      scoreboard,
+    );
+  }
+  if (scoreboard.status !== 'PRE') {
+    return eligibilityResult(
+      'REVIEW',
+      'The exact event was found, but the scoreboard did not provide a definitive PRE status. Status: ' + scoreboard.status,
+      market,
+      scoreboard,
+    );
+  }
+
+  const scoreboardStartMs = liveEvent.eventStartTime ? Date.parse(liveEvent.eventStartTime) : NaN;
+  if (!Number.isFinite(scoreboardStartMs)) {
+    return eligibilityResult(
+      'REVIEW',
+      'The scoreboard identifies the exact event as PRE but has no valid scheduled start time.',
+      market,
+      scoreboard,
+    );
+  }
+  const delayed = scoreboardStartMs <= Date.now();
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY is not configured');
@@ -99,14 +400,31 @@ async function finalInterrogate(body) {
   const input = {
     asOf: new Date().toISOString(),
     contest: {
-      league: market.league || candidate.league || '',
-      team: market.team || candidate.team || teamStats.name || '',
-      opponent: market.opponent || opponentStats.name || '',
-      eventStartTime: eventStart,
-      hoursUntilStart: (eventStartMs - Date.now()) / 3600000,
+      league, team, opponent,
+      scoreboardSource: liveEvent.source,
+      scoreboardVerified: true,
+      scoreboardStatus: liveEvent.status,
+      scoreboardStatusName: liveEvent.statusName,
+      scoreboardStatusDetail: liveEvent.statusDetail,
+      scoreboardEventId: liveEvent.eventId,
+      scoreboardEventName: liveEvent.eventName,
+      authoritativeEventStartTime: liveEvent.eventStartTime,
+      hoursUntilScheduledStart: (scoreboardStartMs - Date.now()) / 3600000,
+      delayedPregame: delayed,
+      period: liveEvent.period,
+      clock: liveEvent.clock,
+      inningState: liveEvent.inningState || null,
+      homeTeam: liveEvent.homeTeam,
+      awayTeam: liveEvent.awayTeam,
+      homeScore: liveEvent.homeScore,
+      awayScore: liveEvent.awayScore,
+      outs: liveEvent.outs ?? null,
+      balls: liveEvent.balls ?? null,
+      strikes: liveEvent.strikes ?? null,
+      kalshiOccurrenceTimeHint: eventStartHint,
       kalshiMarketCloseTime: market.closeTime || null,
       expectedExpiration: market.expectedExpiration || null,
-      marketStatus: status || 'not supplied',
+      marketStatus: market.marketStatus || market.status || 'not supplied',
     },
     contract: {
       ticker: market.ticker || candidate.ticker || '',
@@ -130,48 +448,54 @@ async function finalInterrogate(body) {
     season: body.season || null,
     pieceInstruction: String(body.pieceInstruction || '').slice(0, 2000),
     policy: {
-      seriousGameMotivationBonus: '+4 percentage points when there is concrete evidence this team has a meaningful reason to compete hard.',
-      lowStakesHighProfilePenalty: '-6 percentage points when a high-profile team has little at stake, is comfortable/secure, and has credible reason to manage effort or minutes.',
-      opponentStrengthPercentile: 'Use league-relative opponent strength percentile where 0 is weakest and 100 is strongest. Preferred opponent range is 10–40 inclusive.',
-      objective: 'Serious, down-to-business contests with strong fantasy upside.',
+      seriousGameMotivationBonus: '+4 percentage points when concrete evidence shows the team has a meaningful reason to compete hard.',
+      lowStakesHighProfilePenalty: '-6 percentage points when a high-profile team has little need to win and credible reduced-urgency or rotation risk.',
+      opponentStrengthPercentile: 'Use league-relative strength percentile: 0 weakest, 100 strongest. Preferred opponent range is 10–40 inclusive.',
+      objective: 'Serious, competitive contests with strong fantasy upside.',
     },
   };
 
-  const instructions = `
-You are AngelicGTrader's FINAL INTERROGATOR. Your job is to challenge a prequalified team-total candidate and protect the user from false safety signals.
+  const instructions = \`
+You are AngelicGTrader's FINAL INTERROGATOR.
 
-ABSOLUTE PREGAME / CLOSING-TIME RULES:
-- The contest eventStartTime is the actual scheduled game start. It has already passed the server-side gate, but independently verify it is still in the future when analyzing. If not, REJECT.
-- kalshiMarketCloseTime and expectedExpiration are contract lifecycle timestamps, NOT game start time. Never confuse a market closing countdown with time until tipoff/kickoff/first pitch.
-- Current ask and payout multiple are live market conditions. A payout multiple rising as a contest approaches or progresses can be caused by holders dumping positions to salvage residual value after the underlying bet is failing. That is adverse late-selling/liquidation pressure, NOT evidence the bet is safe, NOT a probability boost, and NOT a reason to chase.
-- Evaluate whether the market is still open and whether the game is genuinely pregame. If the game has begun, REJECT. Do not issue REVIEW for an already-started contest.
+SCOREBOARD VERIFICATION IS MANDATORY:
+- The exact event was matched using both teams and the opponent on the live league scoreboard.
+- The scoreboard's event ID, scheduled start, and status are authoritative.
+- Kalshi occurrenceTime is only a search hint. Never use it to override the scoreboard.
+- FINAL and LIVE events are rejected before this model is called.
+- If the scoreboard says PRE but its scheduled start is in the past, treat it as delayed pregame and explicitly say so.
+- Never assume a game is pregame because a Kalshi market is active.
 
-TEAM MOTIVATION ADJUSTMENTS — EXACTLY IN PERCENTAGE POINTS:
-- Start with candidateBaseline.probabilityYes as the base probability. Do not anchor to it; independently challenge it.
-- Apply +4 percentage points to the selected team's outcome probability only when concrete supplied evidence indicates the team has a meaningful reason to compete hard (playoff/seeding/elimination implications, meaningful standings pressure, a must-win, or similarly credible stakes). Generic professional pride is not sufficient.
-- Apply -6 percentage points when BOTH conditions are supported: the team is a high-profile/elite brand AND it has little meaningful need to win / is comfortable in its position, with credible risk of reduced urgency, rotation, or managed minutes. Fame alone is not enough.
-- If both conditions genuinely apply, net the adjustments (+4 and -6 = -2 points). If neither is evidenced, adjustment is 0. Do not invent standings, playoff status, injuries, or motivation.
-- Return baseProbabilityYes, motivationAdjustmentPoints, and adjusted probabilityYes. probabilityYes = clamp(baseProbabilityYes + adjustmentPoints/100, 0, 1). State clearly what evidence justified the adjustment.
+MARKET LIQUIDATION:
+- A high payout multiple can occur because the underlying bet is already losing or decided and holders are selling to salvage residual value.
+- That is liquidation pressure, not evidence of safety, value, or probability.
+- Never boost probability because of ask, payout multiple, market price, or a sudden payout increase.
 
-OPPONENT QUALITY FILTER:
-- Estimate opponent's league-relative strength percentile on a 0–100 scale (0 = weakest, 100 = strongest), using supplied ranks, record, efficiency, and season/recent statistics.
-- Preferred opponent percentile is 10 through 40 inclusive. This is a deliberate matchup filter: favor teams that are motivated and face a weaker but competitive opponent, not a dominant opponent and not an uncompetitive mismatch.
-- Do not fabricate a percentile. If evidence is insufficient, set opponentPercentile=null, explain the missing basis, add it to missingData, and set verdict=REVIEW.
-- If a reliable percentile is outside 10–40, REJECT the candidate for this strategy.
+MOTIVATION ADJUSTMENTS — PRESERVE THESE EXISTING RULES:
+- Start with candidateBaseline.probabilityYes as the base probability and independently challenge it.
+- Apply +4 percentage points only when concrete evidence shows the selected team has a meaningful reason to compete hard: playoff/seeding/elimination implications, meaningful standings pressure, a must-win, or similarly credible stakes. Generic professional pride is insufficient.
+- Apply -6 percentage points when BOTH are supported: the team is a high-profile/elite brand AND it has little meaningful need to win, with credible reduced urgency, rotation, or managed-minutes risk.
+- If both conditions genuinely apply, net +4 and -6 to -2 points. If neither is evidenced, use 0.
+- Do not invent standings, playoff status, injuries, or motivation.
+- motivationAssessment MUST explicitly record the conclusion, evidence, and exact adjustment, including "0 pp" and why when no adjustment applies. Do not leave it blank or merely say "motivation considered".
+- Return baseProbabilityYes, motivationAdjustmentPoints, and adjusted probabilityYes.
+- probabilityYes must equal clamp(baseProbabilityYes + adjustmentPoints / 100, 0, 1).
 
-SERIOUS GAME + FANTASY UPSIDE:
-- Assess whether the team is likely to play its normal serious rotation and whether the game has meaningful competitive intensity.
-- Evaluate fantasy upside through available pace, scoring environment, usage/volume, recent form, and role/rotation evidence. Do not invent individual player projections when no player data is supplied.
-- Prefer meaningful games with strong opportunity/volume. Penalize blowout/low-effort risk, likely rest, rotation uncertainty, and low-stakes games.
+OPPONENT QUALITY:
+- Estimate opponent league-relative strength percentile from supplied standings, record, efficiency, and season/recent statistics. 0 = weakest, 100 = strongest.
+- Preferred opponent percentile is 10 through 40 inclusive.
+- Do not fabricate a percentile. If evidence is insufficient, use null, explain the missing basis, add it to missingData, and set REVIEW.
+- If a reliable percentile is outside 10–40, REJECT.
 
-PROBABILITY AND VERDICT:
-- Do not use Kalshi ask, payout multiple, or market price to create the probability estimate.
-- Explain both supporting and opposing evidence. A high raw probability alone is not sufficient.
-- KEEP only when the opponent percentile is reliably 10–40, motivation/rotation is credible, fantasy upside is acceptable, matchup grade is A or B, and no material missing information undermines the decision.
-- REJECT when opponent percentile is reliably outside 10–40, motivation/rotation risk is material, the matchup is poor, or pregame/market eligibility fails.
-- REVIEW only when a key fact (especially opponent percentile, standings motivation, rotation, or schedule status) cannot be verified. Never use REVIEW as a substitute for rejecting an already-started contest.
+MATCHUP AND VERDICT:
+- Assess normal rotation, competitive intensity, pace, scoring environment, usage/volume, recent form, and fantasy upside from supplied evidence.
+- Do not invent player projections, injuries, standings, or rotation news.
+- KEEP only when opponent percentile is reliably 10–40, motivation/rotation is credible, fantasy upside is acceptable, grade is A or B, and no material missing fact undermines the decision.
+- REJECT a reliably out-of-range opponent percentile, material rotation/motivation risk, or poor matchup.
+- REVIEW when key facts cannot be verified.
+- The scoreboard is the source of truth for event status. Market close and expiration are contract timestamps, not game-start evidence.
 - Return only the requested structured object.
-`.trim();
+\`.trim();
 
   const response = await fetch(OPENAI_URL, {
     method: 'POST',
@@ -181,28 +505,35 @@ PROBABILITY AND VERDICT:
       instructions,
       input: JSON.stringify(input),
       text: { format: { type: 'json_schema', name: 'angelic_final_interrogation', strict: true, schema } },
-      max_output_tokens: 2600,
+      max_output_tokens: 4000,
     }),
     signal: AbortSignal.timeout(90000),
   });
+
   const data = await response.json();
   if (!response.ok) throw new Error('OpenAI HTTP ' + response.status + ': ' + (data.error?.message || JSON.stringify(data)));
-  if (data.status !== 'completed') throw new Error('OpenAI response incomplete: ' + data.status);
-  const result = JSON.parse(getOutputText(data));
+  if (data.status !== 'completed') {
+    throw new Error('OpenAI response incomplete: ' + data.status + '; reason=' + (data.incomplete_details?.reason || 'unknown'));
+  }
 
-  // Enforce the exact probability adjustments agreed for this strategy.
+  const result = JSON.parse(getOutputText(data));
   const baseProbabilityYes = Number(result.baseProbabilityYes);
   if (!Number.isFinite(baseProbabilityYes) || baseProbabilityYes < 0 || baseProbabilityYes > 1) {
     throw new Error('Final interrogation returned an invalid base probability.');
   }
+
   const proposedAdjustment = Number(result.motivationAdjustmentPoints);
   const allowedAdjustments = [4, -6, -2, 0];
   const motivationAdjustmentPoints = allowedAdjustments.includes(proposedAdjustment) ? proposedAdjustment : 0;
   result.baseProbabilityYes = baseProbabilityYes;
   result.motivationAdjustmentPoints = motivationAdjustmentPoints;
   result.probabilityYes = Math.max(0, Math.min(1, baseProbabilityYes + motivationAdjustmentPoints / 100));
+  result.motivationAssessment = String(result.motivationAssessment || '').trim() ||
+    '0 pp — no concrete motivation evidence was returned; no adjustment applied.';
+  if (!result.motivationAssessment.includes('pp')) {
+    result.motivationAssessment = motivationAdjustmentPoints + ' pp — ' + result.motivationAssessment;
+  }
 
-  // Enforce the opponent-quality and matchup-grade strategy boundaries.
   let verdict = result.verdict;
   const percentile = result.opponentPercentile;
   if (percentile == null || !Number.isFinite(Number(percentile))) verdict = 'REVIEW';
@@ -213,15 +544,45 @@ PROBABILITY AND VERDICT:
   return {
     verdict,
     interrogation: { ...result, verdict },
+    scoreboard: {
+      verified: true,
+      source: liveEvent.source,
+      status: liveEvent.status,
+      eventId: liveEvent.eventId,
+      eventName: liveEvent.eventName,
+      eventStartTime: liveEvent.eventStartTime,
+      delayedPregame: delayed,
+      statusName: liveEvent.statusName,
+      statusDetail: liveEvent.statusDetail,
+      period: liveEvent.period,
+      clock: liveEvent.clock,
+      inningState: liveEvent.inningState || null,
+      homeTeam: liveEvent.homeTeam,
+      awayTeam: liveEvent.awayTeam,
+      homeScore: liveEvent.homeScore,
+      awayScore: liveEvent.awayScore,
+      checkedRanges: scoreboard.checkedRanges,
+      checkedAt: scoreboard.checkedAt,
+    },
     audit: {
       model: MODEL,
       responseId: data.id,
-      eventStartTime: eventStart,
-      hoursUntilStart: (eventStartMs - Date.now()) / 3600000,
+      scoreboardSource: liveEvent.source,
+      scoreboardStatus: liveEvent.status,
+      scoreboardEventId: liveEvent.eventId,
+      scoreboardEventName: liveEvent.eventName,
+      scoreboardStartTime: liveEvent.eventStartTime,
+      scoreboardCheckedRanges: scoreboard.checkedRanges,
+      delayedPregame: delayed,
+      kalshiOccurrenceTimeHint: eventStartHint,
       marketCloseTime: market.closeTime || null,
       currentAsk,
       currentPayoutMultiple: Number.isFinite(currentPayout) ? currentPayout : null,
       opponentPercentileBand: [10, 40],
+      motivationAdjustmentPoints,
+      motivationAssessment: result.motivationAssessment,
+      baseProbabilityYes,
+      finalProbabilityYes: result.probabilityYes,
       motivationAdjustments: { seriousGameBonusPoints: 4, highProfileLowStakesPenaltyPoints: -6 },
     },
   };
