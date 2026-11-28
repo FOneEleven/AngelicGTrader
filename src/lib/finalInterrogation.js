@@ -17,12 +17,45 @@ export async function finalInterrogateCandidate({ candidate, market, teamStats, 
   if (Number.isFinite(marketCloseMs) && marketCloseMs <= Date.now()) {
     throw new Error('Market is already closed; no new position can be evaluated.');
   }
-  // Validate kickoff and market-open status above before allowing a cached review.
-  const cacheInput = { candidate, market, teamStats, opponentStats, baselinePrediction, pieceInstruction, season };
+  const marketStatus = String(market.marketStatus || market.status || '').toLowerCase();
+  if (['closed', 'settled', 'final', 'inactive', 'suspended', 'cancelled', 'canceled'].includes(marketStatus)) {
+    throw new Error('Market is no longer tradable (' + marketStatus + ').');
+  }
+
+  // One eligible matchup review is shared by every rung and side in this ladder.
+  // Contract price, line, side, and baseline probability are deliberately excluded:
+  // each rung keeps its own baseline probability and executable-price checks.
+  const cacheInput = {
+    league: market.league || candidate.league || teamStats.league || '',
+    team: market.team || candidate.team || teamStats.name || '',
+    opponent: market.opponent || candidate.opponent || opponentStats.name || '',
+    eventStart,
+    eventId: market.eventId || market.eventTicker || market.eventName || '',
+    teamStats, opponentStats, pieceInstruction, season,
+  };
+  const applyCachedMotivation = (cached) => {
+    const adjustment = Number(cached?.interrogation?.motivationAdjustmentPoints) || 0;
+    const baseProbabilityYes = Number(baselinePrediction?.probabilityYes);
+    if (!Number.isFinite(baseProbabilityYes) || baseProbabilityYes < 0 || baseProbabilityYes > 1) {
+      throw new Error('Candidate baseline probability is invalid; cached matchup review cannot be applied.');
+    }
+    const probabilityYes = Math.max(0, Math.min(1, baseProbabilityYes + adjustment / 100));
+    return {
+      ...cached,
+      interrogation: {
+        ...cached.interrogation,
+        baseProbabilityYes,
+        probabilityYes,
+      },
+      audit: cached.audit ? { ...cached.audit, baseProbabilityYes, finalProbabilityYes: probabilityYes } : cached.audit,
+      cacheHit: true,
+    };
+  };
   if (root) {
     const cached = await getCachedFinalInterrogation(root, cacheInput).catch(() => null);
-    if (cached) return { ...cached, cacheHit: true };
+    if (cached?.verdict === 'KEEP') return applyCachedMotivation(cached);
   }
+
   const response = await fetch(BASE, {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
@@ -41,6 +74,8 @@ export async function finalInterrogateCandidate({ candidate, market, teamStats, 
   if (!data.interrogation || !['KEEP', 'REJECT', 'REVIEW'].includes(data.verdict)) {
     throw new Error('FinalInterrogation returned an invalid review');
   }
-  if (root) await setCachedFinalInterrogation(root, cacheInput, data).catch(() => {});
+  // Only an eligible KEEP is reusable. Each rung still applies its own baseline,
+  // probability floor, and live ask after receiving the shared motivation value.
+  if (root && data.verdict === 'KEEP') await setCachedFinalInterrogation(root, cacheInput, data).catch(() => {});
   return data;
 }
