@@ -68,6 +68,22 @@ function askFor(line, side) {
   const v = side === 'NO' ? line?.noAsk : line?.yesAsk;
   return v == null || !Number.isFinite(Number(v)) ? null : Number(v);
 }
+function scanLineIndices(lines, side, league) {
+  const indices = lines.map((_, index) => index);
+  if (side === 'NO') indices.reverse();
+  if (league !== 'NBA' || !indices.length) return indices;
+  const selected = [indices[0]];
+  let lastLine = Number(lines[indices[0]]?.line);
+  for (const index of indices.slice(1)) {
+    const currentLine = Number(lines[index]?.line);
+    if (Number.isFinite(currentLine) && Number.isFinite(lastLine) && Math.abs(currentLine - lastLine) >= 4) {
+      selected.push(index);
+      lastLine = currentLine;
+    }
+  }
+  return selected;
+}
+
 function recommendedIndex(p) {
   const ticker = p.recommended?.ticker;
   const index = p.lines.findIndex((line) => line.ticker === ticker);
@@ -414,7 +430,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       const mode = seasonProfile.strategiesByWorthCondition?.[worthCondition] || (seasonProfile.selectionStrategy && seasonProfile.selectionStrategy !== 'baseball-no' ? seasonProfile.selectionStrategy : '');
       const risk = seasonProfile.riskByWorthCondition?.[worthCondition] || '';
       const baseballEnabled = seasonProfile.baseballNoStrategy === true || seasonProfile.selectionStrategy === 'baseball-no';
-      const gates = { standard: { probability: 0.92, payout: 1.2 }, value: { probability: 0.84, payout: 1.4 }, highroller: { probability: 0.70, payout: 1.75 } };
+      const gates = { standard: { probability: 0.76, payout: 1.34 }, value: { probability: 0.70, payout: 1.51 }, highroller: { probability: 0.61, payout: 1.67 } };
       if (!mode || !risk) { setProgress('Piece is not ready for play: configure strategy and risk for its current worth condition.'); setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SCAN STOPPED · strategy or risk is not configured for ' + worthCondition }].slice(-40)); return; }
       const gate = { ...(gates[mode] || gates.standard) };
       if (risk === 'probability') { gate.probability += 0.02; }
@@ -466,10 +482,10 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         // Pass 1: YES travels from the low end of the ladder to the high end.
         // Pass 2: NO starts at the opposite end and travels back toward the low end.
         const sidePasses = isBaseball
-          ? [{ side: 'NO', indices: p.lines.map((_, index) => index).reverse() }]
+          ? [{ side: 'NO', indices: scanLineIndices(p.lines, 'NO', leagueFor(p)) }]
           : [
-              { side: 'YES', indices: p.lines.map((_, index) => index) },
-              { side: 'NO', indices: p.lines.map((_, index) => index).reverse() },
+              { side: 'YES', indices: scanLineIndices(p.lines, 'YES', leagueFor(p)) },
+              { side: 'NO', indices: scanLineIndices(p.lines, 'NO', leagueFor(p)) },
             ];
         for (const pass of sidePasses) {
           for (const lineIndex of pass.indices) {
@@ -579,7 +595,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       const mode = seasonProfile?.strategiesByWorthCondition?.[currentCondition] || (seasonProfile?.selectionStrategy && seasonProfile.selectionStrategy !== 'baseball-no' ? seasonProfile.selectionStrategy : '');
       const risk = seasonProfile?.riskByWorthCondition?.[currentCondition] || '';
       if (!mode || !risk) { setError('This piece is not ready for play. Set strategy and risk for its current worth condition.'); return; }
-      const gates = { standard: { probability: 0.92, payout: 1.2 }, value: { probability: 0.84, payout: 1.4 }, highroller: { probability: 0.70, payout: 1.75 } };
+      const gates = { standard: { probability: 0.76, payout: 1.34 }, value: { probability: 0.70, payout: 1.51 }, highroller: { probability: 0.61, payout: 1.67 } };
       const gate = { ...(gates[mode] || gates.standard) };
       if (risk === 'probability') { gate.probability += 0.02; }
       if (risk === 'value') { gate.probability = Math.max(0.5, gate.probability - 0.02); gate.payout += 0.1; }
