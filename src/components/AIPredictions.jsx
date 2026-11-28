@@ -5,7 +5,7 @@ import { readSettings, appendTrade, readTrades, readAIPredictionSelections, dele
 import { computePredictions } from '../lib/predictions';
 import { fetchTeamStatistics } from '../lib/sportsStats';
 import { fetchMLBTeamStatistics } from '../lib/mlbStats';
-import { analyzeMarket } from '../lib/analyzeMarket';
+import { analyzeMarket, analyzeMarketBatch } from '../lib/analyzeMarket';
 import { teamStatsCacheKey, getCachedTeamStats, setCachedTeamStats } from '../lib/teamStatsCache';
 import { getCachedAnalysis, setCachedAnalysis } from '../lib/analysisCache';
 import { finalInterrogateCandidate } from '../lib/finalInterrogation';
@@ -262,46 +262,64 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
           statsForPrediction.set(p.key, stats);
         }
 
-        const tasks = [];
-        for (const p of predictions) {
+        // Analyze complete ladders, not isolated recommended rungs. Each request
+        // contains at most five team ladders and returns one result per contract.
+        const ladderTasks = [];
+        for (const p of orderedPredictions) {
           const stats = statsForPrediction.get(p.key);
-          // Each AI Predictions entry starts with exactly the line selected by
-          // its existing Midpoint/Cliff population logic. Other ladder lines
-          // are analyzed only if the user explicitly selects one in this box.
-          if (stats && p.recommended) tasks.push({ p, line: p.recommended, stats });
-        }
-        let completed = 0;
-        for (let offset = 0; offset < tasks.length; offset += 3) {
-          if (cancelled) return;
-          const batch = tasks.slice(offset, offset + 3);
-          const results = await Promise.all(batch.map(async ({ p, line, stats }) => {
-            const league = leagueFor(p);
-            const market = {
-              ticker: line.ticker, title: p.team + ' over ' + line.line + (league === 'MLB' ? ' runs' : ' points'),
-              league, team: p.team, opponent: stats.opponent?.name || '',
-              line: line.line, yesAsk: line.yesAsk, noAsk: line.noAsk,
-              closeTime: p.closeTime || p.expectedExpiration || null,
-              gameTime: p.gameTime || p.expectedExpiration || null,
-            };
-            const cacheKey = analysisKey(market, stats);
-            const cached = await getCachedAnalysis(root, cacheKey);
-            if (cached) return { ticker: line.ticker, data: cached.data };
-            const data = await analyzeMarket({
-              market,
-              teamStats: { ...stats.team, modelInputs: stats.modelInputs, recentGames: stats.recentGames, dataQuality: stats.dataQuality },
-              opponentStats: stats.opponent,
-              context: league === 'MLB'
-                ? { source: stats.provider, season: stats.season, statisticsFetchedAt: stats.fetchedAt, mlb: { weather: stats.weather, schedule: stats.schedule, modelInputs: stats.modelInputs, dataQuality: stats.dataQuality } }
-                : { source: 'ESPN', season: stats.season, seasonType: stats.seasonType, statisticsFetchedAt: stats.fetchedAt },
-            });
-            return { ticker: line.ticker, data, cacheKey };
+          if (!stats || !p.lines?.length) continue;
+          const league = leagueFor(p);
+          const marketsForLadder = p.lines.map((line) => ({
+            ticker: line.ticker,
+            title: p.team + ' over ' + line.line + (league === 'MLB' ? ' runs' : ' points'),
+            league, team: p.team, opponent: stats.opponent?.name || '',
+            line: line.line, yesAsk: line.yesAsk, noAsk: line.noAsk,
+            closeTime: p.closeTime || p.expectedExpiration || null,
+            gameTime: p.gameTime || p.expectedExpiration || null,
           }));
-          for (const result of results) {
-            if (result.cacheKey) await setCachedAnalysis(root, result.cacheKey, result.data);
-            nextAnalyses[result.ticker] = result.data;
-            completed += 1;
+          const cachedRows = await Promise.all(marketsForLadder.map(async (market) => ({
+            market, cacheKey: analysisKey(market, stats),
+            cached: await getCachedAnalysis(root, analysisKey(market, stats)),
+          })));
+          const allCached = cachedRows.every((row) => !!row.cached?.data);
+          if (allCached) {
+            for (const row of cachedRows) nextAnalyses[row.market.ticker] = row.cached.data;
+            setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'ANALYSIS CACHE HIT · ' + league + ' · ' + p.team + ' · complete ladder=' + marketsForLadder.length + ' lines' }].slice(-40));
+            continue;
           }
-          if (!cancelled) setProgress('OpenAI analysis: ' + completed + ' / ' + tasks.length + ' AI Prediction entries');
+          ladderTasks.push({
+            predictionKey: p.key, league, team: p.team,
+            opponent: stats.opponent?.name || '',
+            closeTime: p.closeTime || p.expectedExpiration || null,
+            gameTime: p.gameTime || p.expectedExpiration || null,
+            markets: marketsForLadder,
+            teamStats: { ...stats.team, modelInputs: stats.modelInputs, recentGames: stats.recentGames, dataQuality: stats.dataQuality },
+            opponentStats: stats.opponent,
+            context: league === 'MLB'
+              ? { source: stats.provider, season: stats.season, statisticsFetchedAt: stats.fetchedAt, mlb: { weather: stats.weather, schedule: stats.schedule, modelInputs: stats.modelInputs, dataQuality: stats.dataQuality } }
+              : { source: 'ESPN', season: stats.season, seasonType: stats.seasonType, statisticsFetchedAt: stats.fetchedAt },
+            cacheRows: cachedRows,
+          });
+        }
+        let completedLadders = 0;
+        let completedLines = Object.keys(nextAnalyses).length;
+        for (let offset = 0; offset < ladderTasks.length; offset += 5) {
+          if (cancelled) return;
+          const batch = ladderTasks.slice(offset, offset + 5);
+          setProgress('OpenAI ladder batch: ' + (Math.floor(offset / 5) + 1) + ' · ' + batch.length + ' complete ladders');
+          setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'LADDER BATCH · sending ' + batch.length + ' complete ladders · ' + batch.reduce((sum, item) => sum + item.markets.length, 0) + ' total lines' }].slice(-40));
+          const responseMap = await analyzeMarketBatch(batch.map(({ cacheRows, ...ladder }) => ladder));
+          for (const ladder of batch) {
+            for (const row of ladder.cacheRows) {
+              const data = responseMap.get(row.market.ticker);
+              if (!data) throw new Error('Batch analysis omitted ' + row.market.ticker);
+              await setCachedAnalysis(root, row.cacheKey, data);
+              nextAnalyses[row.market.ticker] = data;
+              completedLines += 1;
+            }
+            completedLadders += 1;
+          }
+          if (!cancelled) setProgress('OpenAI ladder analysis: ' + completedLadders + ' / ' + ladderTasks.length + ' ladders · ' + completedLines + ' lines');
         }
         if (cancelled) return;
         setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'REFRESH COMPLETE · valid stats=' + Object.keys(nextStats).length + ' · stats errors=' + Object.keys(nextErrors).length + ' · AI analyses=' + Object.keys(nextAnalyses).length }].slice(-40));
@@ -496,7 +514,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
             setProgress('Scanning ' + p.team + ' · ' + pass.side + ' · line ' + line.line + ' · ' + (pass.side === 'YES' ? 'left to right' : 'right to left'));
             let analysis = analysisByTicker.get(line.ticker);
             if (!analysis) {
-              analysis = await analyzeSelectedLine(p, line);
+              analysis = analyses[line.ticker] || null;
               if (analysis) analysisByTicker.set(line.ticker, analysis);
             }
             if (!scannedTickers.has(line.ticker)) { scannedTickers.add(line.ticker); scannedLines += 1; }
@@ -539,6 +557,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       // is interrogated and written to Records/Prediction History before ranking.
       const uniqueQualifiedCandidates = [...new Map(selectionList.map((candidate) => [candidate.ticker + '|' + candidate.side, candidate])).values()];
       const interrogatedCandidates = [];
+      const interrogationByTeam = new Map();
       for (const candidate of uniqueQualifiedCandidates) {
         const prediction = orderedPredictions.find((item) => item.key === candidate.predictionKey);
         const line = prediction?.lines?.find((item) => item.ticker === candidate.ticker);
@@ -559,17 +578,28 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
             closeTime: prediction.closeTime || prediction.expectedExpiration || null,
             gameTime: prediction.gameTime || prediction.expectedExpiration || null,
           };
-          review = await finalInterrogateCandidate({
-            candidate, market,
-            teamStats: { ...stats.team, modelInputs: stats.modelInputs, recentGames: stats.recentGames, dataQuality: stats.dataQuality },
-            opponentStats: stats.opponent,
-            baselinePrediction: baseline.prediction,
-            pieceInstruction: piecePrompt || seasonProfile.piecePrompt || '',
-            season: stats.season || new Date().getFullYear(),
-          });
-          verdict = review.verdict;
-          finalProbability = Number(review.interrogation.probabilityYes);
-          if (!Number.isFinite(finalProbability) || finalProbability < 0 || finalProbability > 1) throw new Error('Final interrogation returned an invalid probability.');
+          const teamReviewKey = candidate.predictionKey;
+          const existingTeamReview = interrogationByTeam.get(teamReviewKey);
+          if (existingTeamReview) {
+            // Matchup-level interrogation is shared by all qualified lines for
+            // this team. Keep each line's own full-ladder probability.
+            review = existingTeamReview.review;
+            verdict = existingTeamReview.verdict;
+            finalProbability = Number(baseline.prediction.probabilityYes);
+          } else {
+            review = await finalInterrogateCandidate({
+              candidate, market,
+              teamStats: { ...stats.team, modelInputs: stats.modelInputs, recentGames: stats.recentGames, dataQuality: stats.dataQuality },
+              opponentStats: stats.opponent,
+              baselinePrediction: baseline.prediction,
+              pieceInstruction: piecePrompt || seasonProfile.piecePrompt || '',
+              season: stats.season || new Date().getFullYear(),
+            });
+            verdict = review.verdict;
+            finalProbability = Number(review.interrogation.probabilityYes);
+            if (!Number.isFinite(finalProbability) || finalProbability < 0 || finalProbability > 1) throw new Error('Final interrogation returned an invalid probability.');
+            interrogationByTeam.set(teamReviewKey, { review, verdict });
+          }
         } catch (error) {
           reviewError = error.message || String(error);
           review = { verdict: 'REVIEW', interrogation: { verdict: 'REVIEW', reasoning: ['Final interrogation could not complete.'], missingData: [reviewError] }, error: reviewError };
