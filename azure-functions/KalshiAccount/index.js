@@ -133,6 +133,12 @@ function decryptCredential(envelope, setStage) {
   if (!encryptedKey.length || iv.length !== 12 || ciphertext.length < 17) {
     throw new Error('Encrypted credential envelope is malformed.');
   }
+  const expectedRsaBytes = Math.ceil((rsaPrivateKey.asymmetricKeyDetails?.modulusLength || 0) / 8);
+  if (expectedRsaBytes && encryptedKey.length !== expectedRsaBytes) {
+    throw new Error('Encrypted AES key has the wrong RSA ciphertext length: received ' +
+      encryptedKey.length + ' bytes; expected ' + expectedRsaBytes +
+      ' bytes for the configured RSA key. The saved envelope is not compatible with this key.');
+  }
 
   setStage('unwrap AES encryption key with Azure RSA key');
   let aesKey;
