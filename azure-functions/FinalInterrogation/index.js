@@ -25,6 +25,8 @@ const schema = {
     teamPercentileRationale: { type: 'string' },
     opponentPercentile: { type: ['number', 'null'] },
     opponentPercentileRationale: { type: 'string' },
+    startingQbAvailable: { type: ['boolean', 'null'] },
+    startingQbRationale: { type: 'string' },
     matchupGrade: { type: 'string', enum: ['A', 'B', 'C', 'D'] },
     closingTimeAssessment: { type: 'string' },
     fantasyUpsideAssessment: { type: 'string' },
@@ -38,6 +40,7 @@ const schema = {
     'motivationAdjustmentPoints', 'motivationAssessment',
     'teamPercentile', 'teamPercentileRationale',
     'opponentPercentile', 'opponentPercentileRationale',
+    'startingQbAvailable', 'startingQbRationale',
     'matchupGrade', 'closingTimeAssessment', 'fantasyUpsideAssessment',
     'reasoning', 'advantages', 'risks', 'missingData',
   ],
@@ -304,6 +307,24 @@ async function verifyLiveScoreboard({ league, team, opponent, eventStart }) {
   };
 }
 
+
+const NFL_VENUE_COORDS=[['Arizona Cardinals',33.5276,-112.2626],['Atlanta Falcons',33.7554,-84.4008],['Baltimore Ravens',39.278,-76.6227],['Buffalo Bills',42.7738,-78.787],['Carolina Panthers',35.2258,-80.8528],['Chicago Bears',41.8623,-87.6167],['Cincinnati Bengals',39.0954,-84.516],['Cleveland Browns',41.5061,-81.6995],['Dallas Cowboys',32.7473,-97.0945],['Denver Broncos',39.7439,-105.0201],['Detroit Lions',42.34,-83.0456],['Green Bay Packers',44.5013,-88.0622],['Houston Texans',29.6847,-95.4107],['Indianapolis Colts',39.7601,-86.1639],['Jacksonville Jaguars',30.3239,-81.6373],['Kansas City Chiefs',39.0489,-94.4839],['Las Vegas Raiders',36.0909,-115.1833],['Los Angeles Chargers',33.9535,-118.3392],['Los Angeles Rams',33.9535,-118.3392],['Miami Dolphins',25.958,-80.2389],['Minnesota Vikings',44.9738,-93.2575],['New England Patriots',42.0909,-71.2643],['New Orleans Saints',29.9511,-90.0812],['New York Giants',40.8135,-74.0745],['New York Jets',40.8135,-74.0745],['Philadelphia Eagles',39.9008,-75.1675],['Pittsburgh Steelers',40.4468,-80.0158],['San Francisco 49ers',37.403,-121.97],['Seattle Seahawks',47.5952,-122.3316],['Tampa Bay Buccaneers',27.9759,-82.5033],['Tennessee Titans',36.1665,-86.7713],['Washington Commanders',38.9077,-76.8645]];
+const NFL_INDOOR_VENUES=new Set(['Arizona Cardinals','Atlanta Falcons','Dallas Cowboys','Detroit Lions','Houston Texans','Indianapolis Colts','Las Vegas Raiders','Los Angeles Chargers','Los Angeles Rams','Minnesota Vikings','New Orleans Saints']);
+function findNflVenue(names){const n=(names||[]).map(normalizeName);return NFL_VENUE_COORDS.find(([team])=>n.some(x=>x===normalizeName(team)||normalizeName(team).includes(x)||x.includes(normalizeName(team))))||null;}
+function nearestHourlyValue(times,values,targetIso){if(!Array.isArray(times)||!Array.isArray(values)||!targetIso)return null;const target=Date.parse(targetIso);if(!Number.isFinite(target))return null;let best=-1,d=Infinity;for(let i=0;i<times.length;i++){const delta=Math.abs(Date.parse(times[i]+'Z')-target);if(Number.isFinite(delta)&&delta<d){best=i;d=delta;}}return best>=0&&d<=5400000&&values[best]!=null?Number(values[best]):null;}
+async function fetchGameWeather(league,event){
+ if(league!=='NFL')return {available:false,reason:'Outdoor weather adjustment is configured for NFL only.',penaltyPoints:0};
+ const venue=findNflVenue(event.homeTeam);if(!venue)return {available:false,reason:'Could not resolve NFL home venue.',penaltyPoints:0};
+ if(NFL_INDOOR_VENUES.has(venue[0]))return {available:true,indoor:true,venue:venue[0],reason:'Indoor/covered venue; no outdoor weather penalty.',penaltyPoints:0};
+ const url=new URL('https://api.open-meteo.com/v1/forecast');url.searchParams.set('latitude',String(venue[1]));url.searchParams.set('longitude',String(venue[2]));url.searchParams.set('hourly','temperature_2m,precipitation,rain,snowfall,precipitation_probability,wind_gusts_10m,weather_code');url.searchParams.set('forecast_days','7');url.searchParams.set('past_days','1');url.searchParams.set('timezone','UTC');
+ const data=await fetchJson(url.toString(),12000),h=data.hourly||{},get=k=>nearestHourlyValue(h.time,h[k],event.eventStartTime);
+ const tc=get('temperature_2m'),precip=get('precipitation'),rain=get('rain'),snow=get('snowfall'),gust=get('wind_gusts_10m'),code=get('weather_code'),tf=tc==null?null:tc*9/5+32,gm=gust==null?null:gust/1.609344;
+ const ice=[56,57,66,67].includes(code),freezing=tf!=null&&tf<=32&&((precip||0)>0||(snow||0)>0||ice),heavyRain=!ice&&((rain||0)>=5||(precip||0)>=7.5||[65,82].includes(code));
+ const windPenalty=gm==null||gm<25?0:gm>=30?5:2,heavyRainPenalty=heavyRain?2:0,freezingPenalty=freezing?5:0,icePenalty=ice?10:0;
+ return {available:true,indoor:false,venue:venue[0],temperatureF:tf==null?null:Math.round(tf),windGustMph:gm==null?null:Math.round(gm),precipitationMm:precip,rainMm:rain,snowfallCm:snow,weatherCode:code,heavyRain,freezing,ice,windPenaltyPoints:windPenalty,heavyRainPenaltyPoints:heavyRainPenalty,freezingPenaltyPoints:freezingPenalty,icePenaltyPoints:icePenalty,penaltyPoints:windPenalty+heavyRainPenalty+freezingPenalty+icePenalty,source:'Open-Meteo',forecastFor:event.eventStartTime};
+}
+async function fetchStartingQbContext(event){const url=new URL(ESPN_BASE+'/football/nfl/summary');url.searchParams.set('event',String(event.eventId));try{const d=await fetchJson(url.toString(),12000);return {source:'ESPN game summary',injuries:d.injuries||[],rosters:d.rosters||[],depthCharts:d.depthCharts||d.depthcharts||[],gameInfo:d.gameInfo||{}};}catch(e){return {source:'ESPN game summary',unavailable:true,reason:e.message||String(e)};}}
+
 function eligibilityResult(verdict, reason, market, scoreboard) {
   const event = scoreboard?.event || {};
   return {
@@ -413,6 +434,8 @@ async function finalInterrogate(body) {
     );
   }
   const delayed = scoreboardStartMs <= Date.now();
+  const weather = await fetchGameWeather(league, liveEvent).catch(e => ({available:false,reason:e.message||String(e),penaltyPoints:0}));
+  const startingQbContext = league === 'NFL' ? await fetchStartingQbContext(liveEvent) : null;
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY is not configured');
@@ -444,6 +467,8 @@ async function finalInterrogate(body) {
       balls: liveEvent.balls ?? null,
       strikes: liveEvent.strikes ?? null,
       kalshiOccurrenceTimeHint: eventStartHint,
+      weather,
+      startingQbContext,
       kalshiMarketCloseTime: market.closeTime || null,
       expectedExpiration: market.expectedExpiration || null,
       marketStatus: market.marketStatus || market.status || 'not supplied',
@@ -470,7 +495,9 @@ async function finalInterrogate(body) {
     season: body.season || null,
     pieceInstruction: String(body.pieceInstruction || '').slice(0, 2000),
     policy: {
-      opponentStrengthMotivation: 'Compare both teams’ league-relative strength percentiles (0 weakest, 100 strongest). If BOTH teams are at or above the 78th percentile (top 22%), apply -3 motivation points. If BOTH teams are at or below the 64th percentile (bottom 64%), apply +3 motivation points. Otherwise apply 0. If either percentile is unknown, apply 0. These percentile bands affect motivation only and must never affect KEEP, REJECT, or REVIEW.',
+      opponentStrengthMotivation: 'If BOTH team percentiles are >=78, apply -3 pp. If BOTH are <=64, apply +3 pp. Otherwise 0; unknown percentile means 0.',
+      weatherMotivation: 'Use supplied game-time Open-Meteo data. Gusts 25–29 mph: -2 pp; 30 mph or higher: -5 pp. Heavy rain: -2 pp; freezing precipitation: -5 pp; ice/freezing rain: -10 pp. Stack separate deductions. Indoor stadium: no weather penalty. Missing forecast: 0 and disclose unknown.',
+      startingQuarterbackMotivation: 'Use supplied ESPN summary injury/roster/depth-chart evidence. If the team lacks its starting QB for this game, apply -12 pp. Only return false if evidence confirms the starter unavailable or no starter is designated. Unknown evidence means null and 0 pp; never guess.',
       objective: 'Serious, competitive contests with strong fantasy upside.',
     },
   };
@@ -517,6 +544,8 @@ OPPONENT QUALITY AND MOTIVATION:
 MATCHUP AND VERDICT:
 - Assess normal rotation, competitive intensity, pace, scoring environment, usage/volume, recent form, and fantasy upside from supplied evidence.
 - Do not invent player projections, injuries, standings, or rotation news.
+- Evaluate startingQbAvailable from supplied ESPN summary. Return false only if the starting QB is confirmed unavailable; true if confirmed available; null if unverified. Explain in startingQbRationale.
+- Explicitly account for structured weather data and the specified penalties. Unavailable weather is unknown, not clear weather.
 - KEEP when the matchup is acceptable, motivation/rotation is credible, fantasy upside is acceptable, grade is A or B, and no material missing fact undermines the decision. Opponent percentile is not a KEEP requirement.
 - REJECT for material rotation/motivation risk or a poor matchup, not for opponent percentile alone.
 - REVIEW when genuinely critical facts about the event or matchup cannot be verified.
@@ -550,9 +579,6 @@ MATCHUP AND VERDICT:
     throw new Error('Final interrogation returned an invalid base probability.');
   }
 
-  const proposedAdjustment = Number(result.motivationAdjustmentPoints);
-  const allowedAdjustments = [3, -3, 0];
-  const motivationAdjustmentPoints = allowedAdjustments.includes(proposedAdjustment) ? proposedAdjustment : 0;
   result.baseProbabilityYes = baseProbabilityYes;
   result.teamPercentile = result.teamPercentile != null && Number.isFinite(Number(result.teamPercentile)) && Number(result.teamPercentile) >= 0 && Number(result.teamPercentile) <= 100
     ? Number(result.teamPercentile) : null;
@@ -560,19 +586,19 @@ MATCHUP AND VERDICT:
     ? Number(result.opponentPercentile) : null;
   const teamRank = result.teamPercentile;
   const opponentRank = result.opponentPercentile;
-  const expectedMotivationAdjustment = teamRank == null || opponentRank == null ? 0
+  const percentileAdjustment = teamRank == null || opponentRank == null ? 0
     : teamRank >= 78 && opponentRank >= 78 ? -3
-    : teamRank <= 64 && opponentRank <= 64 ? 3
-    : 0;
+    : teamRank <= 64 && opponentRank <= 64 ? 3 : 0;
+  result.startingQbAvailable = result.startingQbAvailable === true ? true : result.startingQbAvailable === false ? false : null;
+  const quarterbackPenalty = league === 'NFL' && result.startingQbAvailable === false ? 12 : 0;
+  const weatherPenalty = Number(weather?.penaltyPoints) || 0;
+  const expectedMotivationAdjustment = percentileAdjustment - weatherPenalty - quarterbackPenalty;
   result.motivationAdjustmentPoints = expectedMotivationAdjustment;
   result.probabilityYes = Math.max(0, Math.min(1, baseProbabilityYes + expectedMotivationAdjustment / 100));
-  const percentileSummary = 'Selected team=' + (teamRank == null ? 'unknown' : teamRank) +
-    'th percentile; opponent=' + (opponentRank == null ? 'unknown' : opponentRank) + 'th percentile.';
-  result.motivationAssessment = expectedMotivationAdjustment === -3
-    ? '-3 pp — both teams are in the top 22%. ' + percentileSummary
-    : expectedMotivationAdjustment === 3
-      ? '+3 pp — both teams are in the bottom 64%. ' + percentileSummary
-      : '0 pp — the teams do not both fall within the same qualifying percentile band, or a percentile is unavailable. ' + percentileSummary;
+  const percentileSummary = 'Selected team=' + (teamRank == null ? 'unknown' : teamRank) + 'th percentile; opponent=' + (opponentRank == null ? 'unknown' : opponentRank) + 'th percentile.';
+  const weatherSummary = weather?.available ? (weather.indoor ? ' Indoor venue; no weather penalty.' : ' Gusts=' + (weather.windGustMph ?? 'unknown') + ' mph; heavy rain=' + !!weather.heavyRain + '; freezing=' + !!weather.freezing + '; ice=' + !!weather.ice + ' (−' + weatherPenalty + ' pp).') : ' Weather unavailable (' + (weather?.reason || 'no forecast') + '); no weather deduction applied.';
+  const qbSummary = quarterbackPenalty ? ' Starting QB unavailable (−12 pp): ' + (result.startingQbRationale || 'ESPN summary evidence') + '.' : result.startingQbAvailable === true ? ' Starting QB confirmed available.' : ' Starting QB availability unverified; no QB deduction applied.';
+  result.motivationAssessment = (percentileAdjustment > 0 ? '+' : '') + percentileAdjustment + ' pp percentile adjustment; ' + percentileSummary + weatherSummary + qbSummary + ' Total motivation adjustment=' + (expectedMotivationAdjustment > 0 ? '+' : '') + expectedMotivationAdjustment + ' pp.';
 
   // Percentile data is used only to calculate the motivation adjustment.
   // It is explicitly excluded from verdict and missing-data enforcement.
@@ -620,6 +646,9 @@ MATCHUP AND VERDICT:
       currentAsk,
       currentPayoutMultiple: Number.isFinite(currentPayout) ? currentPayout : null,
       teamPercentileMotivationBands: { top22Threshold: 78, bottom64Threshold: 64 },
+      weather, weatherPenaltyPoints: weatherPenalty,
+      startingQbAvailable: result.startingQbAvailable, startingQbRationale: result.startingQbRationale,
+      startingQbPenaltyPoints: quarterbackPenalty, percentileAdjustmentPoints: percentileAdjustment,
       teamPercentile: result.teamPercentile,
       opponentPercentile: result.opponentPercentile,
       motivationAdjustmentPoints: expectedMotivationAdjustment,
