@@ -344,7 +344,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest, onQ
           setBatchStatus((old) => ({ ...old, phase: 'error', message: 'Batch failed: ' + (e.message || String(e)) }));
           setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'REFRESH ERROR · ' + (e.message || String(e)) + ' · qualification scan blocked because ladder analysis is incomplete.' }].slice(-40));
           setError(e.message || 'Prediction analysis failed'); setProgress('Ladder analysis failed; qualification scan was not started.');
-          onScanResolved?.({ profileId: seasonProfile.id, selected: false, reason: 'analysis-failed' });
+          onScanResolved?.({ profileId: seasonProfile.id, autoPlay: scanRequest?.autoPlay === true, selected: false, reason: 'analysis-failed' });
         }
       } finally {
         refreshRecord.completed = true;
@@ -428,7 +428,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest, onQ
       const risk = seasonProfile.riskByWorthCondition?.[worthCondition] || '';
       const baseballEnabled = seasonProfile.baseballNoStrategy === true || seasonProfile.selectionStrategy === 'baseball-no';
       const gates = { standard: { probability: 0.76, payout: 1.34 }, value: { probability: 0.70, payout: 1.51 }, highroller: { probability: 0.61, payout: 1.67 } };
-      if (!mode || !risk) { setProgress('Piece is not ready for play: configure strategy and risk for its current worth condition.'); setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SCAN STOPPED · strategy or risk is not configured for ' + worthCondition }].slice(-40)); onScanResolved?.({ profileId: seasonProfile.id, selected: false, reason: 'strategy-not-configured' }); return; }
+      if (!mode || !risk) { setProgress('Piece is not ready for play: configure strategy and risk for its current worth condition.'); setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SCAN STOPPED · strategy or risk is not configured for ' + worthCondition }].slice(-40)); onScanResolved?.({ profileId: seasonProfile.id, autoPlay: scanRequest?.autoPlay === true, selected: false, reason: 'strategy-not-configured' }); return; }
       const gate = { ...(gates[mode] || gates.standard) };
       if (risk === 'probability') { gate.payout = 1.20; }
       if (risk === 'value') { gate.probability = Math.max(0.5, gate.probability - 0.06); }
@@ -665,14 +665,14 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest, onQ
         setProgress('Selection complete · 1 matchup-vetted game selected from ' + selectionList.length + ' qualified candidates; ' + rankedCandidates.length + ' passed final interrogation.');
         setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SELECTION RESOLVED · scanned ' + scannedLines + ' lines and evaluated ' + evaluatedSides + ' side(s); ' + interrogatedCandidates.length + ' qualified candidates interrogated and recorded; ' + rankedCandidates.length + ' passed final review; final selection=' + (finalSelection ? finalSelection.ticker + ' ' + finalSelection.side : 'none') + ' using risk=' + risk + '.' }].slice(-40));
         onActivity?.('WEEK_SCAN_COMPLETE', '1 final selection queued in Play Box from ' + selectionList.length + ' qualified candidates for ' + seasonProfile.name);
-        onScanResolved?.({ profileId: seasonProfile.id, selected: true });
+        onScanResolved?.({ profileId: seasonProfile.id, autoPlay: scanRequest?.autoPlay === true, selected: true });
       } else {
         const message = selectionList.length ? 'No candidate passed final matchup interrogation.' : 'No qualifying game found in the current dataset.';
         setProgress(message + (isAuto ? ' Auto play stopped; returning to Dashboard.' : ' Returning to Dashboard.'));
         setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'NO SELECTION · checked ' + orderedPredictions.length + ' prediction entries and their available lines; none passed the scanner and final matchup safety review.' }].slice(-40));
-        onScanResolved?.({ profileId: seasonProfile.id, selected: false, reason: 'no-qualified-selection' });
+        onScanResolved?.({ profileId: seasonProfile.id, autoPlay: scanRequest?.autoPlay === true, selected: false, reason: 'no-qualified-selection' });
       }
-    })().catch((e) => { setError(e.message || 'Weekly scan failed'); setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SCAN ERROR · ' + (e.message || String(e)) }].slice(-40)); onScanResolved?.({ profileId: seasonProfile.id, selected: false, reason: 'scan-error' }); });
+    })().catch((e) => { setError(e.message || 'Weekly scan failed'); setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SCAN ERROR · ' + (e.message || String(e)) }].slice(-40)); onScanResolved?.({ profileId: seasonProfile.id, autoPlay: scanRequest?.autoPlay === true, selected: false, reason: 'scan-error' }); });
   }, [scanRequest, seasonProfile, predictions, predictionDatasetSignature, statsByKey, statsResolved, autoRetryCount, onQueueSelection, onScanResolved]);
 
   function setSide(p, side) {
