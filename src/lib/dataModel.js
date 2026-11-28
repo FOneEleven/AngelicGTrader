@@ -430,7 +430,7 @@ export async function clearDashboardRecords(root) {
   const metaDir = await root.getDirectoryHandle(META, { create: true });
   const file = await metaDir.getFileHandle('records.txt', { create: true });
   const writer = await file.createWritable();
-  await writer.write('# id\\ttimestamp\\tmatchup\\tmarket\\tside\\tprice\\tprobability\\tstake\\tpaper\\tstatus\\tmetadata_json\\n');
+  await writer.write('# Dashboard records reset at season-piece week start\\n');
   await writer.close();
   return true;
 }
