@@ -356,7 +356,7 @@ export default function App() {
     setCommittingPlayBox(true);
     try {
       const liveGroups = [...groups.entries()].filter(([, items]) => items[0].paper !== true);
-      const liveRequests = liveGroups.map(([key, items]) => {
+      const liveRequests = liveGroups.filter(([, items]) => !items.every((item) => item.kalshiOrderId)).map(([key, items]) => {
         const totalStake = items.reduce((sum, item) => sum + Number(item.allocation || 0), 0);
         const cost = Number(items[0].marketProbability ?? (Number(items[0].price) / 100));
         if (!(cost > 0 && cost < 1)) throw new Error('Missing saved executable ask for ' + items[0].ticker);
@@ -371,17 +371,29 @@ export default function App() {
       });
       const liveResults = liveRequests.length ? await submitKalshiOrders(dataFolder.handle, liveRequests.map((item) => item.order)) : [];
       const liveResultById = new Map(liveResults.map((result) => [result.client_order_id, result]));
+      const confirmedQueue = playBox.map((item) => {
+        const request = liveRequests.find((entry) => entry.items.some((candidate) => candidate.id === item.id));
+        const result = request ? liveResultById.get(request.clientOrderId) : null;
+        return result?.submitted && result?.order_id
+          ? { ...item, kalshiOrderId: result.order_id, kalshiClientOrderId: result.client_order_id, kalshiOrderConfirmation: result }
+          : item;
+      });
+      if (confirmedQueue.some((item, index) => item !== playBox[index])) {
+        await writePlayBox(dataFolder.handle, confirmedQueue);
+        setPlayBox(confirmedQueue);
+      }
       const successfulIds = new Set();
       const failedGroups = [];
       for (const [key, items] of groups) {
         const isPaper = items[0].paper === true;
         const liveRequest = liveRequests.find((entry) => entry.key === key);
-        const liveResult = liveRequest ? liveResultById.get(liveRequest.clientOrderId) : null;
+        const savedOrder = items.every((item) => item.kalshiOrderId) ? items[0] : null;
+        const liveResult = savedOrder ? { submitted: true, order_id: savedOrder.kalshiOrderId, client_order_id: savedOrder.kalshiClientOrderId, ...(savedOrder.kalshiOrderConfirmation || {}) } : liveRequest ? liveResultById.get(liveRequest.clientOrderId) : null;
         if (!isPaper && (!liveResult?.submitted || !liveResult?.order_id)) {
           failedGroups.push({ key, error: liveResult?.error || 'Kalshi did not confirm an order ID.' });
           continue;
         }
-        const orderGroupId = liveRequest?.clientOrderId || hashId(key + '|' + items.map((item) => item.id).sort().join('|'));
+        const orderGroupId = liveRequest?.clientOrderId || items[0].kalshiClientOrderId || hashId(key + '|' + items.map((item) => item.id).sort().join('|'));
         const totalStake = Math.round(items.reduce((sum, item) => sum + Number(item.allocation || 0), 0) * 100) / 100;
         const sharedResolution = items[0].resolutionDetails || items[0].finalInterrogation || null;
         for (const item of items) {
@@ -399,7 +411,7 @@ export default function App() {
               edge: item.edge ?? null, seasonPieceId: profile.id, week: item.week, sourceRecordId: item.sourceRecordId || null,
               payoutMultiple: Number(item.price) > 0 ? 100 / Number(item.price) : null, source: 'play-box', orderGroupId,
               playBoxItemId: item.id, resolutionDetails: sharedResolution, combinedOrderStake: totalStake,
-              orderId: liveResult?.order_id || null, clientOrderId: liveRequest?.clientOrderId || null,
+              orderId: liveResult?.order_id || null, clientOrderId: liveRequest?.clientOrderId || items[0].kalshiClientOrderId || null,
               fillCount: liveResult?.fill_count ?? null, remainingCount: liveResult?.remaining_count ?? null,
             });
           }
