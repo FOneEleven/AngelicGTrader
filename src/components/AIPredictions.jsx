@@ -341,6 +341,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest, onQ
           setBatchStatus((old) => ({ ...old, phase: 'error', message: 'Batch failed: ' + (e.message || String(e)) }));
           setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'REFRESH ERROR · ' + (e.message || String(e)) + ' · qualification scan blocked because ladder analysis is incomplete.' }].slice(-40));
           setError(e.message || 'Prediction analysis failed'); setProgress('Ladder analysis failed; qualification scan was not started.');
+          onScanResolved?.({ profileId: seasonProfile.id, selected: false, reason: 'analysis-failed' });
         }
       } finally {
         refreshRecord.completed = true;
