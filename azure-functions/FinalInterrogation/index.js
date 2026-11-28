@@ -12,7 +12,7 @@ const CORS = {
   'Content-Type': 'application/json',
 };
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports';
-const LEAGUE_PATH = { NBA: 'basketball/nba', NFL: 'football/nfl' };
+const LEAGUE_PATH = { NBA: 'basketball/nba', NFL: 'football/nfl', MLB: 'baseball/mlb' };
 
 const schema = {
   type: 'object',
@@ -166,7 +166,7 @@ app.http('FinalInterrogation', {
       const { candidate, market, teamStats, opponentStats } = body;
       if (!candidate || !market || !teamStats || !opponentStats) return { status: 400, headers: CORS, jsonBody: { error: 'candidate, market, teamStats, and opponentStats are required' } };
       const league = String(market.league || candidate.league || '').toUpperCase();
-      if (!LEAGUE_PATH[league]) return { status: 422, headers: CORS, jsonBody: { error: 'Final ESPN matchup interrogation currently supports NBA and NFL. MLB retains its existing separate NO-only flow.' } };
+      if (!LEAGUE_PATH[league]) return { status: 422, headers: CORS, jsonBody: { error: 'league must be NBA, NFL, or MLB' } };
       const season = Number(body.season) || new Date().getFullYear();
       const [opponentEvidenceResult, teamEvidenceResult] = await Promise.allSettled([
         fetchTeamEvidence(league, market.opponent || opponentStats.name, season),
