@@ -486,16 +486,16 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
             evaluatedSides += 1;
             if (!analysis?.prediction) continue;
 
-            // Each directional pass ends at the first ladder rung that fails
-            // either the strategy probability floor or its minimum payout.
-            // YES therefore scans left-to-right; NO scans right-to-left.
+            // Stop a directional pass only when model probability falls below
+            // the strategy floor. Payout may be too low at this rung but improve
+            // farther along the ladder, so payout failure must never stop scanning.
+            // YES scans left-to-right; NO scans right-to-left.
             const probability = probabilityFor(analysis, pass.side);
             const ask = askFor(line, pass.side);
             const payout = ask > 0 ? 1 / ask : 0;
             const probabilityFloor = isBaseball ? 0.90 : gate.probability;
-            const payoutFloor = isBaseball ? 0 : gate.payout;
-            if (probability == null || ask == null || probability < probabilityFloor || payout <= payoutFloor) {
-              setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'PASS STOP · ' + p.team + ' · ' + pass.side + ' · line ' + line.line + ' failed strategy floor (probability=' + (probability == null ? 'n/a' : Math.round(probability * 100) + '%') + ', payout=' + (payout ? payout.toFixed(2) + 'x' : 'n/a') + '). Moving to next side or ladder.' }].slice(-40));
+            if (probability != null && probability < probabilityFloor) {
+              setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'PASS STOP · ' + p.team + ' · ' + pass.side + ' · line ' + line.line + ' probability=' + Math.round(probability * 100) + '% fell below floor=' + Math.round(probabilityFloor * 100) + '%. Stopping this direction and moving to the next side or ladder.' }].slice(-40));
               break;
             }
             const candidate = qualifies(p, line, analysis, pass.side, stats);
