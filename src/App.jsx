@@ -108,7 +108,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
   async function placeDashboardRecord(record) {
     const profile = seasonProfiles.find((item) => item.id === selectedPieceByRecord[record.id]);
     if (!profile) { setRecordActionMessage((old) => ({ ...old, [record.id]: 'Select a season piece first.' })); return; }
-    if (profile.paperMode !== true) { setRecordActionMessage((old) => ({ ...old, [record.id]: 'Live order submission is not enabled yet. This selection can only be queued in paper mode.' })); return; }
+    if (profile.paperMode !== true && !kalshiConnected) { setRecordActionMessage((old) => ({ ...old, [record.id]: 'Connect Kalshi before queuing a live order.' })); return; }
     if (profile.activePlayer === false || String(profile.status || 'active').toLowerCase() !== 'active') {
       setRecordActionMessage((old) => ({ ...old, [record.id]: 'This season piece is inactive.' })); return;
     }
