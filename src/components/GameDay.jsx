@@ -88,6 +88,18 @@ export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigat
         const normalizedQueue = queue.map((item) => firstWeekProfiles.has(item.profileId) ? { ...item, week: 'week1' } : item);
         if (normalizedQueue.some((item, index) => item !== queue[index])) await writePlayBox(root, normalizedQueue);
       }
+      // Reconcile legacy inactive snapshots to earnings only; the original allocation is not current worth.
+      for (const profile of nextProfiles.filter((item) => item.activePlayer === false)) {
+        const profileTrades = map[profile.id] || [];
+        const earnedWorth = confirmedWalletReturns(profileTrades);
+        const corrected = await updateSeasonProfile(root, profile.id, {
+          currentWorth: earnedWorth,
+          selectedLines: [],
+          status: profile.status === 'split' ? 'split' : 'inactive',
+        });
+        await archiveInactivePiece(root, corrected, profileTrades, corrected.inactiveReason || 'Retired after a losing result.');
+      }
+      setInactivePieces(await readInactivePieces(root));
       setProfiles(nextProfiles);
       setTradesByPiece(map);
     } catch (e) { setError(e.message || 'Could not load Game Day data'); }
@@ -95,19 +107,26 @@ export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigat
 
   useEffect(() => { load(); }, [root]);
 
-  const pieces = useMemo(() => profiles.filter((profile) => profile.activePlayer !== false).map((profile) => {
+  const activePieces = useMemo(() => profiles.filter((profile) => profile.activePlayer !== false && String(profile.status || 'active').toLowerCase() === 'active').map((profile) => {
     const trades = tradesByPiece[profile.id] || [];
     const walletReturned = confirmedWalletReturns(trades);
-    const currentWorth = Number(profile.currentWorth ?? ((Number(profile.quotaValue ?? profile.initialBalance ?? profile.balance) || 0) + walletReturned));
+    const currentWorth = Number(profile.currentWorth ?? walletReturned);
     return { ...profile, trades, earnings: currentWorth, walletReturned, currentWorth };
   }), [profiles, tradesByPiece]);
 
+  const retiredPieces = useMemo(() => inactivePieces.map((piece) => {
+    const trades = tradesByPiece[piece.id] || [];
+    const earned = confirmedWalletReturns(trades);
+    return { ...piece, activePlayer: false, status: 'inactive', currentWorth: earned, earnings: earned, trades };
+  }), [inactivePieces, tradesByPiece]);
+
+  const allPieces = useMemo(() => [...activePieces, ...retiredPieces], [activePieces, retiredPieces]);
   const visiblePieces = useMemo(() => {
-    let rows = pieces.filter((p) => !hiddenIds.includes(p.id));
+    let rows = allPieces.filter((p) => !hiddenIds.includes(p.id));
     if (filter === 'active') rows = rows.filter((p) => p.activePlayer !== false);
     if (filter === 'winners') rows = rows.filter((p) => p.earnings > 0).sort((a,b) => b.earnings - a.earnings).slice(0,5);
     return rows;
-  }, [pieces, filter, hiddenIds]);
+  }, [allPieces, filter, hiddenIds]);
 
   async function updatePiece(profile, patch) {
     setBusyId(profile.id);
@@ -157,15 +176,6 @@ export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigat
         />)}
       </div>
     </section>
-    <section className="panel game-day-inactive">
-      <div className="panel-heading"><div><h2>Inactive piece set · {inactivePieces.length}</h2><p>Deactivated pieces retain their current worth and every match they participated in.</p></div></div>
-      {inactivePieces.length ? <div className="inactive-piece-grid">{inactivePieces.map((piece) => <article className="inactive-piece-card" key={piece.id}>
-        <div className="inactive-piece-card-top"><div><b>{piece.name}</b><small>Season {piece.season} · Deactivated {piece.inactiveSince ? new Date(piece.inactiveSince).toLocaleString() : ''}</small></div><strong>$ {Number(piece.currentWorth || 0).toFixed(2)} current worth</strong></div>
-        <p className="inactive-piece-reason">{piece.inactiveReason || 'Inactive'}</p>
-        <div className="inactive-piece-matches"><b>Matches participated · {(piece.participatedMatches || []).length}</b>{(piece.participatedMatches || []).map((match) => <div className="inactive-piece-match" key={match.id}><span>{match.matchup || match.market || match.ticker}</span><small>{match.side} {match.line ?? ''} · {match.outcome || match.status}{match.teamScore != null && Number.isFinite(Number(match.teamScore)) ? ' · Score ' + match.team + ' ' + match.teamScore + '–' + match.opponentScore + ' ' + match.opponent : ''} · payout $ {Number(match.payout || 0).toFixed(2)}</small></div>)}</div>
-        <button className="danger-text-btn" disabled={busyId === piece.id} onClick={async () => { setBusyId(piece.id); try { setInactivePieces(await removeInactivePiece(root, piece.id)); } catch (e) { setError(e.message || 'Could not remove inactive piece'); } finally { setBusyId(''); } }}>Remove</button>
-      </article>)}</div> : <div className="empty-state"><b>No inactive pieces</b><span>Pieces that lose a settled selection will appear here.</span></div>}
-    </section>
     <section className="panel game-day-schedule">
       <div className="panel-heading"><div><h2>Next scheduled week</h2><p>Only records linked to their own season piece appear here.</p></div><CalendarDays size={18}/></div>
       {visiblePieces.filter((p) => p.activePlayer !== false).map((piece) => {
@@ -174,6 +184,6 @@ export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigat
       })}
       {!visiblePieces.some((p) => p.activePlayer !== false) && <div className="empty-state"><Users size={22}/><b>No active pieces in this view</b></div>}
     </section>
-    <div className="game-day-note">Current worth starts at the piece allocation and increases by the settled payout. The one-minute monitor checks committed matches while the app is open. A losing result deactivates the piece and moves it to the inactive set.</div>
+    <div className="game-day-note">Current worth reflects earned returns only. The one-minute monitor checks committed matches while the app is open. Retired pieces remain in the Game Day carousel with their match history.</div>
   </div>;
 }
