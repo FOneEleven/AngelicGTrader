@@ -122,8 +122,8 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
     try {
       await onAddToPlayBox?.(profile, {
         id: record.id, sourceRecordId: record.id, ticker: record.ticker,
-        event: record.event || record.matchup || '', team: record.team || record.market || '',
-        league: record.league || '', line: record.line ?? null, side: record.side || '',
+        event: record.event || record.matchup || '', team: String(record.team || record.market || '').replace(/\\s+over\\s+.*$/i, '').trim(),
+        league: record.league || String(record.ticker || '').match(/^KX([A-Z]+)TEAMTOTAL-/i)?.[1] || '', line: record.line ?? null, side: record.side || '',
         market: record.market || '', matchup: record.matchup || '',
         price, probability: Number(record.probability ?? record.modelProbability) || 0,
         marketProbability: record.marketProbability ?? null, modelProbability: record.modelProbability ?? record.probability ?? null,
@@ -170,8 +170,9 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
     <div className="content-grid">
       <section className="panel play-box-panel">
         <div className="panel-heading"><div><h2>Play Box · {playBox.length}</h2><p>Selections are staged here. No bets are committed until you commit the full box.</p></div><button className="primary-btn" disabled={!playBox.length || committingPlayBox} onClick={onCommitPlayBox}>{committingPlayBox ? 'Committing…' : 'Commit Play Box'}</button></div>
-        {playBox.length ? <div className="table-wrap"><table><thead><tr><th>PIECE</th><th>MATCHUP</th><th>CONTRACT</th><th>ALLOCATION</th><th>STATUS</th><th></th></tr></thead><tbody>{playBox.map((item) => <tr key={item.id}><td>{item.pieceName}</td><td>{item.matchup || item.event}</td><td>{item.side} {item.line} · {item.ticker}</td><td>{'
-        <div className="panel-heading"><div><h2>Records</h2><p>Scanner-qualified candidates with final matchup reviews and recorded predictions</p></div><button className="text-btn" onClick={() => onNavigate?.('AI Predictions')}>AI Predictions <ChevronRight size={15}/></button></div>
+        {playBox.length ? (
+          <div className="table-wrap"><table><thead><tr><th>PIECE</th><th>MATCHUP</th><th>CONTRACT</th><th>ALLOCATION / COMBINED TOTAL</th><th>STATUS</th><th></th></tr></thead><tbody>{playBox.map((item) => <tr key={item.id}><td>{item.pieceName}</td><td>{item.matchup || item.event}</td><td>{item.side} {item.line} · {item.ticker}</td><td>{Number(item.allocation || 0).toFixed(2)} · Combined line total: {playBox.filter((entry) => entry.ticker === item.ticker && entry.side === item.side && entry.line === item.line).reduce((sum, entry) => sum + Number(entry.allocation || 0), 0).toFixed(2)}</td><td><span className="status-pill">In Play Box</span></td><td><button className="danger-text-btn" onClick={() => onRemoveFromPlayBox?.(item)}>Remove</button></td></tr>)}</tbody></table></div>
+        ) : <div className="empty-state"><b>Play Box is empty</b><span>Add selections from Dashboard records or the AI piece selection.</span></div>}
         {records.length ? (
           <div className="table-wrap"><table><thead><tr><th>RECORDED</th><th>MATCHUP</th><th>MARKET</th><th>SIDE</th><th>MODEL PROB.</th><th>PRICE</th><th>PAYOUT</th><th>STATUS</th><th>PLACE BET</th><th>ACTION</th></tr></thead><tbody>
             {records.map((r) => {
