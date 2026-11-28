@@ -404,6 +404,7 @@ export async function appendQualifiedCandidate(root, candidate) {
       isQualifiedCandidate: true, ticker: candidate.ticker || null,
       line: candidate.line ?? null, marketProbability: candidate.marketProbability ?? null,
       modelProbability: candidate.probability ?? null, edge: candidate.edge ?? null,
+      finalSideProbability: candidate.finalSideProbability ?? null, finalEdge: candidate.finalEdge ?? null,
       payoutMultiple: candidate.payoutMultiple ?? null, seasonPieceId: candidate.seasonPieceId || null,
       season: candidate.season ?? null, week: candidate.week || null,
       strategy: candidate.strategy || null, risk: candidate.risk || null,
