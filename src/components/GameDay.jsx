@@ -95,7 +95,7 @@ export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigat
 
   useEffect(() => { load(); }, [root]);
 
-  const pieces = useMemo(() => profiles.map((profile) => {
+  const pieces = useMemo(() => profiles.filter((profile) => profile.activePlayer !== false).map((profile) => {
     const trades = tradesByPiece[profile.id] || [];
     const walletReturned = confirmedWalletReturns(trades);
     const currentWorth = Number(profile.currentWorth ?? ((Number(profile.quotaValue ?? profile.initialBalance ?? profile.balance) || 0) + walletReturned));
