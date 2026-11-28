@@ -50,6 +50,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
   const [selectedPieceByRecord, setSelectedPieceByRecord] = useState({});
   const [placingRecordId, setPlacingRecordId] = useState('');
   const [recordActionMessage, setRecordActionMessage] = useState({});
+  const [placedRecordIds, setPlacedRecordIds] = useState([]);
   useEffect(() => {
     const root = dataFolder?.handle;
     if (!root) { setRecords([]); setSeasonProfiles([]); return; }
@@ -74,7 +75,10 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
         legacy.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
         all.push(...legacy);
       }
-      if (!cancelled) setRecords(all);
+      if (!cancelled) {
+        setPlacedRecordIds(all.filter((item) => item.sourceRecordId).map((item) => item.sourceRecordId));
+        setRecords(all.filter((item) => item.source !== 'dashboard-record'));
+      }
     })().catch(() => { if (!cancelled) setRecords([]); });
     return () => { cancelled = true; };
   }, [dataFolder, refreshKey]);
@@ -120,6 +124,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
         source: 'dashboard-record',
       };
       await appendTrade(dataFolder.handle, profile.season, week, trade);
+      setPlacedRecordIds((old) => old.includes(record.id) ? old : [...old, record.id]);
       setRecords((old) => old.map((item) => item.id === record.id ? { ...item, placedPieceId: profile.id, placedTradeId: trade.id } : item));
       setPieceCommitments((old) => ({ ...old, [profile.id]: true }));
       setRecordActionMessage((old) => ({ ...old, [record.id]: 'Paper bet placed · ' + profile.name }));
@@ -170,7 +175,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
               const selectedId = selectedPieceByRecord[r.id] || '';
               const selectedPiece = eligiblePieces.find((p) => p.id === selectedId);
               const committed = selectedPiece ? pieceCommitments[selectedPiece.id] === true : false;
-              const alreadyPlaced = !!r.placedTradeId || (!!r.seasonPieceId && !r.isQualifiedCandidate);
+              const alreadyPlaced = !!r.placedTradeId || placedRecordIds.includes(r.id) || (!!r.seasonPieceId && !r.isQualifiedCandidate);
               const canPlacePaper = selectedPiece?.paperMode === true && !committed && !alreadyPlaced && !!r.ticker && price > 0 && price < 100;
               return <tr key={r.id}>
                 <td>{new Date(r.timestamp).toLocaleString()}</td><td>{r.matchup}</td><td>{r.market}</td><td>{r.side}</td>
