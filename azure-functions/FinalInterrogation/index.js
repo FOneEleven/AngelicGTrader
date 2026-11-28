@@ -339,12 +339,10 @@ async function finalInterrogate(body) {
   const opponent = market.opponent || candidate.opponent || opponentStats.name || '';
   const eventStartHint = market.occurrenceTime || market.gameTime || null;
 
-  if (marketIsClosed(market)) {
-    return eligibilityResult('REJECT', 'Kalshi market is explicitly closed or no longer tradable.', market);
-  }
-
   // Do not use Kalshi occurrenceTime to decide whether the game has started.
   // It is only a secondary schedule-search hint. The scoreboard is authoritative.
+  // Verify the underlying event before evaluating contract tradability so every
+  // candidate has an auditable game identity and scoreboard status.
   const scoreboard = await verifyLiveScoreboard({ league, team, opponent, eventStart: eventStartHint });
   if (!scoreboard.verified) {
     return eligibilityResult(
@@ -353,6 +351,10 @@ async function finalInterrogate(body) {
       market,
       scoreboard,
     );
+  }
+
+  if (marketIsClosed(market)) {
+    return eligibilityResult('REJECT', 'The exact event was verified, but the Kalshi contract is explicitly closed or no longer tradable.', market, scoreboard);
   }
 
   const liveEvent = scoreboard.event;
