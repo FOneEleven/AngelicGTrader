@@ -190,7 +190,19 @@ PROBABILITY AND VERDICT:
   if (data.status !== 'completed') throw new Error('OpenAI response incomplete: ' + data.status);
   const result = JSON.parse(getOutputText(data));
 
-  // Enforce deterministic strategy boundaries after the model responds.
+  // Enforce the exact probability adjustments agreed for this strategy.
+  const baseProbabilityYes = Number(result.baseProbabilityYes);
+  if (!Number.isFinite(baseProbabilityYes) || baseProbabilityYes < 0 || baseProbabilityYes > 1) {
+    throw new Error('Final interrogation returned an invalid base probability.');
+  }
+  const proposedAdjustment = Number(result.motivationAdjustmentPoints);
+  const allowedAdjustments = [4, -6, -2, 0];
+  const motivationAdjustmentPoints = allowedAdjustments.includes(proposedAdjustment) ? proposedAdjustment : 0;
+  result.baseProbabilityYes = baseProbabilityYes;
+  result.motivationAdjustmentPoints = motivationAdjustmentPoints;
+  result.probabilityYes = Math.max(0, Math.min(1, baseProbabilityYes + motivationAdjustmentPoints / 100));
+
+  // Enforce the opponent-quality and matchup-grade strategy boundaries.
   let verdict = result.verdict;
   const percentile = result.opponentPercentile;
   if (percentile == null || !Number.isFinite(Number(percentile))) verdict = 'REVIEW';
