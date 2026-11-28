@@ -476,7 +476,7 @@ nav {
 
 .content-grid {
     display: grid;
-    grid-template-columns: minmax(0,1.8fr) minmax(250px,.85fr);
+    grid-template-columns: minmax(0,1fr);
     gap: 14px;
     margin-bottom: 14px
 }
