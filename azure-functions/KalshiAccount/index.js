@@ -55,7 +55,7 @@ function decryptCredential(envelope, setStage) {
       // Report structural metadata only. Never log or return PEM contents or key material.
       const begin = pem.match(/-----BEGIN ([^-]+)-----/);
       const end = pem.match(/-----END ([^-]+)-----/);
-      const body = pem.replace(/-----BEGIN [^-]+-----|-----END [^-]+-----|\\s/g, '');
+      const body = pem.replace(/-----BEGIN [^-]+-----|-----END [^-]+-----|\s/g, '');
       const decoded = Buffer.from(body, 'base64');
       const canonicalBase64 = decoded.toString('base64').replace(/=+$/, '');
       const bodyBase64Valid = /^[A-Za-z0-9+/]+={0,2}$/.test(body) &&
@@ -65,7 +65,7 @@ function decryptCredential(envelope, setStage) {
         pemFooter: end ? end[1] : 'missing',
         headerFooterMatch: !!begin && !!end && begin[1] === end[1],
         characterCount: pem.length,
-        lineCount: pem.split('\\n').length,
+        lineCount: pem.split('\n').length,
         bodyCharacterCount: body.length,
         base64BodyValid: bodyBase64Valid,
         decodedDerByteCount: decoded.length,
