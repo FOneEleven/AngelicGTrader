@@ -14,9 +14,9 @@ import AIPredictions from './components/AIPredictions';
 import GameDay from './components/GameDay';
 import PredictionHistory from './components/PredictionHistory';
 import SeasonPieceEntry from './components/SeasonPieceEntry';
-import { readSettings, writeSettings, readDashboardRecords, deleteTrade, listSeasonProfiles, updateSeasonProfile, advanceSeasonWeek, readSeasonTrades, appendTrade, clearDashboardRecords, readPlayBox, writePlayBox } from './lib/dataModel';
+import { readSettings, writeSettings, readDashboardRecords, deleteTrade, listSeasonProfiles, updateSeasonProfile, advanceSeasonWeek, readSeasonTrades, appendTrade, clearDashboardRecords, readPlayBox, writePlayBox, updateTradeRecord, archiveInactivePiece } from './lib/dataModel';
 import { readCache, isCacheFresh, appendCacheBatch } from './lib/marketCache';
-import { fetchSportsMarkets, submitKalshiOrders } from './lib/kalshi';
+import { fetchSportsMarkets, submitKalshiOrders, fetchMarketResolutions } from './lib/kalshi';
 
 const nav = [
   { label: 'Dashboard', icon: LayoutDashboard, group: 'WORKSPACE' },
@@ -254,6 +254,93 @@ export default function App() {
     readPlayBox(dataFolder.handle).then(setPlayBox).catch(() => setPlayBox([]));
   }, [dataFolder, refreshKey]);
 
+  // Resolve committed selections every minute while this application window remains open.
+  useEffect(() => {
+    const root = dataFolder?.handle;
+    if (!root) return undefined;
+    let cancelled = false;
+    let running = false;
+    const checkResolutions = async () => {
+      if (cancelled || running) return;
+      running = true;
+      let changed = false;
+      try {
+        const profiles = await listSeasonProfiles(root);
+        const activeProfiles = profiles.filter((profile) => profile.activePlayer !== false);
+        const tradesByProfile = await Promise.all(activeProfiles.map(async (profile) => [profile, await readSeasonTrades(root, profile)]));
+        const pending = tradesByProfile.flatMap(([profile, trades]) => trades
+          .filter((trade) => trade.ticker && !['closed', 'resolved', 'lost', 'won'].includes(String(trade.status || '').toLowerCase()) && String(trade.resolutionStatus || '').toLowerCase() !== 'resolved')
+          .map((trade) => ({ profile, trade })));
+        const markets = await fetchMarketResolutions(pending.map(({ trade }) => trade.ticker));
+        const marketByTicker = new Map(markets.map((market) => [market.ticker, market]));
+        for (const [profile, trades] of tradesByProfile) {
+          let currentProfile = profile;
+          let profileTrades = trades;
+          const profilePending = pending.filter((entry) => entry.profile.id === profile.id);
+          for (const { trade } of profilePending) {
+            const market = marketByTicker.get(trade.ticker);
+            const result = String(market?.result || '').toLowerCase();
+            if (!market || !['yes', 'no'].includes(result) || !['settled', 'finalized', 'closed'].includes(String(market.status || '').toLowerCase())) continue;
+            const won = result === String(trade.side || '').toLowerCase();
+            const priceCents = Number(trade.price) || Number(trade.marketProbability) * 100;
+            const payoutMultiple = Number(trade.payoutMultiple) || (priceCents > 0 ? 100 / priceCents : 0);
+            const liveFilled = Number(trade.fillCount);
+            const contracts = trade.paper
+              ? (Number(trade.stake) > 0 && priceCents > 0 ? Number(trade.stake) / (priceCents / 100) : 0)
+              : (Number.isFinite(liveFilled) && liveFilled > 0 ? liveFilled : 0);
+            const payout = won ? Math.round(contracts * 100) / 100 : 0;
+            const resolvedAt = new Date().toISOString();
+            const updatedTrade = await updateTradeRecord(root, trade.id, {
+              status: won ? 'closed' : 'lost',
+              outcome: won ? 'won' : 'lost',
+              resolutionStatus: 'resolved',
+              resolutionResult: result,
+              resolutionMarketStatus: market.status,
+              resolvedAt,
+              walletReturnConfirmed: won,
+              walletReturnedAmount: payout,
+              payout,
+              payoutMultiple,
+            });
+            if (!updatedTrade) continue;
+            profileTrades = profileTrades.map((item) => item.id === trade.id ? updatedTrade : item);
+            if (won) {
+              const baseWorth = Number(currentProfile.currentWorth ?? currentProfile.quotaValue ?? currentProfile.initialBalance ?? currentProfile.balance) || 0;
+              currentProfile = await updateSeasonProfile(root, profile.id, {
+                currentWorth: Math.round((baseWorth + payout) * 100) / 100,
+                lastPayout: payout,
+                lastResolvedAt: resolvedAt,
+                lastResolvedMatch: trade.matchup || trade.market || trade.ticker,
+                selectionResolution: { ...(currentProfile.selectionResolution || {}), status: 'won', phase: 'market-settled', resolvedAt, payout, result, message: 'Selected contract settled in the piece’s favor.' },
+              });
+              currentProfile = await advanceSeasonWeek(root, currentProfile);
+              changed = true;
+            } else {
+              currentProfile = await updateSeasonProfile(root, profile.id, {
+                activePlayer: false,
+                status: 'inactive',
+                inactiveSince: resolvedAt,
+                inactiveReason: 'Market settled ' + result.toUpperCase() + '; selected ' + String(trade.side).toUpperCase() + ' did not win.',
+                selectionResolution: { ...(currentProfile.selectionResolution || {}), status: 'lost', phase: 'market-settled', resolvedAt, result, message: 'Selected contract did not satisfy the settled market result.' },
+              });
+              await archiveInactivePiece(root, currentProfile, profileTrades, currentProfile.inactiveReason);
+              changed = true;
+              break;
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('Season resolution check failed:', error);
+      } finally {
+        running = false;
+        if (!cancelled && changed) handleActivity();
+      }
+    };
+    checkResolutions();
+    const timer = window.setInterval(checkResolutions, 60_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [dataFolder, handleActivity]);
+
 
 
   const groups = ['WORKSPACE'];
@@ -450,10 +537,13 @@ export default function App() {
     try {
       // Reset Dashboard records before advancing the piece or starting its scan.
       await clearDashboardRecords(dataFolder.handle);
-      const updated = await advanceSeasonWeek(dataFolder.handle, profile);
+      const existingTrades = await readSeasonTrades(dataFolder.handle, profile);
+      const scheduledProfile = existingTrades.length === 0 && profile.nextScheduledWeek !== 'week1'
+        ? await updateSeasonProfile(dataFolder.handle, profile.id, { nextScheduledWeek: 'week1' })
+        : profile;
       handleActivity();
       setAutoPlayLock(profile.auto === true);
-      setScanRequest({ profileId: updated.id, requestId: updated.id + '-' + Date.now(), autoPlay: profile.auto === true });
+      setScanRequest({ profileId: scheduledProfile.id, requestId: scheduledProfile.id + '-' + Date.now(), autoPlay: profile.auto === true });
       setActive('AI Predictions');
     } catch (e) {
       console.error(e);
