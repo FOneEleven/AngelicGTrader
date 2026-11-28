@@ -450,9 +450,7 @@ async function finalInterrogate(body) {
     season: body.season || null,
     pieceInstruction: String(body.pieceInstruction || '').slice(0, 2000),
     policy: {
-      seriousGameMotivationBonus: '+4 percentage points when concrete evidence shows the team has a meaningful reason to compete hard.',
-      lowStakesHighProfilePenalty: '-6 percentage points when a high-profile team has little need to win and credible reduced-urgency or rotation risk.',
-      opponentStrengthPercentile: 'Use league-relative strength percentile: 0 weakest, 100 strongest. Preferred opponent range is 10–40 inclusive.',
+      opponentStrengthMotivation: 'Opponent percentile affects motivation only, never the verdict. Percentile 10–40 inclusive adds +3 percentage points. Percentile above 40 subtracts 3 percentage points only when there is no meaningful playoff, seeding, elimination, or standings incentive. If a high-percentile opponent has meaningful playoff incentive, apply 0 points. Below 10 or unknown percentile applies 0 points.',
       objective: 'Serious, competitive contests with strong fantasy upside.',
     },
   };
@@ -475,9 +473,11 @@ MARKET LIQUIDATION:
 
 MOTIVATION ADJUSTMENTS — PRESERVE THESE EXISTING RULES:
 - Start with candidateBaseline.probabilityYes as the base probability and independently challenge it.
-- Apply +4 percentage points only when concrete evidence shows the selected team has a meaningful reason to compete hard: playoff/seeding/elimination implications, meaningful standings pressure, a must-win, or similarly credible stakes. Generic professional pride is insufficient.
-- Apply -6 percentage points when BOTH are supported: the team is a high-profile/elite brand AND it has little meaningful need to win, with credible reduced urgency, rotation, or managed-minutes risk.
-- If both conditions genuinely apply, net +4 and -6 to -2 points. If neither is evidenced, use 0.
+- Opponent percentile affects motivation only; it MUST NOT determine KEEP, REJECT, or REVIEW.
+- If opponentPercentile is 10–40 inclusive, apply +3 percentage points to motivation.
+- If opponentPercentile is above 40 AND there is no meaningful playoff, seeding, elimination, or standings incentive for the selected team, apply -3 percentage points.
+- If opponentPercentile is above 40 but the selected team has a meaningful playoff/seeding/elimination/standings incentive, apply 0 points.
+- If opponentPercentile is below 10 or unknown, apply 0 points from percentile.
 - Do not invent standings, playoff status, injuries, or motivation.
 - motivationAssessment MUST explicitly record the conclusion, evidence, and exact adjustment, including "0 pp" and why when no adjustment applies. Do not leave it blank or merely say "motivation considered".
 - Return baseProbabilityYes, motivationAdjustmentPoints, and adjusted probabilityYes.
@@ -525,7 +525,7 @@ MATCHUP AND VERDICT:
   }
 
   const proposedAdjustment = Number(result.motivationAdjustmentPoints);
-  const allowedAdjustments = [4, -6, -2, 0];
+  const allowedAdjustments = [3, -3, 0];
   const motivationAdjustmentPoints = allowedAdjustments.includes(proposedAdjustment) ? proposedAdjustment : 0;
   result.baseProbabilityYes = baseProbabilityYes;
   result.motivationAdjustmentPoints = motivationAdjustmentPoints;
@@ -536,10 +536,8 @@ MATCHUP AND VERDICT:
     result.motivationAssessment = motivationAdjustmentPoints + ' pp — ' + result.motivationAssessment;
   }
 
-  let verdict = result.verdict;
-  const percentile = result.opponentPercentile;
-  if (percentile == null || !Number.isFinite(Number(percentile))) verdict = 'REVIEW';
-  else if (Number(percentile) < 10 || Number(percentile) > 40) verdict = 'REJECT';
+  // Opponent percentile is a motivation input only. It must never override
+  // the model's matchup verdict or turn a candidate into REVIEW/REJECT.
   if (!['A', 'B'].includes(result.matchupGrade) && verdict === 'KEEP') verdict = 'REJECT';
   if (result.missingData?.length && verdict === 'KEEP') verdict = 'REVIEW';
 
@@ -580,12 +578,12 @@ MATCHUP AND VERDICT:
       marketCloseTime: market.closeTime || null,
       currentAsk,
       currentPayoutMultiple: Number.isFinite(currentPayout) ? currentPayout : null,
-      opponentPercentileBand: [10, 40],
+      opponentPercentileMotivationBand: [10, 40],
       motivationAdjustmentPoints,
       motivationAssessment: result.motivationAssessment,
       baseProbabilityYes,
       finalProbabilityYes: result.probabilityYes,
-      motivationAdjustments: { seriousGameBonusPoints: 4, highProfileLowStakesPenaltyPoints: -6 },
+      motivationAdjustments: { inRangeBonusPoints: 3, highPercentileNoPlayoffIncentivePenaltyPoints: -3 },
     },
   };
 }
