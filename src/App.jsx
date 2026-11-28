@@ -261,9 +261,9 @@ export default function App() {
       // Reset Dashboard records before advancing the piece or starting its scan.
       await clearDashboardRecords(dataFolder.handle);
       const updated = await advanceSeasonWeek(dataFolder.handle, profile);
+      handleActivity();
       setScanRequest({ profileId: updated.id, requestId: updated.id + '-' + Date.now() });
       setActive('AI Predictions');
-      handleActivity();
     } catch (e) {
       console.error(e);
     }
