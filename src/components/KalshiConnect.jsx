@@ -103,7 +103,10 @@ export default function KalshiConnect({ dataFolderHandle, onAccountChange }) {
       body: JSON.stringify({ keyId: connection.keyId, envelope: connection.envelope }),
     });
     const result = await response.json().catch(() => ({}));
-    if (!response.ok || !result.connected) throw new Error(result.error || 'Kalshi account verification failed.');
+    if (!response.ok || !result.connected) {
+      const detail = [result.stage, result.detail, result.error].filter(Boolean).join(' — ');
+      throw new Error(detail || 'Kalshi account verification failed (HTTP ' + response.status + ').');
+    }
     setBalance(result);
     onAccountChange?.({ connected: true, accountName: connection.nickname || 'Kalshi Account', balanceDollars: result.balanceDollars, portfolioValueDollars: result.portfolioValueDollars });
     return result;
