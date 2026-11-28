@@ -423,6 +423,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       let evaluatedSides = 0;
       const selectionList = [];
       const analysisByTicker = new Map();
+      const scannedTickers = new Set();
       const qualifies = (p, line, analysis, side, stats) => {
         const probability = probabilityFor(analysis, side);
         const ask = askFor(line, side);
@@ -481,7 +482,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
               analysis = await analyzeSelectedLine(p, line);
               if (analysis) analysisByTicker.set(line.ticker, analysis);
             }
-            scannedLines += 1;
+            if (!scannedTickers.has(line.ticker)) { scannedTickers.add(line.ticker); scannedLines += 1; }
             evaluatedSides += 1;
             if (!analysis?.prediction) continue;
             const candidate = qualifies(p, line, analysis, pass.side, stats);
@@ -512,9 +513,9 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       const selectionResolution = { status: orderedSelections.length ? 'selected' : 'none', phase: 'complete', resolvedAt, checkedGames: orderedPredictions.length, scannedLines, evaluatedSides, qualifiedGames: [...new Set(selectionList.map((item) => item.predictionKey))].length, qualifiedCandidates: selectionList.length, selectionList, selectedGames: orderedSelections.length, selectedByRisk: risk, message: orderedSelections.length ? 'Selected 1 game from ' + selectionList.length + ' strategy-qualified candidate(s) using ' + risk + ' risk.' : 'No qualifying game found in the current dataset.' };
       try { const updatedProfile = await updateSeasonProfile(root, seasonProfile.id, { selectionList, selectedLines, selectionResolution }); setSeasonProfile(updatedProfile); } catch (e) { setError(e.message || 'Could not save piece selections'); }
       if (orderedSelections.length) {
-        setProgress('Selection resolved · ' + orderedSelections.length + ' qualifying game(s) found. Earliest upcoming game is first.');
+        setProgress('Selection complete · 1 game selected from ' + selectionList.length + ' qualified candidates using ' + risk + ' risk.');
         setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SELECTION RESOLVED · scanned ' + scannedLines + ' lines and evaluated ' + evaluatedSides + ' side(s); ' + orderedSelections.length + ' qualified candidate(s) saved to this piece; final selection=' + (finalSelection ? finalSelection.ticker + ' ' + finalSelection.side : 'none') + ' using risk=' + risk + '.' }].slice(-40));
-        onActivity?.('WEEK_SCAN_COMPLETE', orderedSelections.length + ' qualifying selections found for ' + seasonProfile.name);
+        onActivity?.('WEEK_SCAN_COMPLETE', '1 final selection chosen from ' + selectionList.length + ' qualified candidates for ' + seasonProfile.name);
       } else {
         const message = 'No qualifying game found in the current dataset.';
         setProgress(message + (isAuto ? ' Next automatic scan in 60 seconds.' : ' Auto is off; waiting for the next manual scan.'));
