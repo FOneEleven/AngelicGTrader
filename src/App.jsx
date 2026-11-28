@@ -132,7 +132,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
     if (profile.activePlayer === false || String(profile.status || 'active').toLowerCase() !== 'active') {
       setRecordActionMessage((old) => ({ ...old, [record.id]: 'This season piece is inactive.' })); return;
     }
-    const allocation = Number(profile.quotaValue ?? profile.initialBalance ?? profile.balance);
+    const allocation = Number(profile.originalAllocation ?? profile.initialBalance ?? profile.balance ?? profile.quotaValue);
     const price = Number(record.price);
     if (!(allocation > 0) || !(price > 0 && price < 100) || !record.ticker) {
       setRecordActionMessage((old) => ({ ...old, [record.id]: 'Missing valid allocation, saved price, or market ticker.' })); return;
@@ -198,7 +198,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
             {records.map((r) => {
               const price = Number(r.price);
               const payout = price > 0 ? (100 / price).toFixed(2) + 'x' : '—';
-              const eligiblePieces = seasonProfiles.filter((p) => p.activePlayer !== false && String(p.status || 'active').toLowerCase() === 'active' && Number(p.quotaValue ?? p.initialBalance ?? p.balance) > 0 && pieceCommitments[p.id] !== true && !playBox.some((item) => item.profileId === p.id));
+              const eligiblePieces = seasonProfiles.filter((p) => p.activePlayer !== false && String(p.status || 'active').toLowerCase() === 'active' && Number(p.originalAllocation ?? p.initialBalance ?? p.balance ?? p.quotaValue) > 0 && pieceCommitments[p.id] !== true && !playBox.some((item) => item.profileId === p.id));
               const selectedId = selectedPieceByRecord[r.id] || '';
               const selectedPiece = eligiblePieces.find((p) => p.id === selectedId);
               const committed = selectedPiece ? pieceCommitments[selectedPiece.id] === true : false;
@@ -212,7 +212,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
                 <td><div className="record-place-control">
                   <select value={selectedId} onChange={(event) => setSelectedPieceByRecord((old) => ({ ...old, [r.id]: event.target.value }))}>
                     <option value="">Select piece</option>
-                    {eligiblePieces.map((p) => <option key={p.id} value={p.id}>{p.name + ' · ' + (p.paperMode ? 'Paper' : 'Live') + ' · ' + String.fromCharCode(36) + Number(p.quotaValue ?? p.initialBalance ?? p.balance).toFixed(2) + (pieceCommitments[p.id] ? ' · Committed' : '')}</option>)}
+                    {eligiblePieces.map((p) => <option key={p.id} value={p.id}>{p.name + ' · ' + (p.paperMode ? 'Paper' : 'Live') + ' · ' + String.fromCharCode(36) + Number(p.originalAllocation ?? p.initialBalance ?? p.balance ?? p.quotaValue).toFixed(2) + (pieceCommitments[p.id] ? ' · Committed' : '')}</option>)}
                   </select>
                   <button className="secondary-btn" disabled={!selectedPiece || placingRecordId === r.id || alreadyPlaced || queuedForPiece || !canQueueSelection} onClick={() => placeDashboardRecord(r)}>{placingRecordId === r.id ? 'Adding…' : queuedForPiece ? 'In Play Box' : selectedPiece ? 'Add to Play Box' : 'Select piece'}</button>
                   {recordActionMessage[r.id] && <small className="record-action-message">{recordActionMessage[r.id]}</small>}
@@ -667,7 +667,7 @@ export default function App() {
   }, [dataFolder, playBox, committingPlayBox, handleActivity, kalshiAccount, ladderKeyFor]);
 
   const handleScanResolved = useCallback(async (result = {}) => {
-    if ((result.autoPlay || scanRequest?.autoPlay) && dataFolder?.handle && result.profileId) {
+    if (result.autoPlay === true && dataFolder?.handle && result.profileId) {
       try {
         const profiles = await listSeasonProfiles(dataFolder.handle);
         const profile = profiles.find((item) => item.id === result.profileId);
@@ -701,7 +701,7 @@ export default function App() {
     } catch (e) {
       console.error(e);
     }
-  }, [dataFolder, handleActivity, scanRequest]);
+  }, [dataFolder, handleActivity]);
 
   // Auto mode selects one eligible active piece at random every minute.
   useEffect(() => {
@@ -745,7 +745,7 @@ export default function App() {
     };
     const timer = window.setInterval(tick, 60_000);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [dataFolder, autoPlayLock, scanRequest, committingPlayBox, refreshKey]);
+  }, [dataFolder, autoPlayLock, scanRequest, committingPlayBox, refreshKey, handleStartWeek]);
 
   return <div className="app-shell">
     <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
