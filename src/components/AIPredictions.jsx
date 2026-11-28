@@ -374,43 +374,6 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
     setSliderIdx((old) => ({ ...old, [p.key]: next }));
   }
 
-  async function analyzeSelectedLine(p, line) {
-    const stats = statsByKey[p.key];
-    if (!root || !stats || !line) return null;
-    if (analyses[line.ticker]) return analyses[line.ticker];
-    setBusy(true);
-    setProgress('Analyzing selected line: ' + p.team + ' over ' + line.line);
-    setAnalysisErrors((old) => ({ ...old, [p.key]: '' }));
-    try {
-      const league = leagueFor(p);
-      const market = {
-        ticker: line.ticker, title: p.team + ' over ' + line.line + (league === 'MLB' ? ' runs' : ' points'),
-        league, team: p.team, opponent: stats.opponent?.name || '',
-        line: line.line, yesAsk: line.yesAsk, noAsk: line.noAsk,
-        closeTime: p.closeTime || p.expectedExpiration || null,
-        gameTime: p.gameTime || p.expectedExpiration || null,
-      };
-      const cacheKey = analysisKey(market, stats);
-      const cached = await getCachedAnalysis(root, cacheKey);
-      const data = cached?.data || await analyzeMarket({
-        market,
-        teamStats: { ...stats.team, modelInputs: stats.modelInputs, recentGames: stats.recentGames, dataQuality: stats.dataQuality },
-        opponentStats: stats.opponent,
-        context: league === 'MLB'
-          ? { source: stats.provider, season: stats.season, statisticsFetchedAt: stats.fetchedAt, mlb: { weather: stats.weather, schedule: stats.schedule, modelInputs: stats.modelInputs, dataQuality: stats.dataQuality } }
-          : { source: 'ESPN', season: stats.season, seasonType: stats.seasonType, statisticsFetchedAt: stats.fetchedAt },
-      });
-      if (!cached) await setCachedAnalysis(root, cacheKey, data);
-      setAnalyses((old) => ({ ...old, [line.ticker]: data }));
-      return data;
-    } catch (e) {
-      setAnalysisErrors((old) => ({ ...old, [p.key]: e.message || 'Selected-line analysis failed' }));
-      return null;
-    } finally {
-      setBusy(false);
-      setProgress('');
-    }
-  }
   async function reassessSelectedLine(p, line) {
     const stats = statsByKey[p.key];
     const baseline = analyses[line?.ticker];
@@ -834,7 +797,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
             })}</tbody>
           </table></div>
         )}
-        <div className="table-foot"><span>OpenAI evaluates the selected line in each AI Prediction entry. Team PPG and opponent PA remain internal.</span><span>{predictions.length} entries</span></div>
+        <div className="table-foot"><span>OpenAI analyzes each complete team-total ladder in batches. Moving the slider only selects an already-analyzed line; it does not send another request.</span><span>{predictions.length} entries</span></div>
       </section>
     </div>
   );
