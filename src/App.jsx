@@ -300,9 +300,15 @@ export default function App() {
       addedAt: new Date().toISOString(), ladderKey,
     };
     const next = [...current, item];
-    await writePlayBox(dataFolder.handle, next);
+    const previousSelection = profile.selectedLines || [];
+    const previousResolution = profile.selectionResolution || {};
     const selectedLine = { predictionKey: selection.predictionKey || null, ticker: selection.ticker, event: selection.event || selection.matchup || '', team: selection.team || '', league: selection.league || '', line: selection.line ?? null, side: selection.side || '', week, playBoxItemId: item.id, playBoxStatus: 'in-play-box', sourceRecordId: selection.sourceRecordId || null };
-    await updateSeasonProfile(dataFolder.handle, profile.id, { selectedLines: [selectedLine], selectionResolution: { ...(profile.selectionResolution || {}), status: 'in-play-box', phase: 'queued-for-batch-commit', resolvedAt: new Date().toISOString(), week, selectedGames: 1, message: 'Selection staged in Play Box; no bet has been committed.' } });
+    await updateSeasonProfile(dataFolder.handle, profile.id, { selectedLines: [selectedLine], selectionResolution: { ...previousResolution, status: 'in-play-box', phase: 'queued-for-batch-commit', resolvedAt: new Date().toISOString(), week, selectedGames: 1, message: 'Selection staged in Play Box; no bet has been committed.' } });
+    try { await writePlayBox(dataFolder.handle, next); }
+    catch (error) {
+      await updateSeasonProfile(dataFolder.handle, profile.id, { selectedLines: previousSelection, selectionResolution: previousResolution });
+      throw error;
+    }
     setPlayBox(next);
     handleActivity();
     return item;
@@ -312,11 +318,16 @@ export default function App() {
     if (!dataFolder?.handle) return;
     const current = await readPlayBox(dataFolder.handle);
     const next = current.filter((entry) => entry.id !== item.id);
-    await writePlayBox(dataFolder.handle, next);
     const profiles = await listSeasonProfiles(dataFolder.handle);
     const profile = profiles.find((entry) => entry.id === item.profileId);
-    if (profile?.selectedLines?.[0]?.playBoxItemId === item.id && profile.selectedLines[0].playBoxStatus === 'in-play-box') {
+    const shouldClear = profile?.selectedLines?.[0]?.playBoxItemId === item.id && profile.selectedLines[0].playBoxStatus === 'in-play-box';
+    if (shouldClear) {
       await updateSeasonProfile(dataFolder.handle, profile.id, { selectedLines: [], selectionResolution: { ...(profile.selectionResolution || {}), status: 'none', phase: 'removed-from-play-box', selectedGames: 0, message: 'Selection removed from Play Box.' } });
+    }
+    try { await writePlayBox(dataFolder.handle, next); }
+    catch (error) {
+      if (shouldClear) await updateSeasonProfile(dataFolder.handle, profile.id, { selectedLines: profile.selectedLines, selectionResolution: profile.selectionResolution || {} });
+      throw error;
     }
     setPlayBox(next); handleActivity();
   }, [dataFolder, handleActivity]);
