@@ -403,7 +403,7 @@ export default function App() {
     {sidebarOpen && <div className="mobile-overlay" onClick={() => setSidebarOpen(false)}></div>}
     <main className="main">
       <header className="topbar">
-        <button className="mobile-menu" onClick={() => setSidebarOpen(true)}><Menu size={19}/></button>
+        <button className="mobile-menu" disabled={autoPlayLock} onClick={() => setSidebarOpen(true)}><Menu size={19}/></button>
         <div className="breadcrumb">Workspace <ChevronRight size={14}/><b>{active}</b></div>
         <div className="top-actions">
           {kalshiAccount && <div className="header-kalshi-account"><b>{kalshiAccount.accountName}</b><span>${Number(kalshiAccount.balanceDollars || 0).toFixed(2)}</span></div>}
