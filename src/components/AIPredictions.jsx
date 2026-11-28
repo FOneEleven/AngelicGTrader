@@ -765,7 +765,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
           <div className="empty-state"><div className="empty-icon"><AlertCircle size={22}/></div><b>No AI prediction entries selected</b><span>Open Live Market Scanner and use Add ladder on a team-total market.</span></div>
         ) : (
           <div className="table-wrap"><table>
-            <thead><tr><th>CLOSES</th><th>LEAGUE</th><th>TEAM / EVENT</th><th>LINE</th><th>SIDE</th><th>ASK</th><th>MODEL PROB.</th><th>EDGE</th><th>PAYOUT</th><th>AI</th><th>ACTION</th></tr></thead>
+            <thead><tr><th>GAME START</th><th>LEAGUE</th><th>TEAM / EVENT</th><th>LINE</th><th>SIDE</th><th>ASK</th><th>MODEL PROB.</th><th>EDGE</th><th>PAYOUT</th><th>AI</th><th>ACTION</th></tr></thead>
             <tbody>{predictions.map((p) => {
               const idx = idxFor(p), chosen = p.lines[idx], side = sideFor(p);
               const analysis = analyses[chosen?.ticker], probability = probabilityFor(analysis, side), ask = askFor(chosen, side);
@@ -774,7 +774,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
               const already = trades.some((t) => t.ticker === chosen?.ticker && t.side === side);
               const rowError = analysisErrors[p.key];
               return <tr key={p.key}>
-                <td><b>{closesIn(p.occurrenceTime || p.gameTime)}</b><small style={{display:'block',marginTop:2}}>{closeDate(p.closeTime)}</small></td>
+                <td><b>{closesIn(p.occurrenceTime || p.gameTime)}</b><small style={{display:'block',marginTop:2}}>market closes {closeDate(p.closeTime)}</small></td>
                 <td><span className="status-pill">{p.league}</span></td>
                 <td><b>{p.team}</b><small style={{display:'block',marginTop:3}}>{p.event}</small>{rowError && <small className="negative">{rowError}</small>}</td>
                 <td style={{minWidth:190,width:190}}>
