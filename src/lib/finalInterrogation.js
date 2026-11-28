@@ -6,10 +6,28 @@ export async function finalInterrogateCandidate({ candidate, market, teamStats, 
   if (!candidate || !market || !teamStats || !opponentStats) {
     throw new Error('candidate, market, teamStats, and opponentStats are required');
   }
+  // The event occurrence timestamp is kickoff/tipoff/first pitch. Never
+  // substitute Kalshi closeTime or expectedExpiration for the event start.
+  const eventStart = market.occurrenceTime || market.gameTime;
+  const eventStartMs = eventStart ? Date.parse(eventStart) : NaN;
+  if (!Number.isFinite(eventStartMs)) throw new Error('Pregame check failed: official event start time is missing.');
+  if (eventStartMs <= Date.now()) throw new Error('Pregame check failed: contest has already started.');
+  const marketCloseMs = market.closeTime ? Date.parse(market.closeTime) : NaN;
+  if (Number.isFinite(marketCloseMs) && marketCloseMs <= Date.now()) {
+    throw new Error('Market is already closed; no new position can be evaluated.');
+  }
   const response = await fetch(BASE, {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ candidate, market, teamStats, opponentStats, baselinePrediction, pieceInstruction, season }),
+    body: JSON.stringify({
+      candidate, market, teamStats, opponentStats, baselinePrediction, pieceInstruction, season,
+      interrogationPolicy: {
+        motivationBonusPercentagePoints: 4,
+        highProfileLowStakesPenaltyPercentagePoints: -6,
+        preferredOpponentPercentile: { min: 10, max: 40, scale: '0=weakest, 100=strongest' },
+        objective: 'serious competitive games with strong fantasy upside',
+      },
+    }),
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || 'FinalInterrogation failed (' + response.status + ')');
