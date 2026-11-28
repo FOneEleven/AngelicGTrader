@@ -16,7 +16,7 @@ import PredictionHistory from './components/PredictionHistory';
 import SeasonPieceEntry from './components/SeasonPieceEntry';
 import { readSettings, writeSettings, readDashboardRecords, deleteTrade, listSeasonProfiles, updateSeasonProfile, advanceSeasonWeek, readSeasonTrades, appendTrade, clearDashboardRecords, readPlayBox, writePlayBox, updateTradeRecord, archiveInactivePiece, confirmedWalletReturns } from './lib/dataModel';
 import { readCache, isCacheFresh, appendCacheBatch } from './lib/marketCache';
-import { fetchSportsMarkets, submitKalshiOrders, fetchGameScoreResolutions, fetchKalshiOrderStatuses } from './lib/kalshi';
+import { fetchSportsMarkets, submitKalshiOrders, fetchGameScoreResolutions, fetchMarketResolutions, fetchKalshiOrderStatuses } from './lib/kalshi';
 
 const nav = [
   { label: 'Dashboard', icon: LayoutDashboard, group: 'WORKSPACE' },
