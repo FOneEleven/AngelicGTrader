@@ -40,7 +40,7 @@ export default function SeasonPieceEntry({ profile, earnings = 0, onUpdate, onSt
   const activeRisk = riskByCondition[worth.condition] || '';
   const ready = Boolean(activeStrategy && activeRisk);
   const inPlayBox = profile.selectedLines?.[0]?.playBoxStatus === 'in-play-box';
-  const paperCommitted = profile.paperMode === true && Boolean(profile.selectedLines?.[0]?.ticker);
+  const paperCommitted = profile.selectedLines?.[0]?.playBoxStatus === 'committed' && String(profile.selectionResolution?.status || '').toLowerCase() === 'committed';
   const pendingResolution = (profile.selectedLines?.[0]?.playBoxStatus === 'committed' && profile.selectionResolution?.status === 'committed') || paperCommitted;
   const messages = Array.isArray(profile.pieceMessages) ? profile.pieceMessages : [];
 
@@ -79,6 +79,7 @@ export default function SeasonPieceEntry({ profile, earnings = 0, onUpdate, onSt
       {profile.activePlayer !== false && !ready && <div className="piece-not-ready" role="status">NOT READY FOR PLAY · SET STRATEGY AND RISK FOR {WORTH_CONDITIONS.find((x) => x.id === worth.condition)?.label.toUpperCase()}</div>}
       {profile.selectedLines?.[0] && <small className="season-piece-selected-game">Selected game: {profile.selectedLines[0].team || profile.selectedLines[0].event || profile.selectedLines[0].ticker} · {profile.selectedLines[0].league || 'Market'} · {profile.selectedLines[0].line ?? 'ladder'} · {profile.selectedLines[0].side} · {profile.selectedLines[0].playBoxStatus === 'in-play-box' ? 'IN PLAY BOX' : profile.selectedLines[0].playBoxStatus === 'committed' || paperCommitted ? (paperCommitted ? 'PAPER COMMITTED' : 'COMMITTED') : 'SELECTED'}</small>}
       {profile.activePlayer !== false && <div className="season-piece-controls">
+        <button type="button" className="secondary-btn" disabled={busy || inPlayBox || pendingResolution} aria-pressed={profile.auto === true} onClick={() => onUpdate?.(profile, { auto: profile.auto !== true, autoAttempts: 0, autoTimeoutUntil: null })}>{profile.auto === true ? 'Auto: ON' : 'Auto: OFF'}</button>
         <button className="secondary-btn" disabled={busy || !ready || inPlayBox || pendingResolution} onClick={() => onStartWeek?.(profile)}>{inPlayBox ? 'In Play Box' : pendingResolution ? (paperCommitted ? 'Paper match pending' : 'Match pending') : 'Start next week'}</button>
         <button className="secondary-btn" onClick={() => onNavigate?.('Game Day')}><CalendarDays size={13}/> Go To Gameday</button>
         <button className="secondary-btn piece-expand-button" onClick={() => setExpanded((value) => !value)}><ChevronDown size={13}/> {expanded ? 'Close piece' : 'Open piece'}</button>
