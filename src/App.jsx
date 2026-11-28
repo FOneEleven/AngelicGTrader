@@ -177,7 +177,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
             {records.map((r) => {
               const price = Number(r.price);
               const payout = price > 0 ? (100 / price).toFixed(2) + 'x' : '—';
-              const eligiblePieces = seasonProfiles.filter((p) => p.activePlayer !== false && String(p.status || 'active').toLowerCase() === 'active' && Number(p.quotaValue ?? p.initialBalance ?? p.balance) > 0 && pieceCommitments[p.id] !== true);
+              const eligiblePieces = seasonProfiles.filter((p) => p.activePlayer !== false && String(p.status || 'active').toLowerCase() === 'active' && Number(p.quotaValue ?? p.initialBalance ?? p.balance) > 0 && pieceCommitments[p.id] !== true && !playBox.some((item) => item.profileId === p.id));
               const selectedId = selectedPieceByRecord[r.id] || '';
               const selectedPiece = eligiblePieces.find((p) => p.id === selectedId);
               const committed = selectedPiece ? pieceCommitments[selectedPiece.id] === true : false;
