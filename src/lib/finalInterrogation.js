@@ -33,27 +33,34 @@ export async function finalInterrogateCandidate({ candidate, market, teamStats, 
     eventId: market.eventId || market.eventTicker || market.eventName || '',
     teamStats, opponentStats, pieceInstruction, season,
   };
-  const applyCachedMotivation = (cached) => {
-    const adjustment = Number(cached?.interrogation?.motivationAdjustmentPoints) || 0;
+  const applyCandidatePerspective = (review) => {
+    const yesAdjustment = Number(review?.interrogation?.motivationAdjustmentPoints) || 0;
+    const isNflNo = String(market.league || candidate.league || '').toUpperCase() === 'NFL' && String(candidate.side || '').toUpperCase() === 'NO';
+    const displayedAdjustment = isNflNo ? -yesAdjustment : yesAdjustment;
     const baseProbabilityYes = Number(baselinePrediction?.probabilityYes);
     if (!Number.isFinite(baseProbabilityYes) || baseProbabilityYes < 0 || baseProbabilityYes > 1) {
       throw new Error('Candidate baseline probability is invalid; cached matchup review cannot be applied.');
     }
-    const probabilityYes = Math.max(0, Math.min(1, baseProbabilityYes + adjustment / 100));
+    // The server's adjustment is expressed against YES probability. For NFL NO,
+    // expose the exact inverse as a positive defensive-weather/motivation benefit;
+    // the YES probability itself remains base YES plus the server adjustment.
+    const probabilityYes = Math.max(0, Math.min(1, baseProbabilityYes + yesAdjustment / 100));
+    const assessment = String(review.interrogation.motivationAssessment || '');
     return {
-      ...cached,
+      ...review,
       interrogation: {
-        ...cached.interrogation,
+        ...review.interrogation,
         baseProbabilityYes,
         probabilityYes,
+        motivationAdjustmentPoints: displayedAdjustment,
+        motivationAssessment: assessment + (isNflNo ? ' NFL NO perspective: inverted adjustment=' + (displayedAdjustment > 0 ? '+' : '') + displayedAdjustment + ' pp.' : ''),
       },
-      audit: cached.audit ? { ...cached.audit, baseProbabilityYes, finalProbabilityYes: probabilityYes } : cached.audit,
-      cacheHit: true,
+      audit: review.audit ? { ...review.audit, baseProbabilityYes, finalProbabilityYes: probabilityYes, yesProbabilityAdjustmentPoints: yesAdjustment, sideMotivationAdjustmentPoints: displayedAdjustment } : review.audit,
     };
   };
   if (root) {
     const cached = await getCachedFinalInterrogation(root, cacheInput).catch(() => null);
-    if (cached?.verdict === 'KEEP') return applyCachedMotivation(cached);
+    if (cached?.verdict === 'KEEP') return { ...applyCandidatePerspective(cached), cacheHit: true };
   }
 
   const response = await fetch(BASE, {
@@ -77,5 +84,5 @@ export async function finalInterrogateCandidate({ candidate, market, teamStats, 
   // Only an eligible KEEP is reusable. Each rung still applies its own baseline,
   // probability floor, and live ask after receiving the shared motivation value.
   if (root && data.verdict === 'KEEP') await setCachedFinalInterrogation(root, cacheInput, data).catch(() => {});
-  return data;
+  return applyCandidatePerspective(data);
 }
