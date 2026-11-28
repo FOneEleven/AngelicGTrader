@@ -14,7 +14,7 @@ import AIPredictions from './components/AIPredictions';
 import GameDay from './components/GameDay';
 import PredictionHistory from './components/PredictionHistory';
 import SeasonPieceEntry from './components/SeasonPieceEntry';
-import { readSettings, writeSettings, readTrades, readAllRecords, deleteTrade, listSeasonProfiles, updateSeasonProfile, advanceSeasonWeek, readSeasonTrades, appendTrade } from './lib/dataModel';
+import { readSettings, writeSettings, readTrades, readAllRecords, deleteTrade, listSeasonProfiles, updateSeasonProfile, advanceSeasonWeek, readSeasonTrades, appendTrade, clearDashboardRecords } from './lib/dataModel';
 import { WEEKS } from './lib/dataFolder';
 import { readCache, isCacheFresh, appendCacheBatch } from './lib/marketCache';
 import { fetchSportsMarkets } from './lib/kalshi';
@@ -69,11 +69,6 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
         setSeasonProfiles(profiles);
         setPieceEarnings(Object.fromEntries(pieceEntries.map((entry) => [entry.id, entry.earnings])));
         setPieceCommitments(Object.fromEntries(pieceEntries.map((entry) => [entry.id, entry.committed])));
-      }
-      if (!all.length) {
-        const legacy = (await Promise.all(WEEKS.map((week) => readTrades(root, season, week)))).flat();
-        legacy.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-        all.push(...legacy);
       }
       if (!cancelled) {
         setPlacedRecordIds(all.filter((item) => item.sourceRecordId).map((item) => item.sourceRecordId));
@@ -265,6 +260,8 @@ export default function App() {
   const handleStartWeek = useCallback(async (profile) => {
     if (!dataFolder?.handle || !profile) return;
     try {
+      // Reset Dashboard records before advancing the piece or starting its scan.
+      await clearDashboardRecords(dataFolder.handle);
       const updated = await advanceSeasonWeek(dataFolder.handle, profile);
       setScanRequest({ profileId: updated.id, requestId: updated.id + '-' + Date.now() });
       setActive('AI Predictions');
