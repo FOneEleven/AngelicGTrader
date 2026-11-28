@@ -424,6 +424,17 @@ export async function appendQualifiedCandidate(root, candidate) {
   return { ...candidate, id, isQualifiedCandidate: true };
 }
 
+// Clear the Dashboard's canonical record feed when a new season-piece week starts.
+// Weekly trade files are deliberately preserved for season accounting and history.
+export async function clearDashboardRecords(root) {
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  const file = await metaDir.getFileHandle('records.txt', { create: true });
+  const writer = await file.createWritable();
+  await writer.write('# id\\ttimestamp\\tmatchup\\tmarket\\tside\\tprice\\tprobability\\tstake\\tpaper\\tstatus\\tmetadata_json\\n');
+  await writer.close();
+  return true;
+}
+
 // Read the canonical record feed shared by every dashboard view.
 export async function readAllRecords(root) {
   const metaDir = await root.getDirectoryHandle(META, { create: true });
