@@ -428,11 +428,20 @@ export async function appendQualifiedCandidate(root, candidate) {
 // Weekly trade files are deliberately preserved for season accounting and history.
 export async function clearDashboardRecords(root) {
   const metaDir = await root.getDirectoryHandle(META, { create: true });
-  const file = await metaDir.getFileHandle('records.txt', { create: true });
-  const writer = await file.createWritable();
-  await writer.write('# Dashboard records reset at season-piece week start\\n');
-  await writer.close();
+  await writeText(metaDir, 'dashboard-records-reset.txt', new Date().toISOString() + '\\n');
   return true;
+}
+
+export async function readDashboardRecords(root) {
+  const records = await readAllRecords(root);
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  const resetValue = await readText(metaDir, 'dashboard-records-reset.txt');
+  const resetAt = resetValue ? Date.parse(resetValue.trim()) : NaN;
+  if (!Number.isFinite(resetAt)) return records;
+  return records.filter((record) => {
+    const timestamp = Date.parse(record.timestamp || '');
+    return Number.isFinite(timestamp) && timestamp > resetAt;
+  });
 }
 
 // Read the canonical record feed shared by every dashboard view.
