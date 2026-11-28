@@ -2,8 +2,8 @@
 //   Pass 1 (cliff): walk up from the 50% anchor; first step >= strongDelta wins.
 //   Pass 2 (midpoint): for ladders with no cliff, back off `midBackOff` lines
 //                      from the midpoint of the ladder.
-// Close window uses `expectedExpiration` (resolution time), with a fallback to
-// `closeTime` for old cache rows. Payout band is flagged, not filtered.
+// Event start is occurrenceTime only. Kalshi expectedExpiration/closeTime are
+// market expiry/close timestamps, NOT reliable substitutes for game kickoff.
 
 const TEAM_TOTAL = /^KX([A-Z0-9]+?)TEAMTOTAL-/;
 
@@ -33,7 +33,8 @@ function parseLine(subtitle = '') {
 
 // Prefer expected_expiration_time; fall back to close_time for legacy cache rows.
 function resolveGameTime(m) {
-  return m.occurrenceTime || m.expectedExpiration || m.closeTime || '';
+  // Fail closed when the provider has no explicit event occurrence timestamp.
+  return m.occurrenceTime || '';
 }
 
 export function computePredictions(markets, opts = {}) {
@@ -45,8 +46,11 @@ export function computePredictions(markets, opts = {}) {
     if (!TEAM_TOTAL.test(m.ticker || '')) return false;
     const status = String(m.status || '').toLowerCase();
     if (['closed', 'settled', 'finalized', 'resolved'].includes(status) || m.isClosed === true) return false;
-    const closeAt = m.expectedExpiration || m.closeTime;
-    if (closeAt) { const closeMs = new Date(closeAt).getTime(); if (Number.isFinite(closeMs) && closeMs <= now) return false; }
+    const eventStart = resolveGameTime(m);
+    const eventStartMs = eventStart ? Date.parse(eventStart) : NaN;
+    if (!Number.isFinite(eventStartMs) || eventStartMs <= now) return false;
+    const marketClose = m.closeTime ? Date.parse(m.closeTime) : NaN;
+    if (Number.isFinite(marketClose) && marketClose <= now) return false;
     return true;
   });
 
@@ -119,7 +123,7 @@ export function computePredictions(markets, opts = {}) {
       if (delta >= cfg.strongDelta) { strongIdx = i + 1; strongDelta = delta; break; }
     }
 
-    const gtMs = ladder.gameTime ? new Date(ladder.gameTime).getTime() : NaN;
+    const gtMs = ladder.occurrenceTime ? Date.parse(ladder.occurrenceTime) : NaN;
     const withinWindow = Number.isFinite(gtMs) && gtMs > now && gtMs <= closeCutoff;
 
     if (strongIdx !== -1) {
