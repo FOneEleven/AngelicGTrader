@@ -82,3 +82,12 @@ The 90% threshold is a selection target, not a guarantee of accuracy. OpenAI's e
 5. **Backtesting and portfolio UI — pending:** historical replay, seasons, independent positions, settlement ingestion, exposure aggregation, ROI, and calibration reports.
 
 No live order execution is implemented.
+
+
+## Season match resolution
+
+The frontend checks unresolved committed season-piece contracts every 60 seconds while the app window is open. The public `GetKalshiMarkets` Azure Function now supports `?action=resolve&tickers=...` to read definitive Kalshi market settlement results. Live pieces also use the `KalshiAccount` `order-status` action to verify filled contract counts before calculating a payout.
+
+A winning settlement adds the contract payout to the piece's saved `currentWorth`, clears its selected game, and advances its scheduled week. A losing settlement deactivates the piece and snapshots its current worth plus participated matches in `meta/inactive-pieces.json`. Game Day displays active pieces in a horizontal carousel and the inactive archive separately.
+
+Deploy the updated `GetKalshiMarkets` and `KalshiAccount` Azure Functions as well as publishing the frontend. The resolution monitor uses the connected Kalshi account to verify live fills; paper contracts are calculated from their saved stake and entry price. Unplayed pieces with no resolved win are normalized back to `week1`.
