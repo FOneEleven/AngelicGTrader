@@ -1739,3 +1739,21 @@ tr.row-mid td {
 .nav-item:disabled { opacity:.45; cursor:not-allowed; pointer-events:none; }
 .spin { animation:agt-spin 1.2s linear infinite; flex:0 0 auto; }
 @keyframes agt-spin { to { transform:rotate(360deg); } }
+
+
+/* Season piece carousel and inactive archive */
+.game-day-piece-carousel{display:flex;gap:12px;padding:14px;overflow-x:auto;scroll-snap-type:x mandatory;overscroll-behavior-x:contain}
+.game-day-piece-carousel>.season-piece-card{flex:0 0 min(390px,86vw);scroll-snap-align:start}
+.game-day-inactive{margin-top:16px}
+.inactive-piece-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;padding:14px}
+.inactive-piece-card{border:1px solid #493b36;background:linear-gradient(145deg,#211d20,#171a21);border-radius:10px;padding:14px;min-width:0}
+.inactive-piece-card-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.inactive-piece-card-top>div{display:grid;gap:5px;min-width:0}
+.inactive-piece-card-top b{color:#f0d9b1}
+.inactive-piece-card-top small,.inactive-piece-match small{color:#8d98a8;font-size:10px}
+.inactive-piece-card-top strong{color:#d6b56c;white-space:nowrap;font-size:12px}
+.inactive-piece-reason{color:#d59b8d;font-size:11px;margin:12px 0}
+.inactive-piece-matches{display:grid;gap:7px;border-top:1px solid #34313a;padding-top:10px;margin-bottom:12px}
+.inactive-piece-matches>b{font-size:10px;color:#c9bda8;text-transform:uppercase;letter-spacing:.06em}
+.inactive-piece-match{display:grid;gap:3px;padding:7px;background:#171a20;border-radius:6px}
+.inactive-piece-match span{font-size:11px;color:#e0e4eb}
