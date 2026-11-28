@@ -154,13 +154,23 @@ function normalizeEspnEvent(event, league) {
 async function fetchEspnScoreboard(league, ranges) {
   const path = espnLeaguePath(league);
   if (!path) throw new Error('Unsupported ESPN league: ' + league);
-  const results = await Promise.allSettled(ranges.map(async ({ start, end }) => {
+
+  // ESPN's Site scoreboard API no longer accepts date ranges; it returns HTTP 400.
+  // Fetch each calendar day separately, then merge and deduplicate by event ID.
+  const dates = [...new Set(ranges.flatMap(({ start, end }) => {
+    const days = [];
+    for (let day = start; day <= end; day = shiftDate(day, 1)) days.push(day);
+    return days;
+  }))];
+
+  const results = await Promise.allSettled(dates.map(async (date) => {
     const url = new URL(ESPN_BASE + '/' + path + '/scoreboard');
-    url.searchParams.set('dates', start.replace(/-/g, '') + '-' + end.replace(/-/g, ''));
+    url.searchParams.set('dates', date.replace(/-/g, ''));
     url.searchParams.set('limit', '1000');
     const data = await fetchJson(url.toString());
     return (data.events || []).map((event) => normalizeEspnEvent(event, league));
   }));
+
   const events = [];
   const failures = [];
   for (const result of results) {
@@ -168,7 +178,12 @@ async function fetchEspnScoreboard(league, ranges) {
     else failures.push(result.reason?.message || 'ESPN request failed');
   }
   const unique = new Map(events.filter((event) => event.eventId).map((event) => [event.eventId, event]));
-  if (!unique.size && failures.length === results.length) throw new Error('ESPN scoreboard unavailable: ' + failures.join('; '));
+  if (!unique.size && failures.length === results.length) {
+    throw new Error('ESPN scoreboard unavailable for ' + dates.length + ' daily requests: ' + failures.join('; '));
+  }
+  if (!unique.size && failures.length) {
+    throw new Error('ESPN scoreboard returned no events; ' + failures.length + '/' + dates.length + ' daily requests failed: ' + failures.join('; '));
+  }
   return [...unique.values()];
 }
 
