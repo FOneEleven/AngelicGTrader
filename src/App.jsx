@@ -109,7 +109,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
     </div>
     <div className="content-grid">
       <section className="panel opportunities-panel">
-        <div className="panel-heading"><div><h2>Records</h2><p>Predictions and recommendations saved using Record</p></div><button className="text-btn" onClick={() => onNavigate?.('AI Predictions')}>AI Predictions <ChevronRight size={15}/></button></div>
+        <div className="panel-heading"><div><h2>Records</h2><p>Scanner-qualified candidates with final matchup reviews and recorded predictions</p></div><button className="text-btn" onClick={() => onNavigate?.('AI Predictions')}>AI Predictions <ChevronRight size={15}/></button></div>
         {records.length ? (
           <div className="table-wrap"><table><thead><tr><th>RECORDED</th><th>MATCHUP</th><th>MARKET</th><th>SIDE</th><th>MODEL PROB.</th><th>PRICE</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>
             {records.map((r) => <tr key={r.id}><td>{new Date(r.timestamp).toLocaleString()}</td><td>{r.matchup}</td><td>{r.market}</td><td>{r.side}</td><td>{r.modelProbability == null ? (r.probability + '%') : Math.round(Number(r.modelProbability) * 100) + '%'}</td><td>{r.price}¢</td><td><span className="status-pill">{r.status || 'open'}</span></td><td><button className="danger-text-btn" onClick={async () => { await deleteTrade(dataFolder.handle, r.id); setRecords((old) => old.filter((item) => item.id !== r.id)); onActivity?.('RECORD_REMOVED', 'Record removed · ' + r.market); }}>Remove</button></td></tr>)}
