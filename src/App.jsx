@@ -295,11 +295,10 @@ export default function App() {
         const tradesByProfile = await Promise.all(activeProfiles.map(async (profile) => [profile, await readSeasonTrades(root, profile)]));
         const work = [];
         for (const [profile, trades] of tradesByProfile) {
-          const trackedSelections = new Set(trades.filter((trade) => trade.ticker).map((trade) => String(trade.ticker) + '|' + String(trade.week || 'week1')));
           for (const trade of trades) {
             if (!trade.ticker || ['closed','resolved','lost','won','unfilled','cancelled','canceled'].includes(String(trade.status || '').toLowerCase()) ||
                 String(trade.resolutionStatus || '').toLowerCase() === 'resolved') continue;
-            work.push({ profile, trade, paper: trade.paper === true, source: 'trade' });
+            work.push({ profile, trade, paper: trade.paper === true });
           }
           // Only committed trades are monitored; Play Box selections are not exposure.
         }
@@ -340,7 +339,7 @@ export default function App() {
         }
 
         for (const entry of work) {
-          const { profile, trade, paper, source } = entry;
+          const { profile, trade, paper } = entry;
           const market = marketByTicker.get(trade.ticker);
           const score = scoreByTicker.get(trade.ticker);
           const marketStatus = String(market?.status || '').toLowerCase();
@@ -403,43 +402,17 @@ export default function App() {
           // The full line payout is divided among contributors in proportion to
           // the original allocation each piece committed to that shared contract.
           const payout = won ? Math.round(totalContracts * 100 * contributionShare * 100) / 100 : 0;
-          let resolvedTrade = trade;
-          if (source === 'selected-line') {
-            await appendTrade(root, profile.season, trade.week, {
-              ...trade, id: trade.id, timestamp: resolvedAt, source: 'paper-selected-line', seasonPieceId: profile.id,
-              status: won ? 'closed' : 'lost', outcome: won ? 'won' : 'lost',
-              resolutionStatus: 'resolved', resolutionResult: result,
-              resolutionMarketStatus: marketStatus || score?.status || 'FINAL',
-              scoreVerified: resolutionSource === 'verified-final-score',
-              scoreTeam: score?.team || trade.team, scoreOpponent: score?.opponent || trade.opponent,
-              scoreTeamPoints: score?.teamScore ?? null, scoreOpponentPoints: score?.opponentScore ?? null,
-              scoreLine: trade.line, scoreSide: trade.side, scoreComparison: score?.comparison || ('Kalshi settled ' + result),
-              resolvedAt, walletReturnConfirmed: won, walletReturnedAmount: payout, payout,
-            });
-            resolvedTrade = await updateTradeRecord(root, trade.id, {
-              status: won ? 'closed' : 'lost', outcome: won ? 'won' : 'lost',
-              resolutionStatus: 'resolved', resolutionResult: result,
-              resolutionMarketStatus: marketStatus || score?.status || 'FINAL',
-              resolutionSource, scoreVerified: resolutionSource === 'verified-final-score',
-              scoreEventId: score?.event?.eventId || null, scoreEventName: score?.event?.eventName || null,
-              scoreTeam: score?.team || trade.team, scoreOpponent: score?.opponent || trade.opponent,
-              scoreTeamPoints: score?.teamScore ?? null, scoreOpponentPoints: score?.opponentScore ?? null,
-              scoreLine: trade.line, scoreSide: trade.side, scoreComparison: score?.comparison || ('Kalshi settled ' + result),
-              resolvedAt, walletReturnConfirmed: won, walletReturnedAmount: payout, payout,
-            });
-          } else {
-            resolvedTrade = await updateTradeRecord(root, trade.id, {
-              status: won ? 'closed' : 'lost', outcome: won ? 'won' : 'lost',
-              resolutionStatus: 'resolved', resolutionResult: result,
-              resolutionMarketStatus: marketStatus || score?.status || 'FINAL',
-              resolutionSource, scoreVerified: resolutionSource === 'verified-final-score',
-              scoreEventId: score?.event?.eventId || null, scoreEventName: score?.event?.eventName || null,
-              scoreTeam: score?.team || trade.team, scoreOpponent: score?.opponent || trade.opponent,
-              scoreTeamPoints: score?.teamScore ?? null, scoreOpponentPoints: score?.opponentScore ?? null,
-              scoreLine: trade.line, scoreSide: trade.side, scoreComparison: score?.comparison || ('Kalshi settled ' + result),
-              resolvedAt, walletReturnConfirmed: won, walletReturnedAmount: payout, payout,
-            });
-          }
+          const resolvedTrade = await updateTradeRecord(root, trade.id, {
+            status: won ? 'closed' : 'lost', outcome: won ? 'won' : 'lost',
+            resolutionStatus: 'resolved', resolutionResult: result,
+            resolutionMarketStatus: marketStatus || score?.status || 'FINAL',
+            resolutionSource, scoreVerified: resolutionSource === 'verified-final-score',
+            scoreEventId: score?.event?.eventId || null, scoreEventName: score?.event?.eventName || null,
+            scoreTeam: score?.team || trade.team, scoreOpponent: score?.opponent || trade.opponent,
+            scoreTeamPoints: score?.teamScore ?? null, scoreOpponentPoints: score?.opponentScore ?? null,
+            scoreLine: trade.line, scoreSide: trade.side, scoreComparison: score?.comparison || ('Kalshi settled ' + result),
+            resolvedAt, walletReturnConfirmed: won, walletReturnedAmount: payout, payout,
+          });
           if (!resolvedTrade) continue;
           const profileTrades = (await readSeasonTrades(root, profile)).map((item) => item.id === trade.id ? resolvedTrade : item);
           if (won) {
