@@ -95,9 +95,17 @@ function scoreboardEvent(event, league) {
     homeTeam: names(home), awayTeam: names(away), homeScore: home?.score == null ? null : Number(home.score),
     awayScore: away?.score == null ? null : Number(away.score) };
 }
+function tickerScoreboardDate(game) {
+  const match = String(game?.ticker || '').match(/TEAMTOTAL-(\\d{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\\d{2})/i);
+  if (!match) return '';
+  const months = { JAN:'01', FEB:'02', MAR:'03', APR:'04', MAY:'05', JUN:'06', JUL:'07', AUG:'08', SEP:'09', OCT:'10', NOV:'11', DEC:'12' };
+  return '20' + match[1] + months[match[2].toUpperCase()] + match[3];
+}
 async function fetchScoreEvents(game) {
   const league = String(game.league || '').toUpperCase();
-  const start = Date.parse(game.gameTime || game.eventStartTime || '');
+  const tickerDate = tickerScoreboardDate(game);
+  const tickerDateMs = tickerDate ? Date.UTC(Number(tickerDate.slice(0,4)), Number(tickerDate.slice(4,6))-1, Number(tickerDate.slice(6,8)), 12) : NaN;
+  const start = Date.parse(game.gameTime || game.eventStartTime || '') || tickerDateMs;
   const dates = new Set();
   for (const offset of [-1,0,1]) {
     const date = new Date((Number.isFinite(start) ? start : Date.now()) + offset * 86400000);
@@ -111,7 +119,7 @@ async function fetchScoreEvents(game) {
       if (!response.ok) throw new Error('MLB scoreboard HTTP '+response.status);
       const data = await response.json();
       return (data.dates || []).flatMap((day) => (day.games || []).map((game) => ({
-        league, eventId:String(game.gamePk || ''), eventName:(game.teams?.away?.team?.name || '')+' at '+(game.teams?.home?.team?.name || ''),
+        _scoreboardDate: date.replace(/-/g,''), league, eventId:String(game.gamePk || ''), eventName:(game.teams?.away?.team?.name || '')+' at '+(game.teams?.home?.team?.name || ''),
         eventStartTime:game.gameDate || null,
         status:/final|completed/i.test(String(game.status?.detailedState || game.status?.abstractGameState || '')) ? 'FINAL' : /live|progress/i.test(String(game.status?.abstractGameState || game.status?.detailedState || '')) ? 'LIVE' : 'PRE',
         homeTeam:[game.teams?.home?.team?.name,game.teams?.home?.team?.clubName,game.teams?.home?.team?.teamName].filter(Boolean),
@@ -129,19 +137,26 @@ async function fetchScoreEvents(game) {
     const response = await fetch(url.toString(), { headers:{Accept:'application/json'} });
     if (!response.ok) throw new Error('ESPN scoreboard HTTP '+response.status);
     const data = await response.json();
-    return (data.events || []).map((event) => scoreboardEvent(event,league));
+    return (data.events || []).map((event) => ({ ...scoreboardEvent(event,league), _scoreboardDate: date }));
   }));
   return responses.flat();
 }
 async function resolveGameScore(game) {
   const team = String(game.team || '').trim(), opponent = String(game.opponent || '').trim();
   const line = Number(game.line), side = String(game.side || '').toUpperCase();
-  if (!team || !opponent || !Number.isFinite(line) || !['YES','NO'].includes(side))
-    return { ticker:game.ticker, verified:false, status:'UNKNOWN', error:'Missing team, opponent, numeric line, or YES/NO side.' };
+  if (!team || !Number.isFinite(line) || !['YES','NO'].includes(side))
+    return { ticker:game.ticker, verified:false, status:'UNKNOWN', error:'Missing team, numeric line, or YES/NO side.' };
   const events = await fetchScoreEvents(game);
-  const matches = events.filter((event) =>
-    (teamMatches(event.homeTeam,team) && teamMatches(event.awayTeam,opponent)) ||
-    (teamMatches(event.awayTeam,team) && teamMatches(event.homeTeam,opponent)));
+  const tickerDate = tickerScoreboardDate(game);
+  const matches = events.filter((event) => {
+    const teamIsHome = teamMatches(event.homeTeam,team);
+    const teamIsAway = teamMatches(event.awayTeam,team);
+    if (!teamIsHome && !teamIsAway) return false;
+    if (opponent) return (teamIsHome && teamMatches(event.awayTeam,opponent)) || (teamIsAway && teamMatches(event.homeTeam,opponent));
+    // Older paper selections did not persist opponent/gameTime. Restrict fallback
+    // matching to the exact date encoded in the Kalshi event ticker and require one game.
+    return !!tickerDate && event._scoreboardDate === tickerDate;
+  });
   if (matches.length !== 1) return { ticker:game.ticker, verified:false, status:'UNKNOWN', error:matches.length ? 'Multiple scoreboard events matched this matchup.' : 'No exact matchup found on the league scoreboard.', matchesFound:matches.length };
   const event = matches[0], teamIsHome = teamMatches(event.homeTeam,team);
   const teamScore = teamIsHome ? event.homeScore : event.awayScore;
