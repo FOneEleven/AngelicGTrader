@@ -18,7 +18,8 @@ Azure Function App: `angelicgtrader-dvhgf4dhc6hahqhs`
 |---|---|---|
 | `GET /api/GetKalshiMarkets` | Deployed and previously working | Reads current Kalshi sports markets through the existing Azure proxy. |
 | `GET /api/GetTeamStatistics` | Deployed and tested | Retrieves NFL/NBA team and opponent statistics from free ESPN public endpoints. |
-| `POST /api/AnalyzeMarket` | Deployed and tested | Sends market/statistics context to OpenAI Responses API and returns structured analysis. |\n| `POST /api/KalshiAccount` (`action: orders`) | Requires updated Azure deployment | Decrypts the saved credential envelope in memory and submits Kalshi V2 orders; trade-write permission is required. |
+| `POST /api/AnalyzeMarket` | Deployed and tested | Sends market/statistics context to OpenAI Responses API and returns structured analysis. |
+| `POST /api/KalshiAccount` (`action: orders`) | Requires updated Azure deployment | Decrypts the saved credential envelope in memory and submits Kalshi V2 orders; trade-write permission is required. |
 
 OpenAI uses model `gpt-6.2-sol` in the current Azure configuration. The OpenAI API key is stored only in Azure Function App settings as `OPENAI_API_KEY`; the model is configured by `OPENAI_MODEL`. Never put either secret in this repository or a Vite `VITE_*` variable.
 
