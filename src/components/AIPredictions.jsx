@@ -421,64 +421,99 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       if (risk === 'value') { gate.probability = Math.max(0.5, gate.probability - 0.02); gate.payout += 0.1; }
       let scannedLines = 0;
       let evaluatedSides = 0;
+      const selectionList = [];
+      const analysisByTicker = new Map();
+      const qualifies = (p, line, analysis, side, stats) => {
+        const probability = probabilityFor(analysis, side);
+        const ask = askFor(line, side);
+        const payout = ask > 0 ? 1 / ask : 0;
+        if (probability == null || ask == null) return null;
+        if (leagueFor(p) === 'MLB') {
+          if (!baseballEnabled || side !== 'NO' || analysis.mlbEligibility?.eligible !== true || probability < 0.90) return null;
+        } else {
+          if (mode === 'value' && !pieceQuotaFilled) return null;
+          if (mode === 'value') {
+            const knownPPG = Math.min(Number(stats.team?.pointsPerGame) || Infinity, Number(stats.team?.recent5PPG) || Number(stats.team?.pointsPerGame) || Infinity);
+            if (!Number.isFinite(knownPPG) || Number(line.line) > knownPPG * 0.9) return null;
+          }
+          if (mode === 'highroller') {
+            const teamPPG = Number(stats.team?.pointsPerGame) || 0;
+            const opponentPA = Number(stats.opponent?.pointsAllowedPerGame) || 0;
+            const shootout = leagueFor(p) === 'NFL' ? teamPPG >= 22 && opponentPA >= 22
+              : leagueFor(p) === 'NBA' ? teamPPG >= 110 && opponentPA >= 110 : false;
+            if (!shootout) return null;
+          }
+          if (probability < gate.probability || payout <= gate.payout) return null;
+        }
+        const edge = probability - ask;
+        if (edge <= 0) return null;
+        return {
+          predictionKey: p.key, index: p.lines.findIndex((item) => item.ticker === line.ticker),
+          ticker: line.ticker, event: p.event, team: p.team, league: p.league,
+          line: line.line, side, probability, ask, payoutMultiple: payout, edge,
+          strategy: mode, risk, qualifiedAt: new Date().toISOString(),
+        };
+      };
       for (const p of orderedPredictions) {
         const gameTime = p.gameTime || p.expectedExpiration || p.closeTime;
         if (gameTime && Number.isFinite(Date.parse(gameTime)) && Date.parse(gameTime) <= Date.now()) continue;
         const stats = statsByKey[p.key];
         if (!stats) continue;
-        for (let lineIndex = 0; lineIndex < p.lines.length; lineIndex += 1) {
-          const line = p.lines[lineIndex];
-          // Move the visible ladder slider to the line currently being evaluated.
-          setSliderIdx((old) => ({ ...old, [p.key]: lineIndex }));
-          setProgress('Evaluating ' + p.team + ' · line ' + line.line + ' · ' + p.league + ' · YES and NO');
-          const analysis = await analyzeSelectedLine(p, line);
-          scannedLines += 1;
-          if (!analysis?.prediction) continue;
-          const isBaseball = leagueFor(p) === 'MLB';
-          if (isBaseball && !baseballEnabled) continue;
-          // Baseball retains its dedicated NO-only strategy. NFL/NBA test both sides.
-          const sides = isBaseball ? ['NO'] : ['YES', 'NO'];
-          for (const side of sides) {
-            setSideByKey((old) => ({ ...old, [p.key]: side }));
-            evaluatedSides += 1;
-            const probability = probabilityFor(analysis, side);
-            const ask = askFor(line, side);
-            const payout = ask > 0 ? 1 / ask : 0;
-            if (probability == null || ask == null) continue;
-            
-            if (leagueFor(p) === 'MLB') {
-              if (analysis.mlbEligibility?.eligible !== true || probability < 0.90) continue;
-            } else {
-              if (mode === 'value' && !pieceQuotaFilled) continue;
-              if (mode === 'value') { const knownPPG = Math.min(Number(stats.team?.pointsPerGame) || Infinity, Number(stats.team?.recent5PPG) || Number(stats.team?.pointsPerGame) || Infinity); if (!Number.isFinite(knownPPG) || Number(line.line) > knownPPG * 0.9) continue; }
-              if (mode === 'highroller') {
-                const teamPPG = Number(stats.team?.pointsPerGame) || 0;
-                const opponentPA = Number(stats.opponent?.pointsAllowedPerGame) || 0;
-                const shootout = leagueFor(p) === 'NFL' ? teamPPG >= 22 && opponentPA >= 22
-                  : leagueFor(p) === 'NBA' ? teamPPG >= 110 && opponentPA >= 110 : false;
-                if (!shootout) continue;
-              }
-              if (probability < gate.probability || payout <= gate.payout) continue;
+        const isBaseball = leagueFor(p) === 'MLB';
+        if (isBaseball && !baseballEnabled) continue;
+
+        // Pass 1: YES travels from the low end of the ladder to the high end.
+        // Pass 2: NO starts at the opposite end and travels back toward the low end.
+        const sidePasses = isBaseball
+          ? [{ side: 'NO', indices: p.lines.map((_, index) => index).reverse() }]
+          : [
+              { side: 'YES', indices: p.lines.map((_, index) => index) },
+              { side: 'NO', indices: p.lines.map((_, index) => index).reverse() },
+            ];
+        for (const pass of sidePasses) {
+          for (const lineIndex of pass.indices) {
+            const line = p.lines[lineIndex];
+            setSliderIdx((old) => ({ ...old, [p.key]: lineIndex }));
+            setSideByKey((old) => ({ ...old, [p.key]: pass.side }));
+            setProgress('Scanning ' + p.team + ' · ' + pass.side + ' · line ' + line.line + ' · ' + (pass.side === 'YES' ? 'left to right' : 'right to left'));
+            let analysis = analysisByTicker.get(line.ticker);
+            if (!analysis) {
+              analysis = await analyzeSelectedLine(p, line);
+              if (analysis) analysisByTicker.set(line.ticker, analysis);
             }
-            const value = probability - ask;
-            if (!selected[p.key] || value > selected[p.key].value) selected[p.key] = { predictionKey: p.key, index: p.lines.findIndex((item) => item.ticker === line.ticker), ticker: line.ticker, event: p.event, team: p.team, league: p.league, line: line.line, side, value };
+            scannedLines += 1;
+            evaluatedSides += 1;
+            if (!analysis?.prediction) continue;
+            const candidate = qualifies(p, line, analysis, pass.side, stats);
+            if (candidate) {
+              selectionList.push(candidate);
+              setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'QUALIFIED · ' + p.team + ' · ' + pass.side + ' ' + line.line + ' · probability=' + Math.round(candidate.probability * 100) + '% · ask=' + Math.round(candidate.ask * 100) + '¢ · edge=' + Math.round(candidate.edge * 100) + '¢' }].slice(-40));
+            }
           }
         }
       }
-      const orderedSelections = Object.values(selected).sort((a, b) => {
-        const pa = orderedPredictions.find((p) => p.key === a.predictionKey);
-        const pb = orderedPredictions.find((p) => p.key === b.predictionKey);
-        return (Date.parse(pa?.gameTime || pa?.expectedExpiration || pa?.closeTime || '') || Infinity) - (Date.parse(pb?.gameTime || pb?.expectedExpiration || pb?.closeTime || '') || Infinity);
+
+      // Strategy-qualified games are the high-value pool. Apply the piece's
+      // risk preference a second time to choose one final play for this scan.
+      const rankedCandidates = [...selectionList].sort((a, b) => {
+        if (risk === 'probability') return b.probability - a.probability || b.edge - a.edge || b.payoutMultiple - a.payoutMultiple;
+        if (risk === 'value') return b.edge - a.edge || b.payoutMultiple - a.payoutMultiple || b.probability - a.probability;
+        // Balanced: favor edge, while using probability as the tie-breaker.
+        return b.edge - a.edge || b.probability - a.probability || b.payoutMultiple - a.payoutMultiple;
       });
-      setSliderIdx((old) => ({ ...old, ...Object.fromEntries(orderedSelections.map((item) => [item.predictionKey, item.index])) }));
-      setSideByKey((old) => ({ ...old, ...Object.fromEntries(orderedSelections.map((item) => [item.predictionKey, item.side])) }));
+      const finalSelection = rankedCandidates[0] || null;
+      const orderedSelections = finalSelection ? [finalSelection] : [];
+      if (finalSelection) {
+        setSliderIdx((old) => ({ ...old, [finalSelection.predictionKey]: finalSelection.index }));
+        setSideByKey((old) => ({ ...old, [finalSelection.predictionKey]: finalSelection.side }));
+      }
       const selectedLines = orderedSelections.map(({ predictionKey, ticker, event, team, league, line, side }) => ({ predictionKey, ticker, event, team, league, line, side }));
       const resolvedAt = new Date().toISOString();
-      const selectionResolution = { status: orderedSelections.length ? 'selected' : 'none', resolvedAt, checkedGames: orderedPredictions.length, scannedLines, evaluatedSides, selectedGames: orderedSelections.length, message: orderedSelections.length ? orderedSelections.length + ' qualifying game(s) found.' : 'No qualifying game found in the current dataset.' };
-      try { const updatedProfile = await updateSeasonProfile(root, seasonProfile.id, { selectedLines, selectionResolution }); setSeasonProfile(updatedProfile); } catch (e) { setError(e.message || 'Could not save piece selections'); }
+      const selectionResolution = { status: orderedSelections.length ? 'selected' : 'none', phase: 'complete', resolvedAt, checkedGames: orderedPredictions.length, scannedLines, evaluatedSides, qualifiedGames: [...new Set(selectionList.map((item) => item.predictionKey))].length, qualifiedCandidates: selectionList.length, selectionList, selectedGames: orderedSelections.length, selectedByRisk: risk, message: orderedSelections.length ? 'Selected 1 game from ' + selectionList.length + ' strategy-qualified candidate(s) using ' + risk + ' risk.' : 'No qualifying game found in the current dataset.' };
+      try { const updatedProfile = await updateSeasonProfile(root, seasonProfile.id, { selectionList, selectedLines, selectionResolution }); setSeasonProfile(updatedProfile); } catch (e) { setError(e.message || 'Could not save piece selections'); }
       if (orderedSelections.length) {
         setProgress('Selection resolved · ' + orderedSelections.length + ' qualifying game(s) found. Earliest upcoming game is first.');
-        setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SELECTION RESOLVED · scanned ' + scannedLines + ' lines and evaluated ' + evaluatedSides + ' side(s); ' + orderedSelections.length + ' qualifying game(s) saved to this piece.' }].slice(-40));
+        setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SELECTION RESOLVED · scanned ' + scannedLines + ' lines and evaluated ' + evaluatedSides + ' side(s); ' + orderedSelections.length + ' qualified candidate(s) saved to this piece; final selection=' + (finalSelection ? finalSelection.ticker + ' ' + finalSelection.side : 'none') + ' using risk=' + risk + '.' }].slice(-40));
         onActivity?.('WEEK_SCAN_COMPLETE', orderedSelections.length + ' qualifying selections found for ' + seasonProfile.name);
       } else {
         const message = 'No qualifying game found in the current dataset.';
