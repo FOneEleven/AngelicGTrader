@@ -46,6 +46,10 @@ export async function finalInterrogateCandidate({ candidate, market, teamStats, 
     // the YES probability itself remains base YES plus the server adjustment.
     const probabilityYes = Math.max(0, Math.min(1, baseProbabilityYes + yesAdjustment / 100));
     const assessment = String(review.interrogation.motivationAssessment || '');
+    const nflWeatherBenefit = isNflNo ? Number(review.audit?.weatherPenaltyPoints ?? review.audit?.weather?.penaltyPoints) || 0 : 0;
+    const sideAssessment = isNflNo
+      ? assessment + ' NFL NO perspective: defensive-weather benefit=+' + nflWeatherBenefit + ' pp; inverted total motivation adjustment=' + (displayedAdjustment > 0 ? '+' : '') + displayedAdjustment + ' pp.'
+      : assessment;
     return {
       ...review,
       interrogation: {
@@ -53,7 +57,7 @@ export async function finalInterrogateCandidate({ candidate, market, teamStats, 
         baseProbabilityYes,
         probabilityYes,
         motivationAdjustmentPoints: displayedAdjustment,
-        motivationAssessment: assessment + (isNflNo ? ' NFL NO perspective: inverted adjustment=' + (displayedAdjustment > 0 ? '+' : '') + displayedAdjustment + ' pp.' : ''),
+        motivationAssessment: sideAssessment,
       },
       audit: review.audit ? { ...review.audit, baseProbabilityYes, finalProbabilityYes: probabilityYes, yesProbabilityAdjustmentPoints: yesAdjustment, sideMotivationAdjustmentPoints: displayedAdjustment } : review.audit,
     };
