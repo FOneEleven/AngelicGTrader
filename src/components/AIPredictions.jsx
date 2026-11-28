@@ -105,7 +105,7 @@ function analysisKey(market, stats) {
   });
 }
 
-export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
+export default function AIPredictions({ dataFolder, onActivity, scanRequest, onQueueSelection, onScanResolved, autoPlayActive = false }) {
   const [markets, setMarkets] = useState([]);
   const [trades, setTrades] = useState([]);
   const [seasonProfile, setSeasonProfile] = useState(null);
@@ -188,11 +188,11 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
   const predictionDatasetSignature = JSON.stringify(predictions.map((p) => ({ key: p.key, event: p.event, opponent: eventOpponent(markets, p.event, p.team), gameTime: p.occurrenceTime || p.gameTime || null, lines: p.lines.map((line) => [line.ticker, line.line, line.yesAsk, line.noAsk]), recommended: p.recommended?.ticker || null })));
 
   useEffect(() => {
-    if (!root || !seasonProfile) return;
+    if (!root || !seasonProfile || !scanRequest?.requestId || scanRequest.profileId !== seasonProfile.id) return;
     const datasetSignature = predictionDatasetSignature;
     const previousRefresh = lastStatsRefreshRef.current;
-    if (previousRefresh && previousRefresh.root === root && previousRefresh.profileId === seasonProfile.id && previousRefresh.signature === datasetSignature) return;
-    const refreshRecord = { root, profileId: seasonProfile.id, signature: datasetSignature, cancelled: false, completed: false };
+    if (previousRefresh && previousRefresh.root === root && previousRefresh.profileId === seasonProfile.id && previousRefresh.requestId === scanRequest.requestId && previousRefresh.signature === datasetSignature) return;
+    const refreshRecord = { root, profileId: seasonProfile.id, requestId: scanRequest.requestId, signature: datasetSignature, cancelled: false, completed: false };
     lastStatsRefreshRef.current = refreshRecord;
     let cancelled = false;
     if (!markets.length || !predictions.length) {
@@ -351,7 +351,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
     // Do not cancel on effect cleanup: React StrictMode replays effects in development.
     // The signature guard above prevents duplicate refreshes for the same dataset.
     return undefined;
-  }, [root, predictionDatasetSignature, seasonProfile?.id, autoRetryCount]);
+  }, [root, predictionDatasetSignature, seasonProfile?.id, autoRetryCount, scanRequest?.requestId]);
 
   useEffect(() => {
     if (!autoRetryAt) return undefined;
@@ -400,12 +400,12 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
 
   useEffect(() => {
     const isAuto = seasonProfile?.auto === true;
-    if (scanRequest?.requestId && seasonProfile?.id !== scanRequest.profileId) return;
+    if (!scanRequest?.requestId || !seasonProfile || seasonProfile.id !== scanRequest.profileId) return;
     // Every completed dataset gets one piece-selection pass, even when Auto is off.
     // Auto controls only the 60-second retry after a no-selection result.
-    const attemptKey = (scanRequest?.requestId || ('dataset-' + seasonProfile?.id)) + ':' + autoRetryCount + ':' + predictionDatasetSignature;
+    const attemptKey = scanRequest.requestId + ':' + autoRetryCount + ':' + predictionDatasetSignature;
     if (handledScanRef.current === attemptKey) return;
-    if (!seasonProfile || !statsResolved) return;
+    if (!statsResolved) return;
     handledScanRef.current = attemptKey;
     if (autoRetryTimerRef.current) { window.clearTimeout(autoRetryTimerRef.current); autoRetryTimerRef.current = null; }
     setAutoRetryAt(null); setAutoRetrySeconds(0);
@@ -424,7 +424,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       const risk = seasonProfile.riskByWorthCondition?.[worthCondition] || '';
       const baseballEnabled = seasonProfile.baseballNoStrategy === true || seasonProfile.selectionStrategy === 'baseball-no';
       const gates = { standard: { probability: 0.76, payout: 1.34 }, value: { probability: 0.70, payout: 1.51 }, highroller: { probability: 0.61, payout: 1.67 } };
-      if (!mode || !risk) { setProgress('Piece is not ready for play: configure strategy and risk for its current worth condition.'); setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SCAN STOPPED · strategy or risk is not configured for ' + worthCondition }].slice(-40)); return; }
+      if (!mode || !risk) { setProgress('Piece is not ready for play: configure strategy and risk for its current worth condition.'); setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SCAN STOPPED · strategy or risk is not configured for ' + worthCondition }].slice(-40)); onScanResolved?.({ profileId: seasonProfile.id, selected: false, reason: 'strategy-not-configured' }); return; }
       const gate = { ...(gates[mode] || gates.standard) };
       if (risk === 'probability') { gate.payout = 1.20; }
       if (risk === 'value') { gate.probability = Math.max(0.5, gate.probability - 0.06); }
@@ -637,29 +637,39 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       const selectedLines = orderedSelections.map(({ predictionKey, ticker, event, team, league, line, side }) => ({ predictionKey, ticker, event, team, league, line, side }));
       const resolvedAt = new Date().toISOString();
       const selectionResolution = { status: orderedSelections.length ? 'selected' : 'none', phase: 'final-interrogation-complete', resolvedAt, checkedGames: orderedPredictions.length, scannedLines, evaluatedSides, qualifiedGames: [...new Set(selectionList.map((item) => item.predictionKey))].length, qualifiedCandidates: uniqueQualifiedCandidates.length, selectionList: finalSelectionList, selectedGames: orderedSelections.length, selectedByRisk: risk, finalInterrogation: true, keptCandidates: rankedCandidates.length, rejectedCandidates: interrogatedCandidates.filter((item) => item.finalVerdict === 'REJECT').length, reviewCandidates: interrogatedCandidates.filter((item) => item.finalVerdict === 'REVIEW').length, message: orderedSelections.length ? 'Selected 1 matchup-vetted game from ' + selectionList.length + ' strategy-qualified candidate(s).' : 'No candidate passed final matchup interrogation.' };
-      try { const updatedProfile = await updateSeasonProfile(root, seasonProfile.id, { selectionList: finalSelectionList, selectedLines, selectionResolution }); setSeasonProfile(updatedProfile); } catch (e) { setError(e.message || 'Could not save piece selections'); }
+      try {
+        const updatedProfile = await updateSeasonProfile(root, seasonProfile.id, { selectionList: finalSelectionList, selectionResolution });
+        setSeasonProfile(updatedProfile);
+        if (finalSelection) {
+          const stats = statsByKey[finalSelection.predictionKey] || {};
+          const selectedPrediction = orderedPredictions.find((item) => item.key === finalSelection.predictionKey);
+          const selectedMarket = selectedPrediction?.lines?.find((item) => item.ticker === finalSelection.ticker);
+          await onQueueSelection?.(updatedProfile, {
+            predictionKey: finalSelection.predictionKey, ticker: finalSelection.ticker,
+            event: finalSelection.event, team: finalSelection.team, league: finalSelection.league,
+            line: finalSelection.line, side: finalSelection.side,
+            market: finalSelection.team + ' over ' + finalSelection.line + (finalSelection.league === 'MLB' ? ' runs' : ' pts'),
+            matchup: finalSelection.team + ' vs ' + (stats.opponent?.name || 'opponent'),
+            price: finalSelection.ask * 100, probability: finalSelection.finalSideProbability,
+            modelProbability: finalSelection.finalSideProbability, marketProbability: finalSelection.ask,
+            edge: finalSelection.finalEdge, finalInterrogation: finalSelection.finalInterrogation,
+            resolutionDetails: finalSelection.finalInterrogation, source: 'ai-selection',
+          });
+        }
+      } catch (e) { setError(e.message || 'Could not save piece selection to Play Box'); throw e; }
       if (orderedSelections.length) {
         setProgress('Selection complete · 1 matchup-vetted game selected from ' + selectionList.length + ' qualified candidates; ' + rankedCandidates.length + ' passed final interrogation.');
         setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SELECTION RESOLVED · scanned ' + scannedLines + ' lines and evaluated ' + evaluatedSides + ' side(s); ' + interrogatedCandidates.length + ' qualified candidates interrogated and recorded; ' + rankedCandidates.length + ' passed final review; final selection=' + (finalSelection ? finalSelection.ticker + ' ' + finalSelection.side : 'none') + ' using risk=' + risk + '.' }].slice(-40));
-        onActivity?.('WEEK_SCAN_COMPLETE', '1 final selection chosen from ' + selectionList.length + ' qualified candidates for ' + seasonProfile.name);
+        onActivity?.('WEEK_SCAN_COMPLETE', '1 final selection queued in Play Box from ' + selectionList.length + ' qualified candidates for ' + seasonProfile.name);
+        onScanResolved?.({ profileId: seasonProfile.id, selected: true });
       } else {
         const message = selectionList.length ? 'No candidate passed final matchup interrogation.' : 'No qualifying game found in the current dataset.';
-        setProgress(message + (isAuto ? ' Next automatic scan in 60 seconds.' : ' Auto is off; waiting for the next manual scan.'));
+        setProgress(message + (isAuto ? ' Auto play stopped; returning to Dashboard.' : ' Returning to Dashboard.'));
         setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'NO SELECTION · checked ' + orderedPredictions.length + ' prediction entries and their available lines; none passed the scanner and final matchup safety review.' }].slice(-40));
-        if (isAuto) {
-          const retryAt = Date.now() + 60000;
-          setAutoRetryAt(retryAt); setAutoRetrySeconds(60);
-          autoRetryTimerRef.current = window.setTimeout(() => {
-            autoRetryTimerRef.current = null;
-            setAutoRetryAt(null); setAutoRetrySeconds(0);
-            lastStatsRefreshRef.current = null;
-            setStatsResolved(false);
-            setAutoRetryCount((value) => value + 1);
-          }, 60000);
-        }
+        onScanResolved?.({ profileId: seasonProfile.id, selected: false, reason: 'no-qualified-selection' });
       }
-    })().catch((e) => { setError(e.message || 'Weekly scan failed'); setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SCAN ERROR · ' + (e.message || String(e)) }].slice(-40)); });
-  }, [scanRequest, seasonProfile, predictions, predictionDatasetSignature, statsByKey, statsResolved, autoRetryCount]);
+    })().catch((e) => { setError(e.message || 'Weekly scan failed'); setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'SCAN ERROR · ' + (e.message || String(e)) }].slice(-40)); onScanResolved?.({ profileId: seasonProfile.id, selected: false, reason: 'scan-error' }); });
+  }, [scanRequest, seasonProfile, predictions, predictionDatasetSignature, statsByKey, statsResolved, autoRetryCount, onQueueSelection, onScanResolved]);
 
   function setSide(p, side) {
     setSideByKey((old) => ({ ...old, [p.key]: side }));
@@ -737,6 +747,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         <div><div className="eyebrow">WORKSPACE</div><h1>AI Predictions</h1><p>Scanner-selected team-total ladders with league-specific statistics, MLB batting-weather screening, and OpenAI probability analysis.</p></div>
         <div className="status-pill">{busy ? 'Analyzing markets' : 'Analysis ready'}</div>
       </div>
+      {autoPlayActive && <div className="notice auto-play-loading" role="status"><RefreshCw size={17} className="spin"/><div><b>Please wait while auto play resolves.</b><span>All navigation is disabled until this season piece finishes selection or reports failure.</span></div></div>}
       <div className="notice" style={{display:'block',marginBottom:12}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
           <div style={{display:'flex',alignItems:'center',gap:8}}><RefreshCw size={16}/><b>OpenAI ladder processing</b></div>
