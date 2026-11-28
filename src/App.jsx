@@ -80,7 +80,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
             },
           });
         }
-        const committed = trades.some((trade) => trade.week === currentWeek && /^(open|pending|placed)$/i.test(String(trade.status || '')));
+        const committed = trades.some((trade) => trade.week === currentWeek && /^(open|pending|placed|submitted)$/i.test(String(trade.status || '')));
         return { id: profile.id, profile: savedProfile, earnings: trades.reduce((sum, trade) => sum + (Number(trade.earnings ?? trade.profit) || 0), 0), committed };
       }));
       const currentProfiles = pieceEntries.map((entry) => entry.profile);
