@@ -292,7 +292,7 @@ export default function App() {
         const tradesByProfile = await Promise.all(activeProfiles.map(async (profile) => [profile, await readSeasonTrades(root, profile)]));
         const work = [];
         for (const [profile, trades] of tradesByProfile) {
-          const trackedTickers = new Set(trades.map((trade) => trade.ticker).filter(Boolean));
+          const trackedSelections = new Set(trades.filter((trade) => trade.ticker).map((trade) => String(trade.ticker) + '|' + String(trade.week || 'week1')));
           for (const trade of trades) {
             if (!trade.ticker || ['closed','resolved','lost','won','unfilled','cancelled','canceled'].includes(String(trade.status || '').toLowerCase()) ||
                 String(trade.resolutionStatus || '').toLowerCase() === 'resolved') continue;
@@ -302,7 +302,8 @@ export default function App() {
           // commit or a trades.txt row before resolution monitoring begins.
           if (profile.paperMode === true || (profile.selectedLines || []).some((line) => line?.paper === true)) {
             for (const selected of (profile.selectedLines || [])) {
-              if (!selected?.ticker || trackedTickers.has(selected.ticker) ||
+              const selectedWeek = selected?.week || profile.nextScheduledWeek || 'week1';
+              if (!selected?.ticker || trackedSelections.has(String(selected.ticker) + '|' + String(selectedWeek)) ||
                   ['won','lost','resolved'].includes(String(profile.selectionResolution?.status || '').toLowerCase())) continue;
               work.push({
                 profile, paper: true, source: 'selected-line',
@@ -316,7 +317,7 @@ export default function App() {
                   price: selected.price ?? selected.marketProbability * 100,
                   marketProbability: selected.marketProbability,
                   stake: Number(selected.stake ?? selected.allocation ?? profile.quotaValue ?? profile.initialBalance ?? profile.balance) || 0,
-                  paper: true, status: 'open', week: selected.week || profile.nextScheduledWeek || 'week1',
+                  paper: true, status: 'open', week: selectedWeek,
                   gameTime: selected.gameTime || null, selection: selected,
                 },
               });
@@ -368,7 +369,7 @@ export default function App() {
           let won = null;
           let resolutionSource = '';
           let result = '';
-          if (['yes','no'].includes(marketResult) && marketStatus && !['open','active','initialized','unopened','pending'].includes(marketStatus)) {
+          if (['yes','no'].includes(marketResult)) {
             const actualYes = marketResult === 'yes';
             won = String(trade.side).toUpperCase() === 'YES' ? actualYes : !actualYes;
             result = marketResult;
