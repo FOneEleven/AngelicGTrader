@@ -595,6 +595,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
             ticker: candidate.ticker, line: candidate.line, side: candidate.side,
             price: candidate.ask * 100, probability: candidate.probability,
             marketProbability: candidate.ask, edge: candidate.edge,
+            finalSideProbability: sideProbability, finalEdge: sideProbability - candidate.ask,
             payoutMultiple: candidate.payoutMultiple, strategy: candidate.strategy, risk: candidate.risk,
             status: 'qualified-' + verdict.toLowerCase(),
             finalVerdict: verdict, finalProbabilityYes: finalProbability,
