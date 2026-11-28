@@ -550,11 +550,13 @@ MATCHUP AND VERDICT:
     : 0;
   result.motivationAdjustmentPoints = expectedMotivationAdjustment;
   result.probabilityYes = Math.max(0, Math.min(1, baseProbabilityYes + expectedMotivationAdjustment / 100));
-  result.motivationAssessment = String(result.motivationAssessment || '').trim() ||
-    '0 pp — both-team percentile rule did not establish a matching band.';
-  if (!result.motivationAssessment.includes('pp')) {
-    result.motivationAssessment = expectedMotivationAdjustment + ' pp — ' + result.motivationAssessment;
-  }
+  const percentileSummary = 'Selected team=' + (teamRank == null ? 'unknown' : teamRank) +
+    'th percentile; opponent=' + (opponentRank == null ? 'unknown' : opponentRank) + 'th percentile.';
+  result.motivationAssessment = expectedMotivationAdjustment === -3
+    ? '-3 pp — both teams are in the top 22%. ' + percentileSummary
+    : expectedMotivationAdjustment === 3
+      ? '+3 pp — both teams are in the bottom 64%. ' + percentileSummary
+      : '0 pp — the teams do not both fall within the same qualifying percentile band, or a percentile is unavailable. ' + percentileSummary;
 
   // Percentile data is used only to calculate the motivation adjustment.
   // It is explicitly excluded from verdict and missing-data enforcement.
