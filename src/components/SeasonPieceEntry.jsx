@@ -21,7 +21,7 @@ const RISK_OPTIONS = [
 const money = (value) => '$' + (Number(value) || 0).toFixed(2);
 
 function getWorthState(profile, currentWorth) {
-  const original = Math.max(0, Number(profile.quotaValue ?? profile.initialBalance ?? profile.balance) || 0);
+  const original = Math.max(0, Number(profile.originalAllocation ?? profile.initialBalance ?? profile.balance ?? profile.quotaValue) || 0);
   const ratio = original > 0 ? currentWorth / original : 0;
   const condition = ratio >= 3 ? '3x' : ratio >= 2 ? '2x' : ratio >= 1 ? 'break-even' : 'pre-even';
   return { original, ratio, condition };
