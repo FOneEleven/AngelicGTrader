@@ -324,6 +324,7 @@ export default function App() {
               const baseWorth = Number(currentProfile.currentWorth ?? currentProfile.quotaValue ?? currentProfile.initialBalance ?? currentProfile.balance) || 0;
               currentProfile = await updateSeasonProfile(root, profile.id, {
                 currentWorth: Math.round((baseWorth + payout) * 100) / 100,
+                selectedLines: [],
                 lastPayout: payout,
                 lastResolvedAt: resolvedAt,
                 lastResolvedMatch: trade.matchup || trade.market || trade.ticker,
