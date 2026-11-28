@@ -537,8 +537,9 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       // Final interrogation is a separate post-qualification challenge. The
       // scanner's existing gates above remain untouched. Every qualified choice
       // is interrogated and written to Records/Prediction History before ranking.
+      const uniqueQualifiedCandidates = [...new Map(selectionList.map((candidate) => [candidate.ticker + '|' + candidate.side, candidate])).values()];
       const interrogatedCandidates = [];
-      for (const candidate of selectionList) {
+      for (const candidate of uniqueQualifiedCandidates) {
         const prediction = orderedPredictions.find((item) => item.key === candidate.predictionKey);
         const line = prediction?.lines?.find((item) => item.ticker === candidate.ticker);
         const stats = statsByKey[candidate.predictionKey];
@@ -626,7 +627,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       }
       const selectedLines = orderedSelections.map(({ predictionKey, ticker, event, team, league, line, side }) => ({ predictionKey, ticker, event, team, league, line, side }));
       const resolvedAt = new Date().toISOString();
-      const selectionResolution = { status: orderedSelections.length ? 'selected' : 'none', phase: 'final-interrogation-complete', resolvedAt, checkedGames: orderedPredictions.length, scannedLines, evaluatedSides, qualifiedGames: [...new Set(selectionList.map((item) => item.predictionKey))].length, qualifiedCandidates: selectionList.length, selectionList: finalSelectionList, selectedGames: orderedSelections.length, selectedByRisk: risk, finalInterrogation: true, keptCandidates: rankedCandidates.length, rejectedCandidates: interrogatedCandidates.filter((item) => item.finalVerdict === 'REJECT').length, reviewCandidates: interrogatedCandidates.filter((item) => item.finalVerdict === 'REVIEW').length, message: orderedSelections.length ? 'Selected 1 matchup-vetted game from ' + selectionList.length + ' strategy-qualified candidate(s).' : 'No candidate passed final matchup interrogation.' };
+      const selectionResolution = { status: orderedSelections.length ? 'selected' : 'none', phase: 'final-interrogation-complete', resolvedAt, checkedGames: orderedPredictions.length, scannedLines, evaluatedSides, qualifiedGames: [...new Set(selectionList.map((item) => item.predictionKey))].length, qualifiedCandidates: uniqueQualifiedCandidates.length, selectionList: finalSelectionList, selectedGames: orderedSelections.length, selectedByRisk: risk, finalInterrogation: true, keptCandidates: rankedCandidates.length, rejectedCandidates: interrogatedCandidates.filter((item) => item.finalVerdict === 'REJECT').length, reviewCandidates: interrogatedCandidates.filter((item) => item.finalVerdict === 'REVIEW').length, message: orderedSelections.length ? 'Selected 1 matchup-vetted game from ' + selectionList.length + ' strategy-qualified candidate(s).' : 'No candidate passed final matchup interrogation.' };
       try { const updatedProfile = await updateSeasonProfile(root, seasonProfile.id, { selectionList: finalSelectionList, selectedLines, selectionResolution }); setSeasonProfile(updatedProfile); } catch (e) { setError(e.message || 'Could not save piece selections'); }
       if (orderedSelections.length) {
         setProgress('Selection complete · 1 matchup-vetted game selected from ' + selectionList.length + ' qualified candidates; ' + rankedCandidates.length + ' passed final interrogation.');
