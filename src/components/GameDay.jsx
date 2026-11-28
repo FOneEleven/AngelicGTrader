@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Trophy, RefreshCw, Users, CalendarDays } from 'lucide-react';
 import SeasonPieceEntry from './SeasonPieceEntry';
-import { listSeasonProfiles, readSeasonTrades, updateSeasonProfile, advanceSeasonWeek, confirmedWalletReturns } from '../lib/dataModel';
+import { listSeasonProfiles, readSeasonTrades, updateSeasonProfile, advanceSeasonWeek, confirmedWalletReturns, readInactivePieces, removeInactivePiece } from '../lib/dataModel';
 
 const FILTERS = [{ id: 'active', label: 'Active' }, { id: 'all', label: 'All' }, { id: 'winners', label: 'Highest winners' }];
 const isLoss = (trade) => /^(lost|loss|settled_loss|settled-loss)$/i.test(String(trade.outcome || trade.status || '')) || Number(trade.earnings ?? trade.profit ?? 0) < 0;
@@ -53,17 +53,23 @@ export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigat
   const [hiddenIds, setHiddenIds] = useState([]);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState('');
+  const [inactivePieces, setInactivePieces] = useState([]);
 
   async function load() {
     if (!root) return;
     setError('');
     try {
       let nextProfiles = await listSeasonProfiles(root);
+      setInactivePieces(await readInactivePieces(root));
       const entries = await Promise.all(nextProfiles.map(async (profile) => [profile.id, await readSeasonTrades(root, profile)]));
       const map = Object.fromEntries(entries);
-      for (const profile of nextProfiles) {
-        if (profile.activePlayer !== false && (map[profile.id] || []).some(isLoss)) {
-          const updated = await updateSeasonProfile(root, profile.id, { activePlayer: false });
+      for (const profile of [...nextProfiles]) {
+        const profileTrades = map[profile.id] || [];
+        if (profileTrades.length === 0 && profile.nextScheduledWeek !== 'week1') {
+          const reset = await updateSeasonProfile(root, profile.id, { nextScheduledWeek: 'week1' });
+          nextProfiles = nextProfiles.map((p) => p.id === reset.id ? reset : p);
+        } else if (profile.activePlayer !== false && profileTrades.some(isLoss)) {
+          const updated = await updateSeasonProfile(root, profile.id, { activePlayer: false, status: 'inactive' });
           nextProfiles = nextProfiles.map((p) => p.id === updated.id ? updated : p);
         }
       }
@@ -77,7 +83,8 @@ export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigat
   const pieces = useMemo(() => profiles.map((profile) => {
     const trades = tradesByPiece[profile.id] || [];
     const walletReturned = confirmedWalletReturns(trades);
-    return { ...profile, trades, earnings: walletReturned, walletReturned };
+    const currentWorth = Number(profile.currentWorth ?? ((Number(profile.quotaValue ?? profile.initialBalance ?? profile.balance) || 0) + walletReturned));
+    return { ...profile, trades, earnings: currentWorth, walletReturned, currentWorth };
   }), [profiles, tradesByPiece]);
 
   const visiblePieces = useMemo(() => {
@@ -121,7 +128,7 @@ export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigat
       <div className="panel-heading"><div><h2>Earnings</h2><p>Confirmed money returned to the wallet by each season piece</p></div><div className="game-day-filters">{FILTERS.map((item) => <button key={item.id} className={`seg-btn ${filter === item.id ? 'active' : ''}`} onClick={() => setFilter(item.id)}>{item.label}</button>)}</div></div>
       <EarningsGraph pieces={visiblePieces}/>
       <div className="game-day-chart-foot"><span>{visiblePieces.length} pieces shown</span><button className="text-btn" onClick={() => { setHiddenIds([]); setFilter('all'); }}>Show all pieces</button></div>
-      <div className="game-day-piece-list">
+      <div className="game-day-piece-carousel" aria-label="Season pieces carousel">
         {visiblePieces.map((piece) => <SeasonPieceEntry
           key={piece.id}
           profile={piece}
@@ -134,6 +141,15 @@ export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigat
           onHide={(item) => setHiddenIds((old) => [...new Set([...old, item.id])])}
         />)}
       </div>
+    </section>
+    <section className="panel game-day-inactive">
+      <div className="panel-heading"><div><h2>Inactive piece set · {inactivePieces.length}</h2><p>Deactivated pieces retain their current worth and every match they participated in.</p></div></div>
+      {inactivePieces.length ? <div className="inactive-piece-grid">{inactivePieces.map((piece) => <article className="inactive-piece-card" key={piece.id}>
+        <div className="inactive-piece-card-top"><div><b>{piece.name}</b><small>Season {piece.season} · Deactivated {piece.inactiveSince ? new Date(piece.inactiveSince).toLocaleString() : ''}</small></div><strong>$ {Number(piece.currentWorth || 0).toFixed(2)} current worth</strong></div>
+        <p className="inactive-piece-reason">{piece.inactiveReason || 'Inactive'}</p>
+        <div className="inactive-piece-matches"><b>Matches participated · {(piece.participatedMatches || []).length}</b>{(piece.participatedMatches || []).map((match) => <div className="inactive-piece-match" key={match.id}><span>{match.matchup || match.market || match.ticker}</span><small>{match.side} {match.line ?? ''} · {match.outcome || match.status} · payout $ {Number(match.payout || 0).toFixed(2)}</small></div>)}</div>
+        <button className="danger-text-btn" disabled={busyId === piece.id} onClick={async () => { setBusyId(piece.id); try { setInactivePieces(await removeInactivePiece(root, piece.id)); } catch (e) { setError(e.message || 'Could not remove inactive piece'); } finally { setBusyId(''); } }}>Remove</button>
+      </article>)}</div> : <div className="empty-state"><b>No inactive pieces</b><span>Pieces that lose a settled selection will appear here.</span></div>}
     </section>
     <section className="panel game-day-schedule">
       <div className="panel-heading"><div><h2>Next scheduled week</h2><p>Only records linked to their own season piece appear here.</p></div><CalendarDays size={18}/></div>
