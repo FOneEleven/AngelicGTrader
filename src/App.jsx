@@ -381,7 +381,7 @@ export default function App() {
                 activePlayer: false,
                 status: 'inactive',
                 inactiveSince: resolvedAt,
-                inactiveReason: 'Market settled ' + result.toUpperCase() + '; selected ' + String(trade.side).toUpperCase() + ' did not win.',
+                inactiveReason: market.comparison + ' · actual score ' + market.team + ' ' + market.teamScore + ' vs ' + market.opponent + ' ' + market.opponentScore + '; selected ' + String(trade.side).toUpperCase() + ' did not win.',
                 selectionResolution: { ...(currentProfile.selectionResolution || {}), status: 'lost', phase: 'market-settled', resolvedAt, result, message: 'Selected contract did not satisfy the settled market result.' },
               });
               await archiveInactivePiece(root, currentProfile, profileTrades, currentProfile.inactiveReason);
