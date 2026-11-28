@@ -68,16 +68,21 @@ export function computePredictions(markets, opts = {}) {
         lines: [],
       });
     }
-    ladders.get(key).lines.push({
-      ticker: m.ticker,
-      line,
-      yesAsk: m.yesAsk,
-      yesBid: m.yesBid,
-      noAsk: m.noAsk ?? (m.yesBid == null ? null : 1 - m.yesBid),
-      noBid: m.noBid ?? (m.yesAsk == null ? null : 1 - m.yesAsk),
-      openInterest: m.openInterest,
-      volume24h: m.volume24h,
-    });
+    const ladderLines = ladders.get(key).lines;
+    // Market feeds/cache can contain the same ticker more than once. Keep one
+    // row per contract so the scanner cannot evaluate or log duplicate rungs.
+    if (!ladderLines.some((existing) => existing.ticker === m.ticker)) {
+      ladderLines.push({
+        ticker: m.ticker,
+        line,
+        yesAsk: m.yesAsk,
+        yesBid: m.yesBid,
+        noAsk: m.noAsk ?? (m.yesBid == null ? null : 1 - m.yesBid),
+        noBid: m.noBid ?? (m.yesAsk == null ? null : 1 - m.yesAsk),
+        openInterest: m.openInterest,
+        volume24h: m.volume24h,
+      });
+    }
   }
 
   const cliffRows = [];
