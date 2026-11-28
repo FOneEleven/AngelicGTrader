@@ -70,6 +70,7 @@ function scheduleDefence(events, opponentId) {
     allowed.push(pointsAllowed);
     games.push({ date: event.date || comp.date || null, opponent: other.team?.displayName || other.team?.name || 'Unknown', pointsAllowed, pointsScored, result: pointsScored > pointsAllowed ? 'W' : 'L' });
   }
+  games.sort((a, b) => (Date.parse(a.date || '') || 0) - (Date.parse(b.date || '') || 0));
   const recent = games.slice(-10);
   const avg = values => values.length ? values.reduce((a,b)=>a+b,0)/values.length : null;
   return {
