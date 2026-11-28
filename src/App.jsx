@@ -309,8 +309,17 @@ export default function App() {
         }
         const scoreGames = pending.map(({ profile, trade }) => {
           const selected = profile.selectedLines?.find((line) => line.ticker === trade.ticker) || {};
-          const matchup = String(trade.matchup || selected.event || '').split(/\\s+vs\\.?\\s+/i);
-          return { ticker: trade.ticker, league: trade.league || selected.league || String(trade.ticker || '').match(/^KX([A-Z]+)TEAMTOTAL-/i)?.[1] || '', team: trade.team || selected.team || String(trade.market || '').replace(/\\s+over\\s+.*$/i, '').trim(), opponent: trade.opponent || selected.opponent || matchup[1] && matchup[0] && matchup[0].toLowerCase().includes(String(trade.team || selected.team || '').toLowerCase()) ? matchup[1] : matchup[0], line: trade.line ?? selected.line, side: trade.side, gameTime: trade.gameTime || selected.gameTime || null };
+          const team = trade.team || selected.team || String(trade.market || '').replace(/\\s+over\\s+.*$/i, '').trim();
+          const matchupParts = String(trade.matchup || selected.event || '').split(/\\s+vs\\.?\\s+/i);
+          const opponent = trade.opponent || selected.opponent || (matchupParts.length > 1
+            ? (matchupParts[0].toLowerCase().includes(String(team).toLowerCase()) ? matchupParts[1] : matchupParts[0])
+            : '');
+          return {
+            ticker: trade.ticker,
+            league: trade.league || selected.league || String(trade.ticker || '').match(/^KX([A-Z]+)TEAMTOTAL-/i)?.[1] || '',
+            team, opponent, line: trade.line ?? selected.line, side: trade.side,
+            gameTime: trade.gameTime || selected.gameTime || null,
+          };
         });
         const scoreResults = await fetchGameScoreResolutions(scoreGames);
         const marketByTicker = new Map(scoreResults.map((result) => [result.ticker, result]));
