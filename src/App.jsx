@@ -370,13 +370,13 @@ export default function App() {
         console.warn('Season resolution check failed:', error);
       } finally {
         running = false;
-        if (!cancelled && changed) handleActivity();
+        if (!cancelled && changed) setRefreshKey((value) => value + 1);
       }
     };
     checkResolutions();
     const timer = window.setInterval(checkResolutions, 60_000);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [dataFolder, handleActivity]);
+  }, [dataFolder]);
 
 
 
