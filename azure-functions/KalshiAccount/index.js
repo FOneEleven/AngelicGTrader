@@ -41,11 +41,11 @@ function normalizePem(value, settingName) {
     .trim();
   // Azure can flatten a PEM into one line. Rebuild the standard PEM boundaries
   // and 64-character Base64 lines without changing the decoded key bytes.
-  const match = pem.match(/^-----BEGIN ([A-Z0-9 ]+)-----([\\s\\S]*?)-----END ([A-Z0-9 ]+)-----$/);
+  const match = pem.match(/^-----BEGIN ([A-Z0-9 ]+)-----([\s\S]*?)-----END ([A-Z0-9 ]+)-----$/);
   if (!match || match[1] !== match[3]) {
     throw new Error(settingName + ' is not a complete PEM key. Include matching BEGIN/END lines.');
   }
-  const body = match[2].replace(/\\s/g, '');
+  const body = match[2].replace(/\s/g, '');
   if (!body || !/^[A-Za-z0-9+/]+={0,2}$/.test(body)) {
     throw new Error(settingName + ' contains an invalid PEM Base64 body.');
   }
@@ -54,7 +54,7 @@ function normalizePem(value, settingName) {
     throw new Error(settingName + ' contains invalid PEM Base64 data.');
   }
   const lines = body.match(/.{1,64}/g) || [];
-  return '-----BEGIN ' + match[1] + '-----\\n' + lines.join('\\n') + '\\n-----END ' + match[3] + '-----';
+  return '-----BEGIN ' + match[1] + '-----\n' + lines.join('\n') + '\n-----END ' + match[3] + '-----';
 }
 function decryptCredential(envelope, setStage) {
   setStage('parse Azure RSA private key');
