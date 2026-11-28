@@ -122,7 +122,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
     try {
       await onAddToPlayBox?.(profile, {
         id: record.id, sourceRecordId: record.id, ticker: record.ticker,
-        event: record.event || record.matchup || '', team: String(record.team || record.market || '').replace(/\\s+over\\s+.*$/i, '').trim(),
+        event: record.event || record.matchup || '', team: String(record.team || record.market || '').replace(/\s+over\s+.*$/i, '').trim(),
         league: record.league || String(record.ticker || '').match(/^KX([A-Z]+)TEAMTOTAL-/i)?.[1] || '', line: record.line ?? null, side: record.side || '',
         market: record.market || '', matchup: record.matchup || '',
         price, probability: Number(record.probability ?? record.modelProbability) || 0,
