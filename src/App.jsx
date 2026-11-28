@@ -16,7 +16,7 @@ import PredictionHistory from './components/PredictionHistory';
 import SeasonPieceEntry from './components/SeasonPieceEntry';
 import { readSettings, writeSettings, readDashboardRecords, deleteTrade, listSeasonProfiles, updateSeasonProfile, advanceSeasonWeek, readSeasonTrades, appendTrade, clearDashboardRecords, readPlayBox, writePlayBox, updateTradeRecord, archiveInactivePiece } from './lib/dataModel';
 import { readCache, isCacheFresh, appendCacheBatch } from './lib/marketCache';
-import { fetchSportsMarkets, submitKalshiOrders, fetchMarketResolutions } from './lib/kalshi';
+import { fetchSportsMarkets, submitKalshiOrders, fetchMarketResolutions, fetchKalshiOrderStatuses } from './lib/kalshi';
 
 const nav = [
   { label: 'Dashboard', icon: LayoutDashboard, group: 'WORKSPACE' },
@@ -271,6 +271,22 @@ export default function App() {
         const pending = tradesByProfile.flatMap(([profile, trades]) => trades
           .filter((trade) => trade.ticker && !['closed', 'resolved', 'lost', 'won'].includes(String(trade.status || '').toLowerCase()) && String(trade.resolutionStatus || '').toLowerCase() !== 'resolved')
           .map((trade) => ({ profile, trade })));
+        const liveOrderIds = pending.filter(({ trade }) => !trade.paper && trade.orderId).map(({ trade }) => trade.orderId);
+        if (liveOrderIds.length) {
+          try {
+            const orderStatuses = await fetchKalshiOrderStatuses(root, liveOrderIds);
+            const orderById = new Map(orderStatuses.map((order) => [order.orderId, order]));
+            for (const entry of pending) {
+              if (entry.trade.paper || !entry.trade.orderId) continue;
+              const order = orderById.get(entry.trade.orderId);
+              if (!order || order.error) continue;
+              entry.trade = { ...entry.trade, fillCount: order.fill_count, remainingCount: order.remaining_count };
+              await updateTradeRecord(root, entry.trade.id, { fillCount: order.fill_count, remainingCount: order.remaining_count, kalshiOrderStatus: order.status });
+            }
+          } catch (orderError) {
+            console.warn('Kalshi live fill verification failed:', orderError);
+          }
+        }
         const markets = await fetchMarketResolutions(pending.map(({ trade }) => trade.ticker));
         const marketByTicker = new Map(markets.map((market) => [market.ticker, market]));
         for (const [profile, trades] of tradesByProfile) {
