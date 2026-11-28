@@ -538,18 +538,31 @@ MATCHUP AND VERDICT:
   const allowedAdjustments = [3, -3, 0];
   const motivationAdjustmentPoints = allowedAdjustments.includes(proposedAdjustment) ? proposedAdjustment : 0;
   result.baseProbabilityYes = baseProbabilityYes;
-  result.motivationAdjustmentPoints = motivationAdjustmentPoints;
-  result.probabilityYes = Math.max(0, Math.min(1, baseProbabilityYes + motivationAdjustmentPoints / 100));
+  result.teamPercentile = Number.isFinite(Number(result.teamPercentile)) && result.teamPercentile >= 0 && result.teamPercentile <= 100
+    ? Number(result.teamPercentile) : null;
+  result.opponentPercentile = Number.isFinite(Number(result.opponentPercentile)) && result.opponentPercentile >= 0 && result.opponentPercentile <= 100
+    ? Number(result.opponentPercentile) : null;
+  const teamRank = result.teamPercentile;
+  const opponentRank = result.opponentPercentile;
+  const expectedMotivationAdjustment = teamRank == null || opponentRank == null ? 0
+    : teamRank >= 78 && opponentRank >= 78 ? -3
+    : teamRank <= 64 && opponentRank <= 64 ? 3
+    : 0;
+  result.motivationAdjustmentPoints = expectedMotivationAdjustment;
+  result.probabilityYes = Math.max(0, Math.min(1, baseProbabilityYes + expectedMotivationAdjustment / 100));
   result.motivationAssessment = String(result.motivationAssessment || '').trim() ||
-    '0 pp — no concrete motivation evidence was returned; no adjustment applied.';
+    '0 pp — both-team percentile rule did not establish a matching band.';
   if (!result.motivationAssessment.includes('pp')) {
-    result.motivationAssessment = motivationAdjustmentPoints + ' pp — ' + result.motivationAssessment;
+    result.motivationAssessment = expectedMotivationAdjustment + ' pp — ' + result.motivationAssessment;
   }
 
-  // Opponent percentile is a motivation input only. It must never override
-  // the model's matchup verdict or turn a candidate into REVIEW/REJECT.
+  // Percentile data is used only to calculate the motivation adjustment.
+  // It is explicitly excluded from verdict and missing-data enforcement.
+  result.missingData = (result.missingData || []).filter((item) =>
+    !/percentile/i.test(String(item))
+  );
   if (!['A', 'B'].includes(result.matchupGrade) && verdict === 'KEEP') verdict = 'REJECT';
-  if (result.missingData?.length && verdict === 'KEEP') verdict = 'REVIEW';
+  if (result.missingData.length && verdict === 'KEEP') verdict = 'REVIEW';
 
   return {
     verdict,
@@ -589,7 +602,9 @@ MATCHUP AND VERDICT:
       currentAsk,
       currentPayoutMultiple: Number.isFinite(currentPayout) ? currentPayout : null,
       teamPercentileMotivationBands: { top22Threshold: 78, bottom64Threshold: 64 },
-      motivationAdjustmentPoints,
+      teamPercentile: result.teamPercentile,
+      opponentPercentile: result.opponentPercentile,
+      motivationAdjustmentPoints: expectedMotivationAdjustment,
       motivationAssessment: result.motivationAssessment,
       baseProbabilityYes,
       finalProbabilityYes: result.probabilityYes,
