@@ -421,7 +421,7 @@ export default function App() {
           let resolvedTrade = trade;
           if (source === 'selected-line') {
             await appendTrade(root, profile.season, trade.week, {
-              ...trade, id: trade.id, timestamp: resolvedAt, source: 'paper-selected-line',
+              ...trade, id: trade.id, timestamp: resolvedAt, source: 'paper-selected-line', seasonPieceId: profile.id,
               status: won ? 'closed' : 'lost', outcome: won ? 'won' : 'lost',
               resolutionStatus: 'resolved', resolutionResult: result,
               resolutionMarketStatus: marketStatus || score?.status || 'FINAL',
