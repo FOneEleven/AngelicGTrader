@@ -412,6 +412,8 @@ export async function appendQualifiedCandidate(root, candidate) {
       finalInterrogation: candidate.finalInterrogation || null,
       finalVerdict: candidate.finalVerdict || 'REVIEW',
       finalProbabilityYes: candidate.finalProbabilityYes ?? null,
+      motivationAdjustmentPoints: candidate.finalInterrogation?.interrogation?.motivationAdjustmentPoints ?? 0,
+      motivationAssessment: candidate.finalInterrogation?.interrogation?.motivationAssessment || 'Not supplied by final interrogation.',
     }),
   ].join('\t');
   const lines = existing.split('\n').filter(Boolean);
