@@ -4,7 +4,7 @@
 const { app } = require('@azure/functions');
 
 const OPENAI_URL = 'https://api.openai.com/v1/responses';
-const MODEL = process.env.OPENAI_MODEL || 'gpt-6.2-astra';
+const MODEL = String(process.env.OPENAI_MODEL || '').trim();
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -134,6 +134,7 @@ function outputText(response) {
 }
 async function interrogate(input) {
   if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is not configured');
+  if (!MODEL) throw new Error('OPENAI_MODEL is not configured. Set OPENAI_MODEL in the Azure Function App settings to the model identifier enabled for your OpenAI API key.');
   const instructions = `
 You are the final matchup-risk reviewer for AngelicGTrader. This is a second-stage challenge of a candidate that already passed the existing scanner. Do not change or reinterpret the scanner's original qualification gates; decide whether matchup evidence is strong enough to retain the candidate.
 
