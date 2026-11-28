@@ -538,9 +538,9 @@ MATCHUP AND VERDICT:
   const allowedAdjustments = [3, -3, 0];
   const motivationAdjustmentPoints = allowedAdjustments.includes(proposedAdjustment) ? proposedAdjustment : 0;
   result.baseProbabilityYes = baseProbabilityYes;
-  result.teamPercentile = Number.isFinite(Number(result.teamPercentile)) && result.teamPercentile >= 0 && result.teamPercentile <= 100
+  result.teamPercentile = result.teamPercentile != null && Number.isFinite(Number(result.teamPercentile)) && Number(result.teamPercentile) >= 0 && Number(result.teamPercentile) <= 100
     ? Number(result.teamPercentile) : null;
-  result.opponentPercentile = Number.isFinite(Number(result.opponentPercentile)) && result.opponentPercentile >= 0 && result.opponentPercentile <= 100
+  result.opponentPercentile = result.opponentPercentile != null && Number.isFinite(Number(result.opponentPercentile)) && Number(result.opponentPercentile) >= 0 && Number(result.opponentPercentile) <= 100
     ? Number(result.opponentPercentile) : null;
   const teamRank = result.teamPercentile;
   const opponentRank = result.opponentPercentile;
