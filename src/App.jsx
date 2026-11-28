@@ -310,7 +310,7 @@ export default function App() {
         const scoreGames = pending.map(({ profile, trade }) => {
           const selected = profile.selectedLines?.find((line) => line.ticker === trade.ticker) || {};
           const team = trade.team || selected.team || String(trade.market || '').replace(/\s+over\s+.*$/i, '').trim();
-          const matchupParts = String(trade.matchup || selected.event || '').split(/\s+vs\\.?\s+/i);
+          const matchupParts = String(trade.matchup || selected.event || '').split(/\s+vs\.?\s+/i);
           const opponent = trade.opponent || selected.opponent || (matchupParts.length > 1
             ? (matchupParts[0].toLowerCase().includes(String(team).toLowerCase()) ? matchupParts[1] : matchupParts[0])
             : '');
