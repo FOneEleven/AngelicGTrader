@@ -61,6 +61,22 @@ export async function fetchMarketResolutions(tickers = []) {
 }
 
 
+export async function fetchGameScoreResolutions(games = []) {
+  const unique = (games || []).filter((game) => game?.ticker);
+  if (!unique.length) return [];
+  const results = [];
+  for (let offset = 0; offset < unique.length; offset += 20) {
+    const url = new URL(BASE);
+    url.searchParams.set('action', 'score-resolve');
+    url.searchParams.set('games', JSON.stringify(unique.slice(offset, offset + 20)));
+    const response = await fetch(url.toString(), { headers: { Accept: 'application/json' }, cache: 'no-store' });
+    if (!response.ok) throw new Error('Game score lookup failed with HTTP ' + response.status + '.');
+    const payload = await response.json();
+    if (Array.isArray(payload.results)) results.push(...payload.results);
+  }
+  return results;
+}
+
 export async function fetchKalshiOrderStatuses(root, orderIds = []) {
   if (!root) throw new Error('Local data folder is unavailable.');
   const unique = [...new Set((orderIds || []).filter((id) => typeof id === 'string' && id.trim()))];
