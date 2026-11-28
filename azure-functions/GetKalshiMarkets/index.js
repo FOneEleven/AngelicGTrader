@@ -96,7 +96,7 @@ function scoreboardEvent(event, league) {
     awayScore: away?.score == null ? null : Number(away.score) };
 }
 function tickerScoreboardDate(game) {
-  const match = String(game?.ticker || '').match(/TEAMTOTAL-(\\d{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\\d{2})/i);
+  const match = String(game?.ticker || '').match(/TEAMTOTAL-([0-9]{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)([0-9]{2})/i);
   if (!match) return '';
   const months = { JAN:'01', FEB:'02', MAR:'03', APR:'04', MAY:'05', JUN:'06', JUL:'07', AUG:'08', SEP:'09', OCT:'10', NOV:'11', DEC:'12' };
   return '20' + match[1] + months[match[2].toUpperCase()] + match[3];
