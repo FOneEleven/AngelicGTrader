@@ -53,6 +53,23 @@ function decryptCredential(envelope, setStage) {
     if (rsaPrivateKey.asymmetricKeyType !== 'rsa' && rsaPrivateKey.asymmetricKeyType !== 'rsa-pss') {
       throw new Error('Expected an RSA private key; received ' + rsaPrivateKey.asymmetricKeyType + '.');
     }
+
+    // Verify Azure holds the private half of the exact public key used by the frontend.
+    // Compare DER-encoded SubjectPublicKeyInfo bytes; never log or return key material.
+    setStage('validate Azure RSA public/private key pair');
+    const configuredPublicPem = normalizePem(
+      process.env.KALSHI_ENCRYPTION_PUBLIC_KEY,
+      'KALSHI_ENCRYPTION_PUBLIC_KEY'
+    );
+    const configuredPublicKey = crypto.createPublicKey({ key: configuredPublicPem, format: 'pem' });
+    const derivedPublicDer = crypto.createPublicKey(rsaPrivateKey).export({ type: 'spki', format: 'der' });
+    const configuredPublicDer = configuredPublicKey.export({ type: 'spki', format: 'der' });
+    if (
+      derivedPublicDer.length !== configuredPublicDer.length ||
+      !crypto.timingSafeEqual(derivedPublicDer, configuredPublicDer)
+    ) {
+      throw new Error('Azure RSA private key does not match KALSHI_ENCRYPTION_PUBLIC_KEY used by the frontend.');
+    }
   } catch (error) {
     error.message = 'Azure RSA private-key configuration is invalid: ' + error.message;
     throw error;
