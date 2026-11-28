@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Trophy, RefreshCw, Users, CalendarDays } from 'lucide-react';
 import SeasonPieceEntry from './SeasonPieceEntry';
-import { listSeasonProfiles, readSeasonTrades, updateSeasonProfile, advanceSeasonWeek, confirmedWalletReturns, readInactivePieces, removeInactivePiece } from '../lib/dataModel';
+import { listSeasonProfiles, readSeasonTrades, updateSeasonProfile, advanceSeasonWeek, confirmedWalletReturns, readInactivePieces, removeInactivePiece, readPlayBox, writePlayBox } from '../lib/dataModel';
 
 const FILTERS = [{ id: 'active', label: 'Active' }, { id: 'all', label: 'All' }, { id: 'winners', label: 'Highest winners' }];
 const isLoss = (trade) => /^(lost|loss|settled_loss|settled-loss)$/i.test(String(trade.outcome || trade.status || '')) || Number(trade.earnings ?? trade.profit ?? 0) < 0;
@@ -63,15 +63,28 @@ export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigat
       setInactivePieces(await readInactivePieces(root));
       const entries = await Promise.all(nextProfiles.map(async (profile) => [profile.id, await readSeasonTrades(root, profile)]));
       const map = Object.fromEntries(entries);
+      const firstWeekProfiles = new Set();
       for (const profile of [...nextProfiles]) {
         const profileTrades = map[profile.id] || [];
-        if (profileTrades.length === 0 && profile.nextScheduledWeek !== 'week1') {
-          const reset = await updateSeasonProfile(root, profile.id, { nextScheduledWeek: 'week1' });
+        const hasResolvedWin = profileTrades.some((trade) => trade.outcome === 'won' || (trade.resolutionStatus === 'resolved' && trade.walletReturnConfirmed === true));
+        if (!hasResolvedWin && profile.nextScheduledWeek !== 'week1') {
+          const selectedLines = (profile.selectedLines || []).map((line) => ({ ...line, week: 'week1' }));
+          const reset = await updateSeasonProfile(root, profile.id, {
+            nextScheduledWeek: 'week1',
+            selectedLines,
+            selectionResolution: { ...(profile.selectionResolution || {}), week: 'week1' },
+          });
           nextProfiles = nextProfiles.map((p) => p.id === reset.id ? reset : p);
+          firstWeekProfiles.add(profile.id);
         } else if (profile.activePlayer !== false && profileTrades.some(isLoss)) {
           const updated = await updateSeasonProfile(root, profile.id, { activePlayer: false, status: 'inactive' });
           nextProfiles = nextProfiles.map((p) => p.id === updated.id ? updated : p);
         }
+      }
+      if (firstWeekProfiles.size) {
+        const queue = await readPlayBox(root);
+        const normalizedQueue = queue.map((item) => firstWeekProfiles.has(item.profileId) ? { ...item, week: 'week1' } : item);
+        if (normalizedQueue.some((item, index) => item !== queue[index])) await writePlayBox(root, normalizedQueue);
       }
       setProfiles(nextProfiles);
       setTradesByPiece(map);
@@ -155,7 +168,7 @@ export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigat
       <div className="panel-heading"><div><h2>Next scheduled week</h2><p>Only records linked to their own season piece appear here.</p></div><CalendarDays size={18}/></div>
       {visiblePieces.filter((p) => p.activePlayer !== false).map((piece) => {
         const matches = piece.trades.filter((trade) => trade.week === (piece.nextScheduledWeek || 'week1'));
-        return <div className="game-day-schedule-piece" key={piece.id}><div><b>{piece.name}</b><small>{piece.nextScheduledWeek || 'week1'}</small></div>{matches.length ? matches.map((trade) => <div className="game-day-match" key={trade.id}><b>{trade.matchup}</b><span>{trade.market} · {trade.side} · {trade.status}</span></div>) : piece.selectedLines?.[0]?.playBoxStatus === 'in-play-box' ? <div className="game-day-match"><b>{piece.selectedLines[0].team || piece.selectedLines[0].event || piece.selectedLines[0].ticker}</b><span>{piece.selectedLines[0].league} · {piece.selectedLines[0].line} · {piece.selectedLines[0].side} · IN PLAY BOX</span></div> : <span className="game-day-no-matches">No records assigned to this piece for this week yet.</span>}</div>;
+        return <div className="game-day-schedule-piece" key={piece.id}><div><b>{piece.name}</b><small>{piece.nextScheduledWeek || 'week1'}</small></div>{matches.length ? matches.map((trade) => <div className="game-day-match" key={trade.id}><b>{trade.matchup}</b><span>{trade.market} · {trade.side} · {trade.status}</span></div>) : piece.selectedLines?.[0] ? <div className="game-day-match"><b>{piece.selectedLines[0].team || piece.selectedLines[0].event || piece.selectedLines[0].ticker}</b><span>{piece.selectedLines[0].league} · {piece.selectedLines[0].line} · {piece.selectedLines[0].side} · {piece.selectedLines[0].playBoxStatus === 'in-play-box' ? 'IN PLAY BOX' : 'MATCH PENDING'}</span></div> : <span className="game-day-no-matches">No records assigned to this piece for this week yet.</span>}</div>;
       })}
       {!visiblePieces.some((p) => p.activePlayer !== false) && <div className="empty-state"><Users size={22}/><b>No active pieces in this view</b></div>}
     </section>
