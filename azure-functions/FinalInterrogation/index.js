@@ -90,6 +90,19 @@ function injuryList(data) {
     return { player: athlete.displayName || athlete.fullName || item.name || 'Unknown player', position: athlete.position?.abbreviation || athlete.position?.name || '', status: String(status), detail: String(detail).slice(0,240) };
   }).slice(0,40);
 }
+const teamEvidenceCache = new Map();
+function fetchTeamEvidenceCached(league, teamName, season) {
+  const key = [league, season, norm(teamName)].join('|');
+  if (!teamEvidenceCache.has(key)) {
+    const pending = fetchTeamEvidence(league, teamName, season).catch((error) => {
+      teamEvidenceCache.delete(key);
+      throw error;
+    });
+    teamEvidenceCache.set(key, pending);
+  }
+  return teamEvidenceCache.get(key);
+}
+
 async function fetchTeamEvidence(league, teamName, season) {
   const path = LEAGUE_PATH[league];
   const teamsData = await espnJson(ESPN + '/' + path + '/teams?limit=1000');
@@ -170,8 +183,8 @@ app.http('FinalInterrogation', {
       if (!LEAGUE_PATH[league]) return { status: 422, headers: CORS, jsonBody: { error: 'league must be NBA, NFL, or MLB' } };
       const season = Number(body.season) || new Date().getFullYear();
       const [opponentEvidenceResult, teamEvidenceResult] = await Promise.allSettled([
-        fetchTeamEvidence(league, market.opponent || opponentStats.name, season),
-        fetchTeamEvidence(league, market.team || teamStats.name, season),
+        fetchTeamEvidenceCached(league, market.opponent || opponentStats.name, season),
+        fetchTeamEvidenceCached(league, market.team || teamStats.name, season),
       ]);
       const evidence = {
         opponentDefense: opponentEvidenceResult.status === 'fulfilled' ? opponentEvidenceResult.value : { error: opponentEvidenceResult.reason.message, defense: null, injuries: [] },
