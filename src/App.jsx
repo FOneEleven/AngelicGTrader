@@ -318,7 +318,7 @@ export default function App() {
             ticker: trade.ticker,
             league: trade.league || selected.league || String(trade.ticker || '').match(/^KX([A-Z]+)TEAMTOTAL-/i)?.[1] || '',
             team, opponent, line: trade.line ?? selected.line, side: trade.side,
-            gameTime: trade.gameTime || selected.gameTime || null,
+            gameTime: trade.gameTime || selected.gameTime || trade.resolutionDetails?.scoreboard?.eventStartTime || trade.resolutionDetails?.scoreboard?.event?.eventStartTime || null,
           };
         });
         const scoreResults = await fetchGameScoreResolutions(scoreGames);
