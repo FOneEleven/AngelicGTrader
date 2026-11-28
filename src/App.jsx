@@ -12,6 +12,7 @@ import Recommendations from './components/Recommendations';
 import LiveMarketScanner from './components/LiveMarketScanner';
 import AIPredictions from './components/AIPredictions';
 import GameDay from './components/GameDay';
+import PredictionHistory from './components/PredictionHistory';
 import SeasonPieceEntry from './components/SeasonPieceEntry';
 import { readSettings, writeSettings, readTrades, readAllRecords, deleteTrade, listSeasonProfiles, updateSeasonProfile, advanceSeasonWeek, readSeasonTrades } from './lib/dataModel';
 import { WEEKS } from './lib/dataFolder';
@@ -246,6 +247,9 @@ export default function App() {
         {active === 'AI Predictions' && (
           <AIPredictions dataFolder={dataFolder} onActivity={handleActivity} scanRequest={scanRequest} />
         )}
+        {active === 'Prediction History' && (
+          <PredictionHistory dataFolder={dataFolder} refreshKey={refreshKey} />
+        )}
         {active === 'Game Day' && (
           <GameDay dataFolder={dataFolder} onActivity={handleActivity} onStartWeek={handleStartWeek} onNavigate={setActive} />
         )}
@@ -257,6 +261,7 @@ export default function App() {
           && active !== 'AI Predictions'
           && active !== 'Season Manager'
           && active !== 'Game Day'
+          && active !== 'Prediction History'
           && <Placeholder page={active} />}
       </div>
       <footer>
