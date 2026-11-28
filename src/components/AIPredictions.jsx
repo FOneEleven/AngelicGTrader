@@ -597,7 +597,8 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         }
         setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'FINAL INTERROGATION · ' + candidate.team + ' · ' + candidate.side + ' ' + candidate.line + ' · verdict=' + verdict + ' · final side probability=' + (sideProbability * 100).toFixed(1) + '%' + (reviewError ? ' · error=' + reviewError : '') }].slice(-40));
       }
-      if (interrogatedCandidates.length) onActivity?.('CANDIDATES_INTERROGATED', interrogatedCandidates.length + ' qualified candidates saved to Records and Prediction History for ' + seasonProfile.name);\n      const rankedCandidates = interrogatedCandidates.filter((item) => item.finalVerdict === 'KEEP').sort((a, b) => {
+      if (interrogatedCandidates.length) onActivity?.('CANDIDATES_INTERROGATED', interrogatedCandidates.length + ' qualified candidates saved to Records and Prediction History for ' + seasonProfile.name);
+      const rankedCandidates = interrogatedCandidates.filter((item) => item.finalVerdict === 'KEEP').sort((a, b) => {
         if (risk === 'probability') return b.finalSideProbability - a.finalSideProbability || b.edge - a.edge || b.payoutMultiple - a.payoutMultiple;
         if (risk === 'value') return b.edge - a.edge || b.payoutMultiple - a.payoutMultiple || b.finalSideProbability - a.finalSideProbability;
         return b.edge - a.edge || b.finalSideProbability - a.finalSideProbability || b.payoutMultiple - a.payoutMultiple;
