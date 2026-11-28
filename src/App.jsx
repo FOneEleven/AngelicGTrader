@@ -253,7 +253,7 @@ export default function App() {
     readPlayBox(dataFolder.handle).then(setPlayBox).catch(() => setPlayBox([]));
   }, [dataFolder, refreshKey]);
 
-  const ladderKeyFor = (item) => [item.event || String(item.ticker || '').replace(/-[^-]+$/, ''), item.team || '', item.league || ''].join('|').toLowerCase();
+  const ladderKeyFor = (item) => [String(item.ticker || '').replace(/-[^-]+$/, '') || item.event || item.matchup || '', item.team || '', item.league || ''].join('|').toLowerCase();
   const handleAddToPlayBox = useCallback(async (profile, selection) => {
     if (!dataFolder?.handle || !profile?.id) throw new Error('Connect a data folder and select a season piece first.');
     if (profile.paperMode !== true) throw new Error('Live orders are not enabled yet. No order was sent.');
@@ -266,10 +266,11 @@ export default function App() {
     const week = profile.nextScheduledWeek || 'week1';
     if (trades.some((trade) => trade.week === week && /^(open|pending|placed|submitted)$/i.test(String(trade.status || '')))) throw new Error('This piece already has a committed bet for this week.');
     const item = {
+      ...selection,
       id: 'play-' + (globalThis.crypto?.randomUUID?.() || Date.now() + '-' + Math.random().toString(16).slice(2)),
       profileId: profile.id, pieceName: profile.name, season: profile.season, week,
       paper: true, allocation: Math.round(Number(profile.quotaValue ?? profile.initialBalance ?? profile.balance) * 100) / 100,
-      addedAt: new Date().toISOString(), ladderKey, ...selection,
+      addedAt: new Date().toISOString(), ladderKey,
     };
     const next = [...current, item];
     await writePlayBox(dataFolder.handle, next);
