@@ -816,8 +816,8 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
                       value={idx}
                       style={{flex:'1 1 auto',width:130,minWidth:0,margin:0}}
                       onChange={(e)=>{setSliderIdx((old)=>({...old,[p.key]:Number(e.target.value)}));}}
-                      onPointerUp={(e)=>{setReassessPredictionKey(p.key);commitSliderSelection(p,e.currentTarget.value);}}
-                      onKeyUp={(e)=>{if(['ArrowLeft','ArrowRight','Home','End','PageUp','PageDown'].includes(e.key)){setReassessPredictionKey(p.key);commitSliderSelection(p,e.currentTarget.value);}}}
+                      onPointerUp={(e)=>{commitSliderSelection(p,e.currentTarget.value);}}
+                      onKeyUp={(e)=>{if(['ArrowLeft','ArrowRight','Home','End','PageUp','PageDown'].includes(e.key)){commitSliderSelection(p,e.currentTarget.value);}}}
                     />
                     <span className="line-value" style={{display:'inline-block',width:48,minWidth:48,textAlign:'right',fontVariantNumeric:'tabular-nums',flexShrink:0}}>{chosen?.line ?? '—'}</span>
                   </div>
