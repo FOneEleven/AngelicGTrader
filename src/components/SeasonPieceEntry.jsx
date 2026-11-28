@@ -65,10 +65,11 @@ export default function SeasonPieceEntry({ profile, earnings = 0, onUpdate, onSt
 
   return <article className={`season-piece-card ${profile.activePlayer === false ? 'season-inactive' : ''} ${compact ? 'season-piece-card-compact' : ''}`}>
     {onHide && <button className="remove-piece-btn" title="Remove piece from this graph" onClick={() => onHide(profile)}><X size={14}/></button>}
+    {profile.activePlayer === false && <div className="season-piece-retired-banner">RETIRED</div>}
     <div className="season-piece-art"><SeasonToken pieceType={profile.pieceType} baseColor={profile.baseColor} size={compact ? 76 : 92}/></div>
     <div className="season-piece-info">
       <b>{profile.name}</b>
-      <span>Season {profile.season} · {profile.paperMode ? 'Paper' : 'Live'} · {profile.activePlayer === false ? 'Inactive' : 'Active'}</span>
+      <span>Season {profile.season} · {profile.paperMode ? 'Paper' : 'Live'} · {profile.activePlayer === false ? 'Retired' : 'Active'}</span>
       <strong>{money(currentWorth)} current worth</strong>
       <small>Original allocation {money(worth.original)} · {worth.ratio.toFixed(2)}× of starting value</small>
       <small>{profile.pieceType} · {profile.baseName} base · {profile.strategy || 'midpoint'} ladder</small>
