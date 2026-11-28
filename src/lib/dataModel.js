@@ -387,6 +387,43 @@ export async function writeAIPredictionSelections(root, selections) {
 }
 
 
+// Save every scanner-qualified candidate after its final matchup interrogation.
+// These are review/history entries, not trades: they are not added to weekly trades
+// and therefore cannot affect piece worth or wallet-return accounting.
+export async function appendQualifiedCandidate(root, candidate) {
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  const filename = 'records.txt';
+  const file = await metaDir.getFileHandle(filename, { create: true });
+  const existing = await (await file.getFile()).text().catch(() => '');
+  const id = candidate.id || ('qualified-' + candidate.seasonPieceId + '-' + candidate.ticker + '-' + candidate.side);
+  const row = [
+    id, candidate.timestamp || new Date().toISOString(), candidate.matchup || '',
+    candidate.market || '', candidate.side || '', Math.round(Number(candidate.price) || 0),
+    Math.round((Number(candidate.probability) || 0) * 100), 0, 'paper',
+    candidate.status || 'qualified-review',
+    JSON.stringify({
+      isQualifiedCandidate: true, ticker: candidate.ticker || null,
+      line: candidate.line ?? null, marketProbability: candidate.marketProbability ?? null,
+      modelProbability: candidate.probability ?? null, edge: candidate.edge ?? null,
+      payoutMultiple: candidate.payoutMultiple ?? null, seasonPieceId: candidate.seasonPieceId || null,
+      season: candidate.season ?? null, week: candidate.week || null,
+      strategy: candidate.strategy || null, risk: candidate.risk || null,
+      baselineAnalysis: candidate.baselineAnalysis || null,
+      finalInterrogation: candidate.finalInterrogation || null,
+      finalVerdict: candidate.finalVerdict || 'REVIEW',
+      finalProbabilityYes: candidate.finalProbabilityYes ?? null,
+    }),
+  ].join('\\t');
+  const lines = existing.split('\\n').filter(Boolean);
+  const header = '# id\\ttimestamp\\tmatchup\\tmarket\\tside\\tprice\\tprobability\\tstake\\tpaper\\tstatus\\tmetadata_json';
+  const withoutPrevious = lines.filter((line) => line.startsWith('#') || line.split('\\t')[0] !== id);
+  if (!withoutPrevious.some((line) => line.startsWith('#'))) withoutPrevious.unshift(header);
+  const writer = await file.createWritable();
+  await writer.write(withoutPrevious.join('\\n') + '\\n' + row + '\\n');
+  await writer.close();
+  return { ...candidate, id, isQualifiedCandidate: true };
+}
+
 // Read the canonical record feed shared by every dashboard view.
 export async function readAllRecords(root) {
   const metaDir = await root.getDirectoryHandle(META, { create: true });
