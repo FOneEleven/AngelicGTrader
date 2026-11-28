@@ -14,7 +14,7 @@ import AIPredictions from './components/AIPredictions';
 import GameDay from './components/GameDay';
 import PredictionHistory from './components/PredictionHistory';
 import SeasonPieceEntry from './components/SeasonPieceEntry';
-import { readSettings, writeSettings, readDashboardRecords, deleteTrade, listSeasonProfiles, updateSeasonProfile, advanceSeasonWeek, readSeasonTrades, appendTrade, clearDashboardRecords, readPlayBox, writePlayBox, updateTradeRecord, archiveInactivePiece } from './lib/dataModel';
+import { readSettings, writeSettings, readDashboardRecords, deleteTrade, listSeasonProfiles, updateSeasonProfile, advanceSeasonWeek, readSeasonTrades, appendTrade, clearDashboardRecords, readPlayBox, writePlayBox, updateTradeRecord, archiveInactivePiece, confirmedWalletReturns } from './lib/dataModel';
 import { readCache, isCacheFresh, appendCacheBatch } from './lib/marketCache';
 import { fetchSportsMarkets, submitKalshiOrders, fetchGameScoreResolutions, fetchKalshiOrderStatuses } from './lib/kalshi';
 
@@ -82,12 +82,12 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
         }
         const committed = trades.some((trade) => trade.week === currentWeek && /^(open|pending|placed|submitted)$/i.test(String(trade.status || '')));
         const confirmedReturns = trades.reduce((sum, trade) => sum + (trade.walletReturnConfirmed === true ? (Number(trade.walletReturnedAmount) || 0) : 0), 0);
-        const currentWorth = Number(savedProfile.currentWorth ?? ((Number(savedProfile.quotaValue ?? savedProfile.initialBalance ?? savedProfile.balance) || 0) + confirmedReturns));
+        const currentWorth = Number(savedProfile.currentWorth ?? confirmedWalletReturns(trades));
         return { id: profile.id, profile: savedProfile, earnings: currentWorth, committed };
       }));
       const currentProfiles = pieceEntries.map((entry) => entry.profile);
       if (!cancelled) {
-        setSeasonProfiles(currentProfiles);
+        setSeasonProfiles(currentProfiles.filter((profile) => profile.activePlayer !== false && String(profile.status || 'active').toLowerCase() === 'active'));
         setPieceEarnings(Object.fromEntries(pieceEntries.map((entry) => [entry.id, entry.earnings])));
         setPieceCommitments(Object.fromEntries(pieceEntries.map((entry) => [entry.id, entry.committed])));
       }
@@ -365,7 +365,7 @@ export default function App() {
             if (!updatedTrade) continue;
             profileTrades = profileTrades.map((item) => item.id === trade.id ? updatedTrade : item);
             if (won) {
-              const baseWorth = Number(currentProfile.currentWorth ?? currentProfile.quotaValue ?? currentProfile.initialBalance ?? currentProfile.balance) || 0;
+              const baseWorth = confirmedWalletReturns(profileTrades);
               currentProfile = await updateSeasonProfile(root, profile.id, {
                 currentWorth: Math.round((baseWorth + payout) * 100) / 100,
                 selectedLines: [],
@@ -380,6 +380,8 @@ export default function App() {
               currentProfile = await updateSeasonProfile(root, profile.id, {
                 activePlayer: false,
                 status: 'inactive',
+                currentWorth: confirmedWalletReturns(profileTrades),
+                selectedLines: [],
                 inactiveSince: resolvedAt,
                 inactiveReason: market.comparison + ' · actual score ' + market.team + ' ' + market.teamScore + ' vs ' + market.opponent + ' ' + market.opponentScore + '; selected ' + String(trade.side).toUpperCase() + ' did not win.',
                 selectionResolution: { ...(currentProfile.selectionResolution || {}), status: 'lost', phase: 'market-settled', resolvedAt, result, message: 'Selected contract did not satisfy the settled market result.' },
