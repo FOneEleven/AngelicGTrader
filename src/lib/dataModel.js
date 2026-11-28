@@ -430,7 +430,7 @@ export async function appendQualifiedCandidate(root, candidate) {
 // Weekly trade files are deliberately preserved for season accounting and history.
 export async function clearDashboardRecords(root) {
   const metaDir = await root.getDirectoryHandle(META, { create: true });
-  await writeText(metaDir, 'dashboard-records-reset.txt', new Date().toISOString() + '\\n');
+  await writeText(metaDir, 'dashboard-records-reset.txt', new Date().toISOString() + '\n');
   return true;
 }
 
