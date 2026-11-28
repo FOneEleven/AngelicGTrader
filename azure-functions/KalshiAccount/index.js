@@ -7,6 +7,18 @@
 const { app } = require('@azure/functions');
 const crypto = require('node:crypto');
 
+const FRONTEND_RSA_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAwzojGUp+VnFSok7Tv2fs
+d/pOgvRcAnHaYHgro+yLINB8HESEf+SxLAzXQBwmPZQzvv/E8+uQMOkbxyPEoRIL
+A/qqE5EXxO/mzOUbja1BGmOr0H6B0FZjAB+yZz64buqxzIrLkZddk1q4SoC9wIa1
+UqvH9bIdZYeRde32F8SAZqjKuT0fyPYEQKZiadm5SjfWjGYapM7SPvyzdc8GgMRT
+mTiA0fuIJVfrnC5ALM5xcfPDJNjpJ4JkEbm431UkU9bjoNAXrXkuLyPC7zVcFvzq
+hvcK3H1VDDvf57BipJa8yXYRZbRGpzRyTXdH+NXXNXzfZpydJ+DuN1/hFj8Zxm4Z
+2I5ThGZvaUVc3HJ+iuCIU7p7Rg/SJSKnSJPdbA/ak0sGiN1vVSAU7bs21BG4wVf3
+Au8De12KuzchZVnxsRL33iPcUgXxI5wamIvUIo7IuM2Uq43OW4kHZ+ZtTwYa1tZ/
+e+M+J4AWuRwGu4zl90T+NnoSP3tBm4mLcDqmoO/77nWvAgMBAAE=
+-----END PUBLIC KEY-----`;
+
 const PREFIX = '/trade-api/v2';
 const HOSTS = {
   production: 'https://external-api.kalshi.com',
@@ -100,11 +112,14 @@ function decryptCredential(envelope, setStage) {
     const configuredPublicKey = crypto.createPublicKey({ key: configuredPublicPem, format: 'pem' });
     const derivedPublicDer = crypto.createPublicKey(rsaPrivateKey).export({ type: 'spki', format: 'der' });
     const configuredPublicDer = configuredPublicKey.export({ type: 'spki', format: 'der' });
-    if (
-      derivedPublicDer.length !== configuredPublicDer.length ||
-      !crypto.timingSafeEqual(derivedPublicDer, configuredPublicDer)
-    ) {
-      throw new Error('Azure RSA private key does not match KALSHI_ENCRYPTION_PUBLIC_KEY used by the frontend.');
+    const frontendPublicKey = crypto.createPublicKey({ key: FRONTEND_RSA_PUBLIC_KEY, format: 'pem' });
+    const frontendPublicDer = frontendPublicKey.export({ type: 'spki', format: 'der' });
+    const sameKey = (a, b) => a.length === b.length && crypto.timingSafeEqual(a, b);
+    if (!sameKey(configuredPublicDer, frontendPublicDer)) {
+      throw new Error('Azure KALSHI_ENCRYPTION_PUBLIC_KEY does not match the public key embedded in KalshiConnect.jsx.');
+    }
+    if (!sameKey(derivedPublicDer, frontendPublicDer)) {
+      throw new Error('Azure KALSHI_ENCRYPTION_PRIVATE_KEY does not match the public key embedded in KalshiConnect.jsx.');
     }
   } catch (error) {
     error.message = 'Azure RSA private-key configuration is invalid: ' + error.message;
