@@ -45,7 +45,7 @@ function EarningsGraph({ pieces }) {
   </div>;
 }
 
-export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigate }) {
+export default function GameDay({ dataFolder, refreshKey, onActivity, onStartWeek, onNavigate }) {
   const root = dataFolder?.handle;
   const [profiles, setProfiles] = useState([]);
   const [tradesByPiece, setTradesByPiece] = useState({});
@@ -105,7 +105,7 @@ export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigat
     } catch (e) { setError(e.message || 'Could not load Game Day data'); }
   }
 
-  useEffect(() => { load(); }, [root]);
+  useEffect(() => { load(); }, [root, refreshKey]);
 
   const activePieces = useMemo(() => profiles.filter((profile) => profile.activePlayer !== false && String(profile.status || 'active').toLowerCase() === 'active').map((profile) => {
     const trades = tradesByPiece[profile.id] || [];
