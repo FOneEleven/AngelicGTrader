@@ -27,7 +27,19 @@ function normalizePem(value, settingName) {
   if (typeof value !== 'string' || !value.trim()) {
     throw new Error(settingName + ' is missing.');
   }
-  const pem = value.trim().replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\r/g, '\n');
+  // Azure App Settings may preserve a BOM, surrounding quotes, escaped newlines,
+  // or platform-specific line endings. Normalize only the PEM container formatting;
+  // never alter the key material itself.
+  let pem = value.replace(/^\\uFEFF/, '').trim();
+  if ((pem.startsWith('"') && pem.endsWith('"')) || (pem.startsWith("'") && pem.endsWith("'"))) {
+    pem = pem.slice(1, -1).trim();
+  }
+  pem = pem
+    .replace(/\\\\r\\\\n/g, '\n')
+    .replace(/\\\\n/g, '\n')
+    .replace(/\\\\r/g, '\n')
+    .replace(/\\r\\n?/g, '\n')
+    .trim();
   if (!pem.includes('-----BEGIN ') || !pem.includes('-----END ')) {
     throw new Error(settingName + ' is not a complete PEM key. Include the BEGIN/END lines.');
   }
