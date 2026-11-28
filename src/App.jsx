@@ -117,6 +117,27 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
         source: 'dashboard-record',
       };
       await appendTrade(dataFolder.handle, profile.season, week, trade);
+      const selectedTeam = String(record.team || record.market || '').replace(/\\s+over\\s+.*$/i, '').trim();
+      const selectedLine = {
+        predictionKey: record.predictionKey || null,
+        ticker: record.ticker,
+        event: record.event || record.matchup || '',
+        team: selectedTeam,
+        league: record.league || '',
+        line: record.line ?? null,
+        side: record.side || '',
+        sourceRecordId: record.id,
+        placedTradeId: trade.id,
+      };
+      const updatedProfile = await updateSeasonProfile(dataFolder.handle, profile.id, {
+        selectedLines: [selectedLine],
+        selectionResolution: {
+          ...(profile.selectionResolution || {}),
+          status: 'selected', phase: 'placed-from-dashboard', resolvedAt: new Date().toISOString(),
+          selectedGames: 1, message: 'Bet placed from Dashboard and linked to this season piece.',
+        },
+      });
+      setSeasonProfiles((old) => old.map((item) => item.id === updatedProfile.id ? updatedProfile : item));
       setPlacedRecordIds((old) => old.includes(record.id) ? old : [...old, record.id]);
       setRecords((old) => old.map((item) => item.id === record.id ? { ...item, placedPieceId: profile.id, placedTradeId: trade.id } : item));
       setPieceCommitments((old) => ({ ...old, [profile.id]: true }));
@@ -168,7 +189,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
               const selectedId = selectedPieceByRecord[r.id] || '';
               const selectedPiece = eligiblePieces.find((p) => p.id === selectedId);
               const committed = selectedPiece ? pieceCommitments[selectedPiece.id] === true : false;
-              const alreadyPlaced = !!r.placedTradeId || placedRecordIds.includes(r.id) || (!!r.seasonPieceId && !r.isQualifiedCandidate);
+              const alreadyPlaced = !!r.placedTradeId || placedRecordIds.includes(r.id);
               const canPlacePaper = selectedPiece?.paperMode === true && !committed && !alreadyPlaced && !!r.ticker && price > 0 && price < 100;
               return <tr key={r.id}>
                 <td>{new Date(r.timestamp).toLocaleString()}</td><td>{r.matchup}</td><td>{r.market}</td><td>{r.side}</td>
