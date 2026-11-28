@@ -253,6 +253,32 @@ export default function App() {
     readPlayBox(dataFolder.handle).then(setPlayBox).catch(() => setPlayBox([]));
   }, [dataFolder, refreshKey]);
 
+
+
+  const groups = ['WORKSPACE'];
+  const filtered = nav;
+
+  useEffect(() => {
+    if (!dataFolder?.handle) return;
+    readSettings(dataFolder.handle).then(async (s) => {
+      const nextMode = kalshiAccount?.connected ? !!s.paperMode : true;
+      setPaperMode(nextMode);
+      if (!kalshiAccount?.connected && !s.paperMode) await writeSettings(dataFolder.handle, { paperMode: true });
+    }).catch(() => {});
+  }, [dataFolder, kalshiAccount]);
+
+  const handlePaperToggle = useCallback(async (next) => {
+    if (!kalshiAccount?.connected && next === false) return;
+    setPaperMode(next);
+    if (dataFolder?.handle) {
+      try { await writeSettings(dataFolder.handle, { paperMode: next }); } catch {}
+    }
+  }, [dataFolder, kalshiAccount]);
+
+  const handleActivity = useCallback(() => {
+    setRefreshKey((k) => k + 1);
+  }, []);
+
   const ladderKeyFor = (item) => [String(item.ticker || '').replace(/-[^-]+$/, '') || item.event || item.matchup || '', item.team || '', item.league || ''].join('|').toLowerCase();
   const handleAddToPlayBox = useCallback(async (profile, selection) => {
     if (!dataFolder?.handle || !profile?.id) throw new Error('Connect a data folder and select a season piece first.');
@@ -340,30 +366,6 @@ export default function App() {
   const handleScanResolved = useCallback(() => {
     setAutoPlayLock(false); setScanRequest(null); setActive('Dashboard'); handleActivity();
   }, [handleActivity]);
-
-  const groups = ['WORKSPACE'];
-  const filtered = nav;
-
-  useEffect(() => {
-    if (!dataFolder?.handle) return;
-    readSettings(dataFolder.handle).then(async (s) => {
-      const nextMode = kalshiAccount?.connected ? !!s.paperMode : true;
-      setPaperMode(nextMode);
-      if (!kalshiAccount?.connected && !s.paperMode) await writeSettings(dataFolder.handle, { paperMode: true });
-    }).catch(() => {});
-  }, [dataFolder, kalshiAccount]);
-
-  const handlePaperToggle = useCallback(async (next) => {
-    if (!kalshiAccount?.connected && next === false) return;
-    setPaperMode(next);
-    if (dataFolder?.handle) {
-      try { await writeSettings(dataFolder.handle, { paperMode: next }); } catch {}
-    }
-  }, [dataFolder, kalshiAccount]);
-
-  const handleActivity = useCallback(() => {
-    setRefreshKey((k) => k + 1);
-  }, []);
 
   const handleStartWeek = useCallback(async (profile) => {
     if (!dataFolder?.handle || !profile) return;
