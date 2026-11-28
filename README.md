@@ -1,6 +1,6 @@
 # AngelicGTrader
 
-Local-first Kalshi sports-market research dashboard. The application is paper-only: it does not place live orders.
+Local-first Kalshi sports-market research and trading dashboard. Bets are staged in a shared Play Box and submitted together only when the user commits the box. Paper mode records simulated orders; live mode submits limit orders through Kalshi's V2 events-order API.
 
 ## Run locally
 
@@ -18,7 +18,7 @@ Azure Function App: `angelicgtrader-dvhgf4dhc6hahqhs`
 |---|---|---|
 | `GET /api/GetKalshiMarkets` | Deployed and previously working | Reads current Kalshi sports markets through the existing Azure proxy. |
 | `GET /api/GetTeamStatistics` | Deployed and tested | Retrieves NFL/NBA team and opponent statistics from free ESPN public endpoints. |
-| `POST /api/AnalyzeMarket` | Deployed and tested | Sends market/statistics context to OpenAI Responses API and returns structured analysis. |
+| `POST /api/AnalyzeMarket` | Deployed and tested | Sends market/statistics context to OpenAI Responses API and returns structured analysis. |\n| `POST /api/KalshiAccount` (`action: orders`) | Requires updated Azure deployment | Decrypts the saved credential envelope in memory and submits Kalshi V2 orders; trade-write permission is required. |
 
 OpenAI uses model `gpt-6.2-sol` in the current Azure configuration. The OpenAI API key is stored only in Azure Function App settings as `OPENAI_API_KEY`; the model is configured by `OPENAI_MODEL`. Never put either secret in this repository or a Vite `VITE_*` variable.
 
@@ -50,6 +50,17 @@ The AI Predictions screen uses the market entries already loaded into the existi
 The two caches are plain JSON text files under the user's connected data folder's `meta/` directory. Cache reads occur before network requests, so revisiting the page does not repeat fresh ESPN/OpenAI calls for unchanged inputs.
 
 The 90% threshold is a selection target, not a guarantee of accuracy. OpenAI's estimate is contextual analysis and is not yet statistically calibrated. Model probability must be validated against historical, timestamp-correct outcomes before being used for stake sizing.
+
+
+## Play Box and order submission
+
+- Dashboard manual selections and the final AI selection are added to the persistent `meta/play-box.json` queue. Adding or removing an item does not create a trade or reserve stake.
+- A season piece can have only one queued/committed selection per scheduled week. Its shared profile displays `IN PLAY BOX` while staged and `COMMITTED` after a confirmed submission.
+- The Play Box blocks different lines or sides from the same team-total ladder. Identical ticker/side/line selections from multiple pieces are grouped into one order; the pieces retain separate allocation ledger rows with a shared order-group ID and the same resolution details.
+- Paper commits record all piece allocations only after the user commits the box. Live commits sum allocations and submit one Kalshi V2 order per unique contract, using the saved executable ask as the limit price. YES maps to a bid; NO maps to an ask at the complementary YES-book price.
+- Live orders require a connected Kalshi account whose API key has trade-write permission. An accepted Kalshi order is marked submitted; the API may return an order with remaining quantity that is still resting rather than fully filled. Failed order groups remain in the Play Box.
+- The Azure `KalshiAccount` function must be deployed with the updated `action: orders` handler before live commits can work. Credentials remain encrypted at rest in the local data folder and are decrypted only in Azure memory.
+- AI analysis runs only when **Start next week** is invoked on a season piece. After selection or failure, the view returns to Dashboard. Auto pieces lock app navigation while that scan is resolving.
 
 ## Backtesting foundation
 
