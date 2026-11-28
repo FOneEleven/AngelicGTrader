@@ -225,8 +225,9 @@ export default function KalshiConnect({ dataFolderHandle, onAccountChange }) {
       <div><small>ACCOUNT</small><b>{saved.nickname || 'Kalshi Account'}</b><span>{balance.environment === 'demo' ? 'Demo account' : 'Production account'}</span></div>
       <div className="kalshi-balance"><small>AVAILABLE BALANCE</small><strong>${Number(balance.balanceDollars || 0).toFixed(2)}</strong><span>Portfolio value: ${Number(balance.portfolioValueDollars || 0).toFixed(2)}</span></div>
       <button className="secondary-btn" onClick={refresh} disabled={busy}><RefreshCw size={14}/> Refresh</button>
+      <button className="secondary-btn" onClick={() => { setShowForm(true); setShowGuide(false); }}>Replace credentials</button>
       <button className="text-btn" onClick={disconnect}><Unlink size={14}/> Disconnect</button>
-    </div> : saved ? <div className="kalshi-saved-row"><ShieldCheck size={17}/> Account connection saved. Refresh to verify the account and load its balance.<button className="secondary-btn" onClick={refresh} disabled={busy}>{busy ? 'Checking…' : 'Load balance'}</button></div> : <div className="kalshi-connect-actions">
+    </div> : saved ? <div className="kalshi-saved-row"><ShieldCheck size={17}/> Account connection saved. Refresh to verify the account and load its balance.<button className="secondary-btn" onClick={refresh} disabled={busy}>{busy ? 'Checking…' : 'Load balance'}</button><button className="secondary-btn" onClick={() => { setShowForm(true); setShowGuide(false); }}>Replace credentials</button></div> : <div className="kalshi-connect-actions">
       <button className="primary-btn" onClick={() => { setShowForm((v) => !v); setShowGuide(true); }} disabled={!dataFolderHandle}><Link2 size={15}/> Connect Kalshi</button>
       {!dataFolderHandle && <span>Connect the data folder first to save encrypted credentials locally.</span>}
       <button className="text-btn" onClick={() => setShowGuide((v) => !v)}>API key setup tutorial</button>
