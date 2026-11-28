@@ -268,6 +268,24 @@ export default function App() {
         const profiles = await listSeasonProfiles(root);
         const activeProfiles = profiles.filter((profile) => profile.activePlayer !== false);
         const tradesByProfile = await Promise.all(activeProfiles.map(async (profile) => [profile, await readSeasonTrades(root, profile)]));
+        const firstWeekIds = new Set();
+        for (const entry of tradesByProfile) {
+          const [profile, trades] = entry;
+          const hasResolvedWin = trades.some((trade) => trade.outcome === 'won' || (trade.resolutionStatus === 'resolved' && trade.walletReturnConfirmed === true));
+          if (!hasResolvedWin && profile.nextScheduledWeek !== 'week1') {
+            entry[0] = await updateSeasonProfile(root, profile.id, {
+              nextScheduledWeek: 'week1',
+              selectedLines: (profile.selectedLines || []).map((line) => ({ ...line, week: 'week1' })),
+              selectionResolution: { ...(profile.selectionResolution || {}), week: 'week1' },
+            });
+            firstWeekIds.add(profile.id);
+          }
+        }
+        if (firstWeekIds.size) {
+          const queued = await readPlayBox(root);
+          const normalized = queued.map((item) => firstWeekIds.has(item.profileId) ? { ...item, week: 'week1' } : item);
+          if (normalized.some((item, index) => item !== queued[index])) await writePlayBox(root, normalized);
+        }
         const pending = tradesByProfile.flatMap(([profile, trades]) => trades
           .filter((trade) => trade.ticker && !['closed', 'resolved', 'lost', 'won'].includes(String(trade.status || '').toLowerCase()) && String(trade.resolutionStatus || '').toLowerCase() !== 'resolved')
           .map((trade) => ({ profile, trade })));
