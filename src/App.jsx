@@ -117,13 +117,14 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
         source: 'dashboard-record',
       };
       await appendTrade(dataFolder.handle, profile.season, week, trade);
-      const selectedTeam = String(record.team || record.market || '').replace(/\\s+over\\s+.*$/i, '').trim();
+      const selectedTeam = String(record.team || record.market || '').replace(/\s+over\s+.*$/i, '').trim();
+      const selectedLeague = String(record.league || String(record.ticker || '').match(/^KX([A-Z]+)TEAMTOTAL-/i)?.[1] || '');
       const selectedLine = {
         predictionKey: record.predictionKey || null,
         ticker: record.ticker,
         event: record.event || record.matchup || '',
         team: selectedTeam,
-        league: record.league || '',
+        league: selectedLeague,
         line: record.line ?? null,
         side: record.side || '',
         sourceRecordId: record.id,
