@@ -31,6 +31,8 @@ export default function PredictionHistory({ dataFolder, refreshKey }) {
             <td>{r.finalVerdict ? <span className="status-pill">{r.finalVerdict}{r.finalSideProbability == null ? '' : ' · side ' + Math.round(Number(r.finalSideProbability) * 100) + '%'}</span> : 'Not interrogated'}</td>
             <td>{r.finalInterrogation?.interrogation ? <details><summary>View defense / injury review</summary><div style={{minWidth:260,maxWidth:420,whiteSpace:'normal'}}>
               <b>Defense:</b> {r.finalInterrogation.interrogation.defensiveAssessment || 'Not supplied'}
+              <p><b>Opponent points allowed:</b> {r.finalInterrogation.evidence?.opponentDefense?.defense?.seasonPointsAllowed == null ? 'Unavailable' : Number(r.finalInterrogation.evidence.opponentDefense.defense.seasonPointsAllowed).toFixed(1) + ' season / ' + (r.finalInterrogation.evidence.opponentDefense.defense.recentPointsAllowed == null ? 'N/A' : Number(r.finalInterrogation.evidence.opponentDefense.defense.recentPointsAllowed).toFixed(1) + ' recent 10') + ' · sample ' + r.finalInterrogation.evidence.opponentDefense.defense.gamesSampled}</p>
+              <p><b>Defensive injuries:</b> {(r.finalInterrogation.interrogation.defensiveInjuries || []).join('; ') || (r.finalInterrogation.evidence?.opponentDefense?.injuries || []).map((item) => item.player + ' (' + item.status + ')').join('; ') || 'None reported'}</p>
               <p><b>Offensive availability:</b> {r.finalInterrogation.interrogation.offensiveAvailability || 'Not supplied'}</p>
               <p><b>Reasoning:</b> {(r.finalInterrogation.interrogation.reasoning || []).join(' ')}</p>
               <p><b>Risks:</b> {(r.finalInterrogation.interrogation.risks || []).join(' ') || 'None reported'}</p>
