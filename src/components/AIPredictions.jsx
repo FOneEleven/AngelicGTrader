@@ -593,7 +593,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         interrogatedCandidates.push(reviewed);
         try {
           await appendQualifiedCandidate(root, {
-            id: 'qualified-' + seasonProfile.id + '-' + candidate.ticker + '-' + candidate.side,
+            id: 'qualified-' + seasonProfile.id + '-' + candidate.ticker + '-' + candidate.side + '-' + Date.now(),
             timestamp: new Date().toISOString(),
             seasonPieceId: seasonProfile.id, season: seasonProfile.season, week,
             matchup: prediction ? prediction.team + ' vs ' + (stats?.opponent?.name || 'opponent') : candidate.event,
