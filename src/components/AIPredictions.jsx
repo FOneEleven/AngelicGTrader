@@ -575,7 +575,15 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
           verdict = 'REVIEW';
         }
         const sideProbability = candidate.side === 'YES' ? finalProbability : 1 - finalProbability;
-        const reviewed = { ...candidate, finalVerdict: verdict, finalProbabilityYes: finalProbability, finalSideProbability: sideProbability, finalInterrogation: review, finalInterrogatedAt: new Date().toISOString(), finalReviewError: reviewError };
+        if (verdict === 'KEEP' && sideProbability <= candidate.ask) {
+          verdict = 'REJECT';
+          if (review?.interrogation) review.interrogation.risks = [...(review.interrogation.risks || []), 'Final matchup probability no longer exceeds the current executable ask.'];
+        }
+        if (verdict === 'KEEP' && !['A', 'B'].includes(review?.interrogation?.matchupGrade)) {
+          verdict = 'REJECT';
+          if (review?.interrogation) review.interrogation.risks = [...(review.interrogation.risks || []), 'Final matchup grade was below the A/B safety standard.'];
+        }
+        const reviewed = { ...candidate, finalVerdict: verdict, finalProbabilityYes: finalProbability, finalSideProbability: sideProbability, finalEdge: sideProbability - candidate.ask, finalInterrogation: review, finalInterrogatedAt: new Date().toISOString(), finalReviewError: reviewError };
         interrogatedCandidates.push(reviewed);
         try {
           await appendQualifiedCandidate(root, {
@@ -599,9 +607,9 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       }
       if (interrogatedCandidates.length) onActivity?.('CANDIDATES_INTERROGATED', interrogatedCandidates.length + ' qualified candidates saved to Records and Prediction History for ' + seasonProfile.name);
       const rankedCandidates = interrogatedCandidates.filter((item) => item.finalVerdict === 'KEEP').sort((a, b) => {
-        if (risk === 'probability') return b.finalSideProbability - a.finalSideProbability || b.edge - a.edge || b.payoutMultiple - a.payoutMultiple;
-        if (risk === 'value') return b.edge - a.edge || b.payoutMultiple - a.payoutMultiple || b.finalSideProbability - a.finalSideProbability;
-        return b.edge - a.edge || b.finalSideProbability - a.finalSideProbability || b.payoutMultiple - a.payoutMultiple;
+        if (risk === 'probability') return b.finalSideProbability - a.finalSideProbability || b.finalEdge - a.finalEdge || b.payoutMultiple - a.payoutMultiple;
+        if (risk === 'value') return b.finalEdge - a.finalEdge || b.payoutMultiple - a.payoutMultiple || b.finalSideProbability - a.finalSideProbability;
+        return b.finalEdge - a.finalEdge || b.finalSideProbability - a.finalSideProbability || b.payoutMultiple - a.payoutMultiple;
       });
       const finalSelection = rankedCandidates[0] || null;
       const orderedSelections = finalSelection ? [finalSelection] : [];
@@ -621,7 +629,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
       } else {
         const message = selectionList.length ? 'No candidate passed final matchup interrogation.' : 'No qualifying game found in the current dataset.';
         setProgress(message + (isAuto ? ' Next automatic scan in 60 seconds.' : ' Auto is off; waiting for the next manual scan.'));
-        setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'NO SELECTION · checked ' + orderedPredictions.length + ' prediction entries and their available lines; none passed the piece strategy/risk rules.' }].slice(-40));
+        setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'NO SELECTION · checked ' + orderedPredictions.length + ' prediction entries and their available lines; none passed the scanner and final matchup safety review.' }].slice(-40));
         if (isAuto) {
           const retryAt = Date.now() + 60000;
           setAutoRetryAt(retryAt); setAutoRetrySeconds(60);
