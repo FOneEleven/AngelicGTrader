@@ -67,7 +67,17 @@ export default function GameDay({ dataFolder, refreshKey, onActivity, onStartWee
       for (const profile of [...nextProfiles]) {
         const profileTrades = map[profile.id] || [];
         const hasResolvedWin = profileTrades.some((trade) => trade.outcome === 'won' || (trade.resolutionStatus === 'resolved' && trade.walletReturnConfirmed === true));
-        if (!hasResolvedWin && profile.nextScheduledWeek !== 'week1') {
+        if (profile.activePlayer !== false && profileTrades.some(isLoss)) {
+          const updated = await updateSeasonProfile(root, profile.id, {
+            activePlayer: false, status: 'inactive', selectedLines: [],
+            currentWorth: confirmedWalletReturns(profileTrades),
+            inactiveSince: profile.inactiveSince || new Date().toISOString(),
+            inactiveReason: profile.inactiveReason || 'A previously recorded match was a loss.',
+          });
+          await archiveInactivePiece(root, updated, profileTrades, updated.inactiveReason);
+          setInactivePieces(await readInactivePieces(root));
+          nextProfiles = nextProfiles.map((p) => p.id === updated.id ? updated : p);
+        } else if (!hasResolvedWin && profile.nextScheduledWeek !== 'week1') {
           const selectedLines = (profile.selectedLines || []).map((line) => ({ ...line, week: 'week1' }));
           const reset = await updateSeasonProfile(root, profile.id, {
             nextScheduledWeek: 'week1',
@@ -76,11 +86,6 @@ export default function GameDay({ dataFolder, refreshKey, onActivity, onStartWee
           });
           nextProfiles = nextProfiles.map((p) => p.id === reset.id ? reset : p);
           firstWeekProfiles.add(profile.id);
-        } else if (profile.activePlayer !== false && profileTrades.some(isLoss)) {
-          const updated = await updateSeasonProfile(root, profile.id, { activePlayer: false, status: 'inactive' });
-          await archiveInactivePiece(root, updated, profileTrades, 'A previously recorded match was a loss.');
-          setInactivePieces(await readInactivePieces(root));
-          nextProfiles = nextProfiles.map((p) => p.id === updated.id ? updated : p);
         }
       }
       if (firstWeekProfiles.size) {
