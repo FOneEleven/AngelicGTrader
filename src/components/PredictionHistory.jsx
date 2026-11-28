@@ -20,7 +20,7 @@ export default function PredictionHistory({ dataFolder, refreshKey }) {
     {!records.length ? <div className="empty-state panel"><History size={22}/><b>No prediction history yet</b><span>Qualified candidates and recorded predictions will appear here.</span></div> :
       <section className="panel">
         <div className="table-wrap"><table>
-          <thead><tr><th>DATE</th><th>PIECE</th><th>MATCHUP</th><th>MARKET</th><th>SIDE</th><th>BASELINE</th><th>FINAL REVIEW</th><th>STATUS</th></tr></thead>
+          <thead><tr><th>DATE</th><th>PIECE</th><th>MATCHUP</th><th>MARKET</th><th>SIDE</th><th>BASELINE</th><th>FINAL REVIEW</th><th>MATCHUP NOTES</th><th>STATUS</th></tr></thead>
           <tbody>{records.map((r) => <tr key={r.id}>
             <td>{r.timestamp ? new Date(r.timestamp).toLocaleString() : '—'}</td>
             <td>{r.seasonPieceId || '—'}</td>
@@ -28,7 +28,14 @@ export default function PredictionHistory({ dataFolder, refreshKey }) {
             <td>{r.market || '—'}</td>
             <td>{r.side || '—'}</td>
             <td>{r.modelProbability == null ? (r.probability == null ? '—' : r.probability + '%') : Math.round(Number(r.modelProbability) * 100) + '%'}</td>
-            <td>{r.finalVerdict ? <span className="status-pill">{r.finalVerdict}{r.finalProbabilityYes == null ? '' : ' · YES ' + Math.round(Number(r.finalProbabilityYes) * 100) + '%'}</span> : 'Not interrogated'}</td>
+            <td>{r.finalVerdict ? <span className="status-pill">{r.finalVerdict}{r.finalSideProbability == null ? '' : ' · side ' + Math.round(Number(r.finalSideProbability) * 100) + '%'}</span> : 'Not interrogated'}</td>
+            <td>{r.finalInterrogation?.interrogation ? <details><summary>View defense / injury review</summary><div style={{minWidth:260,maxWidth:420,whiteSpace:'normal'}}>
+              <b>Defense:</b> {r.finalInterrogation.interrogation.defensiveAssessment || 'Not supplied'}
+              <p><b>Offensive availability:</b> {r.finalInterrogation.interrogation.offensiveAvailability || 'Not supplied'}</p>
+              <p><b>Reasoning:</b> {(r.finalInterrogation.interrogation.reasoning || []).join(' ')}</p>
+              <p><b>Risks:</b> {(r.finalInterrogation.interrogation.risks || []).join(' ') || 'None reported'}</p>
+              <p><b>Missing data:</b> {(r.finalInterrogation.interrogation.missingData || []).join(' ') || 'None reported'}</p>
+            </div></details> : '—'}</td>
             <td><span className="status-pill">{r.status || 'open'}</span></td>
           </tr>)}</tbody>
         </table></div>
