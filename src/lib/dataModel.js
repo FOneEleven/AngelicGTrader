@@ -413,13 +413,13 @@ export async function appendQualifiedCandidate(root, candidate) {
       finalVerdict: candidate.finalVerdict || 'REVIEW',
       finalProbabilityYes: candidate.finalProbabilityYes ?? null,
     }),
-  ].join('\\t');
-  const lines = existing.split('\\n').filter(Boolean);
-  const header = '# id\\ttimestamp\\tmatchup\\tmarket\\tside\\tprice\\tprobability\\tstake\\tpaper\\tstatus\\tmetadata_json';
-  const withoutPrevious = lines.filter((line) => line.startsWith('#') || line.split('\\t')[0] !== id);
+  ].join('\t');
+  const lines = existing.split('\n').filter(Boolean);
+  const header = '# id\ttimestamp\tmatchup\tmarket\tside\tprice\tprobability\tstake\tpaper\tstatus\tmetadata_json';
+  const withoutPrevious = lines.filter((line) => line.startsWith('#') || line.split('\t')[0] !== id);
   if (!withoutPrevious.some((line) => line.startsWith('#'))) withoutPrevious.unshift(header);
   const writer = await file.createWritable();
-  await writer.write(withoutPrevious.join('\\n') + '\\n' + row + '\\n');
+  await writer.write(withoutPrevious.join('\n') + '\n' + row + '\n');
   await writer.close();
   return { ...candidate, id, isQualifiedCandidate: true };
 }
