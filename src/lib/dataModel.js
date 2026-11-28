@@ -159,7 +159,7 @@ export async function readPlayBox(root) {
 export async function writePlayBox(root, items) {
   const metaDir = await root.getDirectoryHandle(META, { create: true });
   const next = Array.isArray(items) ? items : [];
-  await writeText(metaDir, PLAY_BOX_FILE, JSON.stringify(next, null, 2) + '\\n');
+  await writeText(metaDir, PLAY_BOX_FILE, JSON.stringify(next, null, 2) + '\n');
   return next;
 }
 
