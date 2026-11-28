@@ -21,7 +21,7 @@ export async function submitKalshiOrders(root, orders) {
   const connection = JSON.parse(await (await file.getFile()).text());
   if (!connection?.keyId || !connection?.envelope) throw new Error('Connect a Kalshi account with trade-write permission before committing live orders.');
   const results = [];
-  for (let offset = 0; offset < orders.length; offset += 5) {
+  for (let offset = 0; offset < orders.length; offset += 20) {
     const batch = orders.slice(offset, offset + 20);
     try {
       const response = await fetch(ACCOUNT_API, {
