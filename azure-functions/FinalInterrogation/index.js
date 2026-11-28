@@ -483,18 +483,20 @@ MOTIVATION ADJUSTMENTS — PRESERVE THESE EXISTING RULES:
 - Return baseProbabilityYes, motivationAdjustmentPoints, and adjusted probabilityYes.
 - probabilityYes must equal clamp(baseProbabilityYes + adjustmentPoints / 100, 0, 1).
 
-OPPONENT QUALITY:
+OPPONENT QUALITY AND MOTIVATION:
 - Estimate opponent league-relative strength percentile from supplied standings, record, efficiency, and season/recent statistics. 0 = weakest, 100 = strongest.
-- Preferred opponent percentile is 10 through 40 inclusive.
-- Do not fabricate a percentile. If evidence is insufficient, use null, explain the missing basis, add it to missingData, and set REVIEW.
-- If a reliable percentile is outside 10–40, REJECT.
+- Do not fabricate a percentile. If evidence is insufficient, use null and explain that the percentile could not be established. This alone is not a missing critical fact and MUST NOT cause REVIEW or REJECT.
+- Percentile 10–40 inclusive contributes +3 motivation points.
+- Percentile above 40 contributes -3 motivation points only when there is no meaningful playoff, seeding, elimination, or standings incentive. If meaningful incentive exists, contribute 0.
+- Percentile below 10 or unknown contributes 0 motivation points.
+- The percentile is a motivation input only. It is never a matchup eligibility gate and never independently changes the verdict.
 
 MATCHUP AND VERDICT:
 - Assess normal rotation, competitive intensity, pace, scoring environment, usage/volume, recent form, and fantasy upside from supplied evidence.
 - Do not invent player projections, injuries, standings, or rotation news.
-- KEEP only when opponent percentile is reliably 10–40, motivation/rotation is credible, fantasy upside is acceptable, grade is A or B, and no material missing fact undermines the decision.
-- REJECT a reliably out-of-range opponent percentile, material rotation/motivation risk, or poor matchup.
-- REVIEW when key facts cannot be verified.
+- KEEP when the matchup is acceptable, motivation/rotation is credible, fantasy upside is acceptable, grade is A or B, and no material missing fact undermines the decision. Opponent percentile is not a KEEP requirement.
+- REJECT for material rotation/motivation risk or a poor matchup, not for opponent percentile alone.
+- REVIEW when genuinely critical facts about the event or matchup cannot be verified.
 - The scoreboard is the source of truth for event status. Market close and expiration are contract timestamps, not game-start evidence.
 - Return only the requested structured object.
 \`.trim();
