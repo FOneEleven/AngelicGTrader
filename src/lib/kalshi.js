@@ -65,7 +65,7 @@ export async function fetchGameScoreResolutions(games = []) {
   const unique = (games || []).filter((game) => game?.ticker);
   if (!unique.length) return [];
   const results = [];
-  for (let offset = 0; offset < unique.length; offset += 20) {
+  for (let offset = 0; offset < unique.length; offset += 5) {
     const url = new URL(BASE);
     url.searchParams.set('action', 'score-resolve');
     url.searchParams.set('games', JSON.stringify(unique.slice(offset, offset + 5)));
