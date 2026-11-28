@@ -543,23 +543,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         let finalProbability = Number(baseline?.prediction?.probabilityYes);
         if (!Number.isFinite(finalProbability) || finalProbability < 0 || finalProbability > 1) finalProbability = candidate.side === 'YES' ? candidate.probability : 1 - candidate.probability;
         let reviewError = '';
-        const eventStartTime = prediction?.occurrenceTime || prediction?.gameTime || '';
-        const eventStartMs = eventStartTime ? Date.parse(eventStartTime) : NaN;
-        const marketCloseMs = prediction?.closeTime ? Date.parse(prediction.closeTime) : NaN;
-        if (!Number.isFinite(eventStartMs) || eventStartMs <= Date.now() || (Number.isFinite(marketCloseMs) && marketCloseMs <= Date.now())) {
-          verdict = 'REJECT';
-          reviewError = !Number.isFinite(eventStartMs) ? 'Official event start time is missing; fail-closed pregame check.'
-            : eventStartMs <= Date.now() ? 'Contest has already started; late-market price/payout movement is not pregame evidence.'
-            : 'Kalshi market is already closed; no new position is eligible.';
-          review = { verdict: 'REJECT', interrogation: {
-            verdict: 'REJECT', probabilityYes: Number(baseline?.prediction?.probabilityYes) || 0.5,
-            matchupGrade: 'D', reasoning: [reviewError],
-            risks: ['Late selling and rising payout during an active contest can reflect holders exiting losing positions; do not treat it as safety or value.'],
-            missingData: [], motivationAssessment: 'Not evaluated because the pregame gate failed.',
-            opponentPercentile: null, motivationAdjustmentPoints: 0,
-            closingTimeAssessment: 'Rejected: event is not eligible for pregame evaluation.',
-          } };
-        } else try {
+        try {
           if (!prediction || !line || !stats || !baseline?.prediction) throw new Error('Candidate context or baseline analysis is missing.');
           const league = leagueFor(prediction);
           const market = {
@@ -571,7 +555,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
             expectedExpiration: prediction.expectedExpiration || null,
             occurrenceTime: prediction.occurrenceTime || prediction.gameTime || null,
             gameTime: prediction.occurrenceTime || prediction.gameTime || null,
-            marketStatus: prediction.status || 'unknown',
+            marketStatus: ['open', 'active', 'closed', 'settled', 'final', 'suspended'].includes(String(prediction.status || '').toLowerCase()) ? prediction.status : '',
           };
           // Interrogate each contract independently so its current selected-side
           // ask and payout are assessed; do not reuse a different rung's price context.
@@ -629,7 +613,12 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
         const interrogation = review?.interrogation || {};
         const motivationPoints = Number(interrogation.motivationAdjustmentPoints) || 0;
         const opponentPercentile = interrogation.opponentPercentile == null ? 'unknown' : Number(interrogation.opponentPercentile).toFixed(0) + 'th';
-        setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'FINAL INTERROGATION · ' + candidate.team + ' · ' + candidate.side + ' ' + candidate.line + ' · verdict=' + verdict + ' · side probability=' + (sideProbability * 100).toFixed(1) + '% · motivation=' + (motivationPoints > 0 ? '+' : '') + motivationPoints + 'pp · opponent=' + opponentPercentile + ' percentile · ' + (interrogation.closingTimeAssessment || reviewError || 'pregame checked') }].slice(-40));
+        const motivationText = String(interrogation.motivationAssessment || 'No motivation assessment returned.');
+        const scoreboard = review?.scoreboard || {};
+        const scoreboardText = scoreboard.verified
+          ? 'scoreboard=' + (scoreboard.source || 'verified') + '/' + (scoreboard.status || 'UNKNOWN') + ' · event=' + (scoreboard.event?.eventId || scoreboard.eventId || 'identified')
+          : 'scoreboard=UNVERIFIED · ' + (scoreboard.reason || reviewError || 'no event verification details');
+        setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'FINAL INTERROGATION · ' + candidate.team + ' · ' + candidate.side + ' ' + candidate.line + ' · verdict=' + verdict + ' · side probability=' + (sideProbability * 100).toFixed(1) + '% · motivation=' + (motivationPoints > 0 ? '+' : '') + motivationPoints + 'pp (' + motivationText + ') · opponent=' + opponentPercentile + ' percentile · ' + scoreboardText + ' · ' + (interrogation.closingTimeAssessment || reviewError || 'pregame checked') }].slice(-40));
       }
       if (interrogatedCandidates.length) onActivity?.('CANDIDATES_INTERROGATED', interrogatedCandidates.length + ' qualified candidates saved to Records and Prediction History for ' + seasonProfile.name);
       const rankedCandidates = interrogatedCandidates.filter((item) => item.finalVerdict === 'KEEP').sort((a, b) => {
