@@ -21,7 +21,8 @@ function money(value) { return '$' + (Number(value) || 0).toFixed(2); }
 export default function Recommendations({ dataFolder, paperMode: currentPaperMode = true, kalshiAccount, onActivity, onStartWeek, onNavigate }) {
   const root = dataFolder?.handle;
   const [balance, setBalance] = useState('0');
-  const availableBalance = kalshiAccount?.connected ? Math.max(0, Number(kalshiAccount.balanceDollars) || 0) : 0;
+  const walletConnected = Boolean(kalshiAccount?.connected);
+  const availableBalance = walletConnected ? Math.max(0, Number(kalshiAccount.balanceDollars) || 0) : 0;
   const paperMode = currentPaperMode;
   const [token, setToken] = useState(makeToken);
   const [seasons, setSeasons] = useState([]);
@@ -73,9 +74,9 @@ export default function Recommendations({ dataFolder, paperMode: currentPaperMod
   async function commitSeason() {
     const amount = Number(balance);
     if (!root) { setError('Connect a data folder first.'); return; }
-    if (!kalshiAccount?.connected) { setError('Connect and verify your Kalshi account before allocating a season balance.'); return; }
+    if (!paperMode && !walletConnected) { setError('Connect and verify your Kalshi account before creating a live season.'); return; }
     if (!Number.isFinite(amount) || amount <= 0) { setError('Enter a season balance greater than zero.'); return; }
-    if (amount > availableBalance) { setError('Season balance cannot exceed your Kalshi available balance of ' + money(availableBalance) + '.'); return; }
+    if (walletConnected && amount > availableBalance) { setError('Season balance cannot exceed your Kalshi available balance of ' + money(availableBalance) + '.'); return; }
     setBusy(true); setError('');
     try {
       const profile = await createSeasonProfile(root, {
@@ -107,11 +108,11 @@ export default function Recommendations({ dataFolder, paperMode: currentPaperMod
           <button className="secondary-btn" onClick={cyclePiece} disabled={busy}><RefreshCw size={14}/> Cycle to another piece</button>
         </div>
         <div className="season-create-controls">
-          <label htmlFor="season-balance">Starting season balance <small>Available Kalshi balance: {money(availableBalance)}</small></label>
-          <div className="season-balance-input"><span>$</span><input id="season-balance" type="number" min="0" max={availableBalance} step="0.01" value={balance} onChange={(e) => setBalance(e.target.value)} placeholder="0.00"/></div>
+          <label htmlFor="season-balance">Starting season balance <small>{walletConnected ? 'Available Kalshi balance: ' + money(availableBalance) : 'No wallet connected · paper allocation'}</small></label>
+          <div className="season-balance-input"><span>$</span><input id="season-balance" type="number" min="0" max={walletConnected ? availableBalance : undefined} step="0.01" value={balance} onChange={(e) => setBalance(e.target.value)} placeholder="0.00"/></div>
           <div className="season-mode-card"><span className={paperMode ? 'live-dot' : 'live-dot live'}></span><div><b>{paperMode ? 'Paper season' : 'Live season'}</b><small>Uses the current Paper/Live mode setting from the app header.</small></div></div>
           <div className="season-name-preview"><small>GENERATED SEASON NAME</small><b>{token.name}</b><span>Piece value and default quota: {money(balance)}</span></div>
-          <button className="primary-btn season-commit" disabled={!root || !kalshiAccount?.connected || busy || Number(balance) > availableBalance || Number(balance) <= 0} onClick={commitSeason}><PlusCircle size={16}/>{busy ? 'Creating season…' : 'Commit season'}</button>
+          <button className="primary-btn season-commit" disabled={!root || (!paperMode && !walletConnected) || busy || (walletConnected && Number(balance) > availableBalance) || Number(balance) <= 0} onClick={commitSeason}><PlusCircle size={16}/>{busy ? 'Creating season…' : paperMode && !walletConnected ? 'Create paper season' : 'Commit season'}</button>
           {created && <div className="season-success">Created {created.name} · Season {created.season}</div>}
         </div>
       </div>
