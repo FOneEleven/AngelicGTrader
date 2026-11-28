@@ -40,7 +40,8 @@ export default function SeasonPieceEntry({ profile, earnings = 0, onUpdate, onSt
   const activeRisk = riskByCondition[worth.condition] || '';
   const ready = Boolean(activeStrategy && activeRisk);
   const inPlayBox = profile.selectedLines?.[0]?.playBoxStatus === 'in-play-box';
-  const pendingResolution = profile.selectedLines?.[0]?.playBoxStatus === 'committed' && profile.selectionResolution?.status === 'committed';
+  const paperCommitted = profile.paperMode === true && Boolean(profile.selectedLines?.[0]?.ticker);
+  const pendingResolution = (profile.selectedLines?.[0]?.playBoxStatus === 'committed' && profile.selectionResolution?.status === 'committed') || paperCommitted;
   const messages = Array.isArray(profile.pieceMessages) ? profile.pieceMessages : [];
 
   async function sendMessage(event) {
@@ -76,9 +77,9 @@ export default function SeasonPieceEntry({ profile, earnings = 0, onUpdate, onSt
       <small>Next scheduled: {profile.nextScheduledWeek || 'week1'}</small>
       {profile.activePlayer === false && <small className="season-piece-retired-detail">{profile.inactiveReason || 'This piece has been retired.'}{profile.participatedMatches?.[0] ? ' · Last match: ' + (profile.participatedMatches[0].matchup || profile.participatedMatches[0].market || profile.participatedMatches[0].ticker) + ' · ' + (profile.participatedMatches[0].teamScore ?? '—') + '–' + (profile.participatedMatches[0].opponentScore ?? '—') : ''}</small>}
       {profile.activePlayer !== false && !ready && <div className="piece-not-ready" role="status">NOT READY FOR PLAY · SET STRATEGY AND RISK FOR {WORTH_CONDITIONS.find((x) => x.id === worth.condition)?.label.toUpperCase()}</div>}
-      {profile.selectedLines?.[0] && <small className="season-piece-selected-game">Selected game: {profile.selectedLines[0].team || profile.selectedLines[0].event || profile.selectedLines[0].ticker} · {profile.selectedLines[0].league || 'Market'} · {profile.selectedLines[0].line ?? 'ladder'} · {profile.selectedLines[0].side} · {profile.selectedLines[0].playBoxStatus === 'in-play-box' ? 'IN PLAY BOX' : profile.selectedLines[0].playBoxStatus === 'committed' ? 'COMMITTED' : 'SELECTED'}</small>}
+      {profile.selectedLines?.[0] && <small className="season-piece-selected-game">Selected game: {profile.selectedLines[0].team || profile.selectedLines[0].event || profile.selectedLines[0].ticker} · {profile.selectedLines[0].league || 'Market'} · {profile.selectedLines[0].line ?? 'ladder'} · {profile.selectedLines[0].side} · {profile.selectedLines[0].playBoxStatus === 'in-play-box' ? 'IN PLAY BOX' : profile.selectedLines[0].playBoxStatus === 'committed' || paperCommitted ? (paperCommitted ? 'PAPER COMMITTED' : 'COMMITTED') : 'SELECTED'}</small>}
       {profile.activePlayer !== false && <div className="season-piece-controls">
-        <button className="secondary-btn" disabled={busy || !ready || inPlayBox || pendingResolution} onClick={() => onStartWeek?.(profile)}>{inPlayBox ? 'In Play Box' : pendingResolution ? 'Match pending' : 'Start next week'}</button>
+        <button className="secondary-btn" disabled={busy || !ready || inPlayBox || pendingResolution} onClick={() => onStartWeek?.(profile)}>{inPlayBox ? 'In Play Box' : pendingResolution ? (paperCommitted ? 'Paper match pending' : 'Match pending') : 'Start next week'}</button>
         <button className="secondary-btn" onClick={() => onNavigate?.('Game Day')}><CalendarDays size={13}/> Go To Gameday</button>
         <button className="secondary-btn piece-expand-button" onClick={() => setExpanded((value) => !value)}><ChevronDown size={13}/> {expanded ? 'Close piece' : 'Open piece'}</button>
       </div>}
