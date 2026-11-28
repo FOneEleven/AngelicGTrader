@@ -6,6 +6,7 @@ const INDEX_FILE = 'index.txt';
 const ACTIVITY_FILE = 'activity.txt';
 const SETTINGS_FILE = 'settings.txt';
 const AI_SELECTIONS_FILE = 'ai-prediction-selections.txt';
+const PLAY_BOX_FILE = 'play-box.json';
 
 // --- Season discovery ---
 
@@ -145,6 +146,23 @@ export async function writeSettings(root, settings) {
   return settings;
 }
 
+// --- Staged Play Box ---
+// Queue entries are selections only; no trade or stake is committed until the
+// user explicitly commits the entire Play Box.
+export async function readPlayBox(root) {
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  const text = await readText(metaDir, PLAY_BOX_FILE);
+  if (!text) return [];
+  try { const parsed = JSON.parse(text); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
+}
+
+export async function writePlayBox(root, items) {
+  const metaDir = await root.getDirectoryHandle(META, { create: true });
+  const next = Array.isArray(items) ? items : [];
+  await writeText(metaDir, PLAY_BOX_FILE, JSON.stringify(next, null, 2) + '\\n');
+  return next;
+}
+
 // --- Trade records ---
 
 export async function appendTrade(root, season, week, trade) {
@@ -167,7 +185,7 @@ export async function appendTrade(root, season, week, trade) {
     trade.stake,
     trade.paper ? 'paper' : 'live',
     trade.status || 'open',
-    JSON.stringify({ strategy: trade.strategy ?? null, selectionStrategy: trade.selectionStrategy ?? null, riskPreference: trade.riskPreference ?? null, diversityMode: trade.diversityMode ?? null, ticker: trade.ticker ?? null, line: trade.line ?? null, marketProbability: trade.marketProbability ?? null, modelProbability: trade.modelProbability ?? null, edge: trade.edge ?? null, modelVersion: trade.modelVersion ?? null, context: trade.context ?? null, reasoning: trade.reasoning ?? null, seasonPieceId: trade.seasonPieceId ?? null, week: trade.week ?? week, earnings: trade.earnings ?? null, profit: trade.profit ?? null, outcome: trade.outcome ?? null, resolutionStatus: trade.resolutionStatus ?? null, walletReturnedAmount: trade.walletReturnedAmount ?? null, walletReturnConfirmed: trade.walletReturnConfirmed === true, walletConfirmedAt: trade.walletConfirmedAt ?? null, sourceRecordId: trade.sourceRecordId ?? null, payoutMultiple: trade.payoutMultiple ?? null, source: trade.source ?? null }),
+    JSON.stringify({ strategy: trade.strategy ?? null, selectionStrategy: trade.selectionStrategy ?? null, riskPreference: trade.riskPreference ?? null, diversityMode: trade.diversityMode ?? null, ticker: trade.ticker ?? null, line: trade.line ?? null, marketProbability: trade.marketProbability ?? null, modelProbability: trade.modelProbability ?? null, edge: trade.edge ?? null, modelVersion: trade.modelVersion ?? null, context: trade.context ?? null, reasoning: trade.reasoning ?? null, seasonPieceId: trade.seasonPieceId ?? null, week: trade.week ?? week, earnings: trade.earnings ?? null, profit: trade.profit ?? null, outcome: trade.outcome ?? null, resolutionStatus: trade.resolutionStatus ?? null, walletReturnedAmount: trade.walletReturnedAmount ?? null, walletReturnConfirmed: trade.walletReturnConfirmed === true, walletConfirmedAt: trade.walletConfirmedAt ?? null, sourceRecordId: trade.sourceRecordId ?? null, payoutMultiple: trade.payoutMultiple ?? null, source: trade.source ?? null, orderGroupId: trade.orderGroupId ?? null, playBoxItemId: trade.playBoxItemId ?? null, resolutionDetails: trade.resolutionDetails ?? null }),
   ].join('\t') + '\n';
   const w = await file.createWritable();
   await w.write(existing + header + row);
