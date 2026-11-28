@@ -485,10 +485,23 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
             if (!scannedTickers.has(line.ticker)) { scannedTickers.add(line.ticker); scannedLines += 1; }
             evaluatedSides += 1;
             if (!analysis?.prediction) continue;
+
+            // Each directional pass ends at the first ladder rung that fails
+            // either the strategy probability floor or its minimum payout.
+            // YES therefore scans left-to-right; NO scans right-to-left.
+            const probability = probabilityFor(analysis, pass.side);
+            const ask = askFor(line, pass.side);
+            const payout = ask > 0 ? 1 / ask : 0;
+            const probabilityFloor = isBaseball ? 0.90 : gate.probability;
+            const payoutFloor = isBaseball ? 0 : gate.payout;
+            if (probability == null || ask == null || probability < probabilityFloor || payout <= payoutFloor) {
+              setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'PASS STOP · ' + p.team + ' · ' + pass.side + ' · line ' + line.line + ' failed strategy floor (probability=' + (probability == null ? 'n/a' : Math.round(probability * 100) + '%') + ', payout=' + (payout ? payout.toFixed(2) + 'x' : 'n/a') + '). Moving to next side or ladder.' }].slice(-40));
+              break;
+            }
             const candidate = qualifies(p, line, analysis, pass.side, stats);
             if (candidate) {
               selectionList.push(candidate);
-              setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'QUALIFIED · ' + p.team + ' · ' + pass.side + ' ' + line.line + ' · probability=' + Math.round(candidate.probability * 100) + '% · ask=' + Math.round(candidate.ask * 100) + '¢ · edge=' + Math.round(candidate.edge * 100) + '¢' }].slice(-40));
+              setDebugEntries((old) => [...old, { time: new Date().toLocaleTimeString(), message: 'QUALIFIED · ' + p.team + ' · ' + pass.side + ' ' + line.line + ' · probability=' + Math.round(candidate.probability * 100) + '% · ask=' + Math.round(candidate.ask * 100) + '¢ · payout=' + candidate.payoutMultiple.toFixed(2) + 'x · edge=' + Math.round(candidate.edge * 100) + '¢' }].slice(-40));
             }
           }
         }
