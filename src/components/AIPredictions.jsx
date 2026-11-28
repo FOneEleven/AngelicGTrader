@@ -107,6 +107,7 @@ function analysisKey(market, stats) {
 
 export default function AIPredictions({ dataFolder, onActivity, scanRequest, onQueueSelection, onScanResolved, autoPlayActive = false }) {
   const [markets, setMarkets] = useState([]);
+  const [marketsLoaded, setMarketsLoaded] = useState(false);
   const [trades, setTrades] = useState([]);
   const [seasonProfile, setSeasonProfile] = useState(null);
   const [seasonProfiles, setSeasonProfiles] = useState([]);
@@ -151,9 +152,11 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest, onQ
 
   useEffect(() => {
     if (!root) return;
+    setMarketsLoaded(false);
     (async () => {
       const cached = await readCache(root);
       setMarkets(cached.markets);
+      setMarketsLoaded(true);
       setSelectedEntries(await readAIPredictionSelections(root));
       const settings = await readSettings(root);
       setPaperMode(!!settings.paperMode);
@@ -188,7 +191,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest, onQ
   const predictionDatasetSignature = JSON.stringify(predictions.map((p) => ({ key: p.key, event: p.event, opponent: eventOpponent(markets, p.event, p.team), gameTime: p.occurrenceTime || p.gameTime || null, lines: p.lines.map((line) => [line.ticker, line.line, line.yesAsk, line.noAsk]), recommended: p.recommended?.ticker || null })));
 
   useEffect(() => {
-    if (!root || !seasonProfile || !scanRequest?.requestId || scanRequest.profileId !== seasonProfile.id) return;
+    if (!root || !seasonProfile || !marketsLoaded || !scanRequest?.requestId || scanRequest.profileId !== seasonProfile.id) return;
     const datasetSignature = predictionDatasetSignature;
     const previousRefresh = lastStatsRefreshRef.current;
     if (previousRefresh && previousRefresh.root === root && previousRefresh.profileId === seasonProfile.id && previousRefresh.requestId === scanRequest.requestId && previousRefresh.signature === datasetSignature) return;
@@ -352,7 +355,7 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest, onQ
     // Do not cancel on effect cleanup: React StrictMode replays effects in development.
     // The signature guard above prevents duplicate refreshes for the same dataset.
     return undefined;
-  }, [root, predictionDatasetSignature, seasonProfile?.id, autoRetryCount, scanRequest?.requestId]);
+  }, [root, predictionDatasetSignature, seasonProfile?.id, autoRetryCount, scanRequest?.requestId, marketsLoaded]);
 
   useEffect(() => {
     if (!autoRetryAt) return undefined;
