@@ -158,7 +158,7 @@ app.http('KalshiAccount', {
           const count = String(order?.count || '');
           const price = String(order?.price || '');
           const clientOrderId = String(order?.client_order_id || '');
-          if (!ticker || !['bid', 'ask'].includes(side) || !/^\\d+(?:\\.\\d{1,2})?$/.test(count) || !(Number(count) >= 0.01) || !/^0?\\.\\d{1,4}$/.test(price) || !(Number(price) > 0 && Number(price) < 1) || !/^[A-Za-z0-9_\\-:+=\\/]{1,64}$/.test(clientOrderId)) {
+          if (!ticker || !['bid', 'ask'].includes(side) || !/^\d+(?:\.\d{1,2})?$/.test(count) || !(Number(count) >= 0.01) || !/^0?\.\d{1,4}$/.test(price) || !(Number(price) > 0 && Number(price) < 1) || !/^[A-Za-z0-9_+=-]{1,64}$/.test(clientOrderId)) {
             results.push({ client_order_id: clientOrderId || null, ticker, submitted: false, error: 'Invalid V2 order fields.' });
             continue;
           }
