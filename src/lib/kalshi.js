@@ -21,7 +21,7 @@ export async function submitKalshiOrders(root, orders) {
   const connection = JSON.parse(await (await file.getFile()).text());
   if (!connection?.keyId || !connection?.envelope) throw new Error('Connect a Kalshi account with trade-write permission before committing live orders.');
   const results = [];
-  for (let offset = 0; offset < orders.length; offset += 20) {
+  for (let offset = 0; offset < orders.length; offset += 5) {
     const batch = orders.slice(offset, offset + 20);
     try {
       const response = await fetch(ACCOUNT_API, {
@@ -68,7 +68,7 @@ export async function fetchGameScoreResolutions(games = []) {
   for (let offset = 0; offset < unique.length; offset += 20) {
     const url = new URL(BASE);
     url.searchParams.set('action', 'score-resolve');
-    url.searchParams.set('games', JSON.stringify(unique.slice(offset, offset + 20)));
+    url.searchParams.set('games', JSON.stringify(unique.slice(offset, offset + 5)));
     const response = await fetch(url.toString(), { headers: { Accept: 'application/json' }, cache: 'no-store' });
     if (!response.ok) throw new Error('Game score lookup failed with HTTP ' + response.status + '.');
     const payload = await response.json();
