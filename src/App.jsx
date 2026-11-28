@@ -351,8 +351,7 @@ export default function App() {
       </footer>
     </main>
   </div>;
-} + Number(p.quotaValue ?? p.initialBalance ?? p.balance).toFixed(2) + (pieceCommitments[p.id] ? ' · Committed' : '')}</option>)}
-                  </select>
+}
                   <button className="secondary-btn" disabled={!selectedPiece || placingRecordId === r.id || alreadyPlaced || (selectedPiece.paperMode && !canPlacePaper) || !selectedPiece.paperMode} onClick={() => placeDashboardRecord(r)}>{placingRecordId === r.id ? 'Placing…' : selectedPiece?.paperMode ? 'Place bet' : 'Live unavailable'}</button>
                   {recordActionMessage[r.id] && <small className="record-action-message">{recordActionMessage[r.id]}</small>}
                   {committed && <small className="record-action-message">Piece already committed this week.</small>}
