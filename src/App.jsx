@@ -3,7 +3,7 @@ import {
   Activity, LayoutDashboard, Radar, BrainCircuit, ClipboardList, Trophy,
   ChartNoAxesCombined, History, Settings, FileText, ChevronRight,
   Search, Bell, CircleHelp, ArrowUpRight, ArrowDownRight, ShieldCheck, ShieldAlert,
-  Clock3, Target, Zap, Menu, X, RefreshCw, Filter, ExternalLink
+  Clock3, Target, Menu, X, RefreshCw, Filter, ExternalLink
 } from 'lucide-react';
 import DataFolderConnect from './components/DataFolderConnect';
 import LatestActivity from './components/LatestActivity';
