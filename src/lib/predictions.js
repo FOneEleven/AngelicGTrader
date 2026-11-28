@@ -65,6 +65,7 @@ export function computePredictions(markets, opts = {}) {
       ladders.set(key, {
         key, event, team,
         league: leagueOf(m.ticker),
+        status: m.status || '',
         closeTime: m.closeTime,
         expectedExpiration: m.expectedExpiration,
         occurrenceTime: m.occurrenceTime || '',
