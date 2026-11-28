@@ -392,8 +392,7 @@ export async function writeAIPredictionSelections(root, selections) {
 // and therefore cannot affect piece worth or wallet-return accounting.
 export async function appendQualifiedCandidate(root, candidate) {
   const metaDir = await root.getDirectoryHandle(META, { create: true });
-  const filename = 'records.txt';
-  const file = await metaDir.getFileHandle(filename, { create: true });
+  const file = await metaDir.getFileHandle('records.txt', { create: true });
   const existing = await (await file.getFile()).text().catch(() => '');
   const id = candidate.id || ('qualified-' + candidate.seasonPieceId + '-' + candidate.ticker + '-' + candidate.side);
   const row = [
