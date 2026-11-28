@@ -575,6 +575,11 @@ export default function AIPredictions({ dataFolder, onActivity, scanRequest }) {
           verdict = 'REVIEW';
         }
         const sideProbability = candidate.side === 'YES' ? finalProbability : 1 - finalProbability;
+        const finalProbabilityFloor = leagueFor(prediction) === 'MLB' ? 0.90 : gate.probability;
+        if (verdict === 'KEEP' && sideProbability < finalProbabilityFloor) {
+          verdict = 'REJECT';
+          if (review?.interrogation) review.interrogation.risks = [...(review.interrogation.risks || []), 'Final matchup probability fell below the piece strategy probability floor (' + (finalProbabilityFloor * 100).toFixed(1) + '%).'];
+        }
         if (verdict === 'KEEP' && sideProbability <= candidate.ask) {
           verdict = 'REJECT';
           if (review?.interrogation) review.interrogation.risks = [...(review.interrogation.risks || []), 'Final matchup probability no longer exceeds the current executable ask.'];
