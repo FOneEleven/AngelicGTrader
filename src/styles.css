@@ -1659,3 +1659,31 @@ tr.row-mid td {
 .piece-baseball-row .piece-strategy-button{min-width:105px}
 @media(max-width:850px){.piece-worth-graph{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:460px){.piece-worth-graph{grid-template-columns:1fr}}
+
+/* Keep shared season-piece actions readable when the dashboard is resized. */
+.season-pieces-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 470px), 1fr));
+}
+.season-piece-controls .secondary-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.season-piece-grid-panel {
+  container-type: inline-size;
+}
+.piece-worth-graph {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.piece-worth-column .piece-strategy-button {
+  white-space: nowrap;
+}
+@container (min-width: 720px) {
+  .piece-worth-graph {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@container (max-width: 420px) {
+  .piece-worth-graph {
+    grid-template-columns: 1fr;
+  }
+}
