@@ -5,15 +5,15 @@ import { appendActivity } from '../lib/dataModel';
 const API = 'https://angelicgtrader-dvhgf4dhc6hahqhs.westus3-01.azurewebsites.net/api/KalshiAccount';
 const META_FILE = 'kalshi-connection.json';
 const AZURE_ENCRYPTION_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAstJrdd1Kke675amS/3WH
-9snfIt9DD3ob6kJ8wybKg5YlgaBOcZOSsjAgCRi7VYgwTdE1FvSoLeOtNJxcZw96
-r3qrost4cuJCsz9Gk/JXt5+Ugp7VFx8R7G2OE8xAI/iZjRxbjT/yvUvVXGEeG2p6
-7712AakX0c67hYmv+4ynOMqrtd/KI61o4wGJGOww5/oPverNJKe7xU2ET0Pm6lH0
-jbZlPFz2C2XRD09YAeqaeKlntNQI7w8Gyaz1AxfXrsCx5GqTX9KJVSkoyI+Kgpu1
-jwT3qnPlpGTQ8NPeklrlWT8CP0CH81mLOeI6S3i8Tu/fApFstozsnUg1LQ3PyJG9
-wv6OtUBRp+yQe04/WD9x29l9uUP2TNlaAa1FuP2bUS6sYptXRyyN6PmhF7JLHvka
-4VwgoNOhzzHg8mV7UHEiAspZ26JYFLtKtMkB0aEDx0auYqQM6QPxpV38jHILOdZM
-dteNKgGzXHSsDYNMkik+61Nv2doavPOMkwu8K8Me70a3AgMBAAE=
+MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAwzojGUp+VnFSok7Tv2fs
+d/pOgvRcAnHaYHgro+yLINB8HESEf+SxLAzXQBwmPZQzvv/E8+uQMOkbxyPEoRIL
+A/qqE5EXxO/mzOUbja1BGmOr0H6B0FZjAB+yZz64buqxzIrLkZddk1q4SoC9wIa1
+UqvH9bIdZYeRde32F8SAZqjKuT0fyPYEQKZiadm5SjfWjGYapM7SPvyzdc8GgMRT
+mTiA0fuIJVfrnC5ALM5xcfPDJNjpJ4JkEbm431UkU9bjoNAXrXkuLyPC7zVcFvzq
+hvcK3H1VDDvf57BipJa8yXYRZbRGpzRyTXdH+NXXNXzfZpydJ+DuN1/hFj8Zxm4Z
+2I5ThGZvaUVc3HJ+iuCIU7p7Rg/SJSKnSJPdbA/ak0sGiN1vVSAU7bs21BG4wVf3
+Au8De12KuzchZVnxsRL33iPcUgXxI5wamIvUIo7IuM2Uq43OW4kHZ+ZtTwYa1tZ/
+e+M+J4AWuRwGu4zl90T+NnoSP3tBm4mLcDqmoO/77nWvAgMBAAE=
 -----END PUBLIC KEY-----`;
 
 function pemBytes(pem) {
