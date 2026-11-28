@@ -529,6 +529,7 @@ MATCHUP AND VERDICT:
   }
 
   const result = JSON.parse(getOutputText(data));
+  let verdict = result.verdict;
   const baseProbabilityYes = Number(result.baseProbabilityYes);
   if (!Number.isFinite(baseProbabilityYes) || baseProbabilityYes < 0 || baseProbabilityYes > 1) {
     throw new Error('Final interrogation returned an invalid base probability.');
