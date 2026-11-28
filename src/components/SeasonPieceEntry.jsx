@@ -70,7 +70,7 @@ export default function SeasonPieceEntry({ profile, earnings = 0, onUpdate, onSt
       <b>{profile.name}</b>
       <span>Season {profile.season} · {profile.paperMode ? 'Paper' : 'Live'} · {profile.activePlayer === false ? 'Inactive' : 'Active'}</span>
       <strong>{money(currentWorth)} current worth</strong>
-      <small>Original allocation {money(worth.original)} · {money(currentWorth)} confirmed wallet returns · {worth.ratio.toFixed(2)}×</small>
+      <small>Original allocation {money(worth.original)} · {worth.ratio.toFixed(2)}× of starting value</small>
       <small>{profile.pieceType} · {profile.baseName} base · {profile.strategy || 'midpoint'} ladder</small>
       <small>Next scheduled: {profile.nextScheduledWeek || 'week1'}</small>
       {!ready && <div className="piece-not-ready" role="status">NOT READY FOR PLAY · SET STRATEGY AND RISK FOR {WORTH_CONDITIONS.find((x) => x.id === worth.condition)?.label.toUpperCase()}</div>}
