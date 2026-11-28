@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Trophy, RefreshCw, Users, CalendarDays } from 'lucide-react';
 import SeasonPieceEntry from './SeasonPieceEntry';
-import { listSeasonProfiles, readSeasonTrades, updateSeasonProfile, advanceSeasonWeek, confirmedWalletReturns, readInactivePieces, removeInactivePiece, readPlayBox, writePlayBox } from '../lib/dataModel';
+import { listSeasonProfiles, readSeasonTrades, updateSeasonProfile, advanceSeasonWeek, confirmedWalletReturns, readInactivePieces, removeInactivePiece, readPlayBox, writePlayBox, archiveInactivePiece } from '../lib/dataModel';
 
 const FILTERS = [{ id: 'active', label: 'Active' }, { id: 'all', label: 'All' }, { id: 'winners', label: 'Highest winners' }];
 const isLoss = (trade) => /^(lost|loss|settled_loss|settled-loss)$/i.test(String(trade.outcome || trade.status || '')) || Number(trade.earnings ?? trade.profit ?? 0) < 0;
@@ -78,6 +78,8 @@ export default function GameDay({ dataFolder, onActivity, onStartWeek, onNavigat
           firstWeekProfiles.add(profile.id);
         } else if (profile.activePlayer !== false && profileTrades.some(isLoss)) {
           const updated = await updateSeasonProfile(root, profile.id, { activePlayer: false, status: 'inactive' });
+          await archiveInactivePiece(root, updated, profileTrades, 'A previously recorded match was a loss.');
+          setInactivePieces(await readInactivePieces(root));
           nextProfiles = nextProfiles.map((p) => p.id === updated.id ? updated : p);
         }
       }
