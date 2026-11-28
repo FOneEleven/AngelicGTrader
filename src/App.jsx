@@ -16,7 +16,7 @@ import PredictionHistory from './components/PredictionHistory';
 import SeasonPieceEntry from './components/SeasonPieceEntry';
 import { readSettings, writeSettings, readDashboardRecords, deleteTrade, listSeasonProfiles, updateSeasonProfile, advanceSeasonWeek, readSeasonTrades, appendTrade, clearDashboardRecords, readPlayBox, writePlayBox } from './lib/dataModel';
 import { readCache, isCacheFresh, appendCacheBatch } from './lib/marketCache';
-import { fetchSportsMarkets } from './lib/kalshi';
+import { fetchSportsMarkets, submitKalshiOrders } from './lib/kalshi';
 
 const nav = [
   { label: 'Dashboard', icon: LayoutDashboard, group: 'WORKSPACE' },
@@ -41,7 +41,7 @@ function StatCard({ title, value, note, icon: Icon, tone = 'gold', trend }) {
   </div>;
 }
 
-function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, paperMode, onNavigate, onActivity, onStartWeek, playBox = [], onAddToPlayBox, onRemoveFromPlayBox, onCommitPlayBox, committingPlayBox }) {
+function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, paperMode, onNavigate, onActivity, onStartWeek, playBox = [], onAddToPlayBox, onRemoveFromPlayBox, onCommitPlayBox, committingPlayBox, kalshiConnected = false }) {
   const [records, setRecords] = useState([]);
   const [seasonProfiles, setSeasonProfiles] = useState([]);
   const [pieceEarnings, setPieceEarnings] = useState({});
@@ -184,7 +184,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
               const committed = selectedPiece ? pieceCommitments[selectedPiece.id] === true : false;
               const alreadyPlaced = !!r.placedTradeId || placedRecordIds.includes(r.id);
               const queuedForPiece = playBox.some((item) => item.profileId === selectedId && item.sourceRecordId === r.id);
-              const canPlacePaper = selectedPiece?.paperMode === true && !committed && !alreadyPlaced && !!r.ticker && price > 0 && price < 100;
+              const canQueueSelection = !!selectedPiece && !committed && !alreadyPlaced && !!r.ticker && price > 0 && price < 100 && (selectedPiece.paperMode === true || kalshiConnected);
               return <tr key={r.id}>
                 <td>{new Date(r.timestamp).toLocaleString()}</td><td>{r.matchup}</td><td>{r.market}</td><td>{r.side}</td>
                 <td>{r.modelProbability == null ? (r.probability + '%') : Math.round(Number(r.modelProbability) * 100) + '%'}</td>
@@ -194,7 +194,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
                     <option value="">Select piece</option>
                     {eligiblePieces.map((p) => <option key={p.id} value={p.id}>{p.name + ' · ' + (p.paperMode ? 'Paper' : 'Live') + ' · ' + String.fromCharCode(36) + Number(p.quotaValue ?? p.initialBalance ?? p.balance).toFixed(2) + (pieceCommitments[p.id] ? ' · Committed' : '')}</option>)}
                   </select>
-                  <button className="secondary-btn" disabled={!selectedPiece || placingRecordId === r.id || alreadyPlaced || queuedForPiece || (selectedPiece.paperMode && !canPlacePaper) || !selectedPiece.paperMode} onClick={() => placeDashboardRecord(r)}>{placingRecordId === r.id ? 'Adding…' : queuedForPiece ? 'In Play Box' : selectedPiece?.paperMode ? 'Add to Play Box' : 'Live unavailable'}</button>
+                  <button className="secondary-btn" disabled={!selectedPiece || placingRecordId === r.id || alreadyPlaced || queuedForPiece || !canQueueSelection} onClick={() => placeDashboardRecord(r)}>{placingRecordId === r.id ? 'Adding…' : queuedForPiece ? 'In Play Box' : selectedPiece ? 'Add to Play Box' : 'Select piece'}</button>
                   {recordActionMessage[r.id] && <small className="record-action-message">{recordActionMessage[r.id]}</small>}
                   {committed && <small className="record-action-message">Piece already committed this week.</small>}
                   {queuedForPiece && <small className="record-action-message">This piece is in the Play Box.</small>}{alreadyPlaced && <small className="record-action-message">Already committed.</small>}
@@ -283,7 +283,7 @@ export default function App() {
   const ladderKeyFor = (item) => [String(item.ticker || '').replace(/-[^-]+$/, '') || item.event || item.matchup || '', item.team || '', item.league || ''].join('|').toLowerCase();
   const handleAddToPlayBox = useCallback(async (profile, selection) => {
     if (!dataFolder?.handle || !profile?.id) throw new Error('Connect a data folder and select a season piece first.');
-    if (profile.paperMode !== true) throw new Error('Live orders are not enabled yet. No order was sent.');
+    if (profile.paperMode !== true && !kalshiAccount?.connected) throw new Error('Connect your Kalshi account before queuing a live order.');
     const current = await readPlayBox(dataFolder.handle);
     if (current.some((item) => item.profileId === profile.id)) throw new Error(profile.name + ' already has a selection in the Play Box.');
     const ladderKey = ladderKeyFor(selection);
@@ -296,7 +296,7 @@ export default function App() {
       ...selection,
       id: 'play-' + (globalThis.crypto?.randomUUID?.() || Date.now() + '-' + Math.random().toString(16).slice(2)),
       profileId: profile.id, pieceName: profile.name, season: profile.season, week,
-      paper: true, allocation: Math.round(Number(profile.quotaValue ?? profile.initialBalance ?? profile.balance) * 100) / 100,
+      paper: profile.paperMode === true, allocation: Math.round(Number(profile.quotaValue ?? profile.initialBalance ?? profile.balance) * 100) / 100,
       addedAt: new Date().toISOString(), ladderKey,
     };
     const next = [...current, item];
@@ -306,7 +306,7 @@ export default function App() {
     setPlayBox(next);
     handleActivity();
     return item;
-  }, [dataFolder, handleActivity]);
+  }, [dataFolder, handleActivity, kalshiAccount]);
 
   const handleRemoveFromPlayBox = useCallback(async (item) => {
     if (!dataFolder?.handle) return;
@@ -323,17 +323,65 @@ export default function App() {
 
   const handleCommitPlayBox = useCallback(async () => {
     if (!dataFolder?.handle || !playBox.length || committingPlayBox) return;
-    if (playBox.some((item) => item.paper !== true)) { window.alert('Live order submission is not implemented. No orders were sent.'); return; }
+    if (playBox.some((item) => item.paper !== true) && !kalshiAccount?.connected) {
+      window.alert('Connect Kalshi before committing live Play Box items. No live orders were sent.');
+      return;
+    }
+    const ladderContracts = new Map();
+    for (const item of playBox) {
+      const ladderKey = item.ladderKey || ladderKeyFor(item);
+      const contract = String(item.ticker) + '|' + String(item.side);
+      const previous = ladderContracts.get(ladderKey);
+      if (previous && previous !== contract) {
+        window.alert('Play Box contains two different lines or sides on the same ladder. Remove one before committing.');
+        return;
+      }
+      ladderContracts.set(ladderKey, contract);
+      if (!item.ticker || !['YES', 'NO'].includes(String(item.side).toUpperCase()) || !(Number(item.allocation) > 0)) {
+        window.alert('Play Box contains an incomplete contract or allocation. No bets were committed.');
+        return;
+      }
+    }
     const groups = new Map();
     for (const item of playBox) {
-      const key = [item.ticker, item.side, item.line].join('|');
+      const key = [item.paper ? 'paper' : 'live', item.ticker, item.side, item.line].join('|');
       const group = groups.get(key) || [];
       group.push(item); groups.set(key, group);
     }
+    const hashId = (value) => {
+      let hash = 2166136261;
+      for (let i = 0; i < value.length; i += 1) hash = Math.imul(hash ^ value.charCodeAt(i), 16777619);
+      return 'agt-' + (hash >>> 0).toString(16);
+    };
     setCommittingPlayBox(true);
     try {
+      const liveGroups = [...groups.entries()].filter(([, items]) => items[0].paper !== true);
+      const liveRequests = liveGroups.map(([key, items]) => {
+        const totalStake = items.reduce((sum, item) => sum + Number(item.allocation || 0), 0);
+        const cost = Number(items[0].marketProbability ?? (Number(items[0].price) / 100));
+        if (!(cost > 0 && cost < 1)) throw new Error('Missing saved executable ask for ' + items[0].ticker);
+        const count = Math.floor((totalStake / cost) * 100) / 100;
+        if (!(count >= 0.01)) throw new Error('Combined allocation is too small to buy 0.01 contracts for ' + items[0].ticker);
+        const yesBookPrice = items[0].side === 'NO' ? 1 - cost : cost;
+        const clientOrderId = hashId(key + '|' + items.map((item) => item.id).sort().join('|'));
+        return {
+          key, items, clientOrderId, totalStake,
+          order: { ticker: items[0].ticker, client_order_id: clientOrderId, side: items[0].side === 'NO' ? 'ask' : 'bid', count: count.toFixed(2), price: yesBookPrice.toFixed(4) },
+        };
+      });
+      const liveResults = liveRequests.length ? await submitKalshiOrders(dataFolder.handle, liveRequests.map((item) => item.order)) : [];
+      const liveResultById = new Map(liveResults.map((result) => [result.client_order_id, result]));
+      const successfulIds = new Set();
+      const failedGroups = [];
       for (const [key, items] of groups) {
-        const orderGroupId = 'paper-order-' + key.replace(/[^a-z0-9]+/gi, '-') + '-' + items.map((item) => item.id).join('-');
+        const isPaper = items[0].paper === true;
+        const liveRequest = liveRequests.find((entry) => entry.key === key);
+        const liveResult = liveRequest ? liveResultById.get(liveRequest.clientOrderId) : null;
+        if (!isPaper && (!liveResult?.submitted || !liveResult?.order_id)) {
+          failedGroups.push({ key, error: liveResult?.error || 'Kalshi did not confirm an order ID.' });
+          continue;
+        }
+        const orderGroupId = liveRequest?.clientOrderId || hashId(key + '|' + items.map((item) => item.id).sort().join('|'));
         const totalStake = Math.round(items.reduce((sum, item) => sum + Number(item.allocation || 0), 0) * 100) / 100;
         const sharedResolution = items[0].resolutionDetails || items[0].finalInterrogation || null;
         for (const item of items) {
@@ -346,23 +394,29 @@ export default function App() {
             await appendTrade(dataFolder.handle, item.season, item.week, {
               id: tradeId, timestamp: new Date().toISOString(), matchup: item.matchup || item.event || '', market: item.market || item.team || '', side: item.side,
               price: Number(item.price) || Number(item.marketProbability) * 100, probability: Math.round(Number(item.probability ?? item.modelProbability ?? 0) * 100),
-              stake: Number(item.allocation) || 0, paper: true, status: 'open', ticker: item.ticker, line: item.line,
+              stake: Number(item.allocation) || 0, paper: isPaper, status: isPaper ? 'open' : 'submitted', ticker: item.ticker, line: item.line,
               marketProbability: item.marketProbability ?? (Number(item.price) / 100), modelProbability: item.modelProbability ?? item.probability ?? null,
               edge: item.edge ?? null, seasonPieceId: profile.id, week: item.week, sourceRecordId: item.sourceRecordId || null,
               payoutMultiple: Number(item.price) > 0 ? 100 / Number(item.price) : null, source: 'play-box', orderGroupId,
               playBoxItemId: item.id, resolutionDetails: sharedResolution, combinedOrderStake: totalStake,
+              orderId: liveResult?.order_id || null, clientOrderId: liveRequest?.clientOrderId || null,
+              fillCount: liveResult?.fill_count ?? null, remainingCount: liveResult?.remaining_count ?? null,
             });
           }
-          const line = { ...(profile.selectedLines?.[0] || {}), ticker: item.ticker, event: item.event || item.matchup || '', team: item.team || '', league: item.league || '', line: item.line, side: item.side, playBoxItemId: item.id, playBoxStatus: 'committed', orderGroupId, placedTradeId: tradeId, resolutionDetails: sharedResolution };
-          await updateSeasonProfile(dataFolder.handle, profile.id, { selectedLines: [line], selectionResolution: { ...(profile.selectionResolution || {}), status: 'committed', phase: 'paper-order-confirmed', resolvedAt: new Date().toISOString(), selectedGames: 1, orderGroupId, combinedOrderStake: totalStake, message: 'Paper bet committed and recorded. Shared order group: ' + orderGroupId } });
+          const line = { ...(profile.selectedLines?.[0] || {}), ticker: item.ticker, event: item.event || item.matchup || '', team: item.team || '', league: item.league || '', line: item.line, side: item.side, playBoxItemId: item.id, playBoxStatus: 'committed', orderGroupId, placedTradeId: tradeId, orderId: liveResult?.order_id || null, resolutionDetails: sharedResolution };
+          await updateSeasonProfile(dataFolder.handle, profile.id, { selectedLines: [line], selectionResolution: { ...(profile.selectionResolution || {}), status: 'committed', phase: isPaper ? 'paper-order-confirmed' : 'kalshi-order-confirmed', resolvedAt: new Date().toISOString(), selectedGames: 1, orderGroupId, orderId: liveResult?.order_id || null, combinedOrderStake: totalStake, message: (isPaper ? 'Paper bet committed.' : 'Kalshi order accepted.') + ' Shared order group: ' + orderGroupId } });
+          successfulIds.add(item.id);
         }
       }
-      await writePlayBox(dataFolder.handle, []);
-      setPlayBox([]); handleActivity();
+      const remaining = playBox.filter((item) => !successfulIds.has(item.id));
+      await writePlayBox(dataFolder.handle, remaining);
+      setPlayBox(remaining);
+      handleActivity();
+      if (failedGroups.length) window.alert(failedGroups.length + ' order group(s) were not confirmed. Successful groups were committed; failed selections remain in the Play Box. ' + failedGroups.map((item) => item.error).join(' | '));
     } catch (error) {
-      window.alert('Play Box commit stopped: ' + (error.message || String(error)) + '. Items remain queued so the commit can be safely retried.');
+      window.alert('Play Box commit stopped: ' + (error.message || String(error)) + '. Items not confirmed remain queued.');
     } finally { setCommittingPlayBox(false); }
-  }, [dataFolder, playBox, committingPlayBox, handleActivity]);
+  }, [dataFolder, playBox, committingPlayBox, handleActivity, kalshiAccount, ladderKeyFor]);
 
   const handleScanResolved = useCallback(() => {
     setAutoPlayLock(false); setScanRequest(null); setActive('Dashboard'); handleActivity();
@@ -418,7 +472,7 @@ export default function App() {
         {active === 'Dashboard' && (
           <>
             <DataFolderConnect onFolderReady={setDataFolder} onAccountChange={(account) => { setKalshiAccount(account); if (!account?.connected) handlePaperToggle(true); }} />
-            <Dashboard dataFolder={dataFolder} activityFilter={activityFilter} onActivityFilter={setActivityFilter} refreshKey={refreshKey} paperMode={paperMode} onNavigate={setActive} onActivity={handleActivity} onStartWeek={handleStartWeek} playBox={playBox} onAddToPlayBox={handleAddToPlayBox} onRemoveFromPlayBox={handleRemoveFromPlayBox} onCommitPlayBox={handleCommitPlayBox} committingPlayBox={committingPlayBox} />
+            <Dashboard dataFolder={dataFolder} activityFilter={activityFilter} onActivityFilter={setActivityFilter} refreshKey={refreshKey} paperMode={paperMode} onNavigate={setActive} onActivity={handleActivity} onStartWeek={handleStartWeek} playBox={playBox} onAddToPlayBox={handleAddToPlayBox} onRemoveFromPlayBox={handleRemoveFromPlayBox} onCommitPlayBox={handleCommitPlayBox} committingPlayBox={committingPlayBox} kalshiConnected={!!kalshiAccount?.connected} />
           </>
         )}
         {active === 'Live Market Scanner' && (
