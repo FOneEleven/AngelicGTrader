@@ -65,7 +65,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
         // Repair older Dashboard placements that created the trade but did not
         // also persist the selected game on the shared season-piece profile.
         if (placedTrade && (profile.selectedLines?.[0]?.ticker !== placedTrade.ticker || profile.selectedLines?.[0]?.sourceRecordId !== placedTrade.sourceRecordId)) {
-          const selectedTeam = String(placedTrade.market || '').replace(/\\s+over\\s+.*$/i, '').trim();
+          const selectedTeam = String(placedTrade.market || '').replace(/\s+over\s+.*$/i, '').trim();
           const selectedLeague = String(placedTrade.ticker || '').match(/^KX([A-Z]+)TEAMTOTAL-/i)?.[1] || '';
           savedProfile = await updateSeasonProfile(root, profile.id, {
             selectedLines: [{
