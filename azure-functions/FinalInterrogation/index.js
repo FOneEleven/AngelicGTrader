@@ -496,7 +496,7 @@ async function finalInterrogate(body) {
     pieceInstruction: String(body.pieceInstruction || '').slice(0, 2000),
     policy: {
       opponentStrengthMotivation: 'If BOTH team percentiles are >=78, apply -3 pp. If BOTH are <=64, apply +3 pp. Otherwise 0; unknown percentile means 0.',
-      weatherMotivation: 'Use supplied game-time Open-Meteo data. Gusts 25–29 mph: -2 pp; 30 mph or higher: -5 pp. Precipitation severity is exclusive: heavy rain -2 pp, freezing precipitation -5 pp, ice/freezing rain -10 pp (use only the most severe applicable category). Stack the precipitation penalty with wind. Indoor stadium: no weather penalty. Missing forecast: 0 and disclose unknown.',
+      weatherMotivation: 'NFL ONLY. Weather is never a factor in NBA and must contribute exactly 0 pp for NBA. For NFL, use supplied game-time Open-Meteo data. Gusts 25–29 mph: 2 pp; 30 mph or higher: 5 pp of defensive-friendly adjustment. Precipitation severity is exclusive: heavy rain 2 pp, freezing precipitation 5 pp, ice/freezing rain 10 pp of defensive-friendly adjustment (use only the most severe applicable category). Stack precipitation with wind. Indoor stadium: 0 pp. Missing forecast: 0 and disclose unknown. These are positive adjustments to the NO side; when represented as probabilityYes, subtract them from YES probability, so NO receives the exact inverse positive benefit.',
       startingQuarterbackMotivation: 'Use supplied ESPN summary injury/roster/depth-chart evidence. If the team lacks its starting QB for this game, apply -12 pp. Only return false if evidence confirms the starter unavailable or no starter is designated. Unknown evidence means null and 0 pp; never guess.',
       objective: 'Serious, competitive contests with strong fantasy upside.',
     },
@@ -545,7 +545,7 @@ MATCHUP AND VERDICT:
 - Assess normal rotation, competitive intensity, pace, scoring environment, usage/volume, recent form, and fantasy upside from supplied evidence.
 - Do not invent player projections, injuries, standings, or rotation news.
 - Evaluate startingQbAvailable from supplied ESPN summary. Return false only if the starting QB is confirmed unavailable; true if confirmed available; null if unverified. Explain in startingQbRationale.
-- Explicitly account for structured weather data and the specified penalties. Unavailable weather is unknown, not clear weather.
+- Explicitly account for structured weather data only in NFL. NBA weather must have no effect on motivation or probability. In NFL, inclement weather is defensive-friendly: it increases NO probability and decreases YES probability by the same percentage points. Unavailable weather is unknown, not clear weather.
 - KEEP when the matchup is acceptable, motivation/rotation is credible, fantasy upside is acceptable, grade is A or B, and no material missing fact undermines the decision. Opponent percentile is not a KEEP requirement.
 - REJECT for material rotation/motivation risk or a poor matchup, not for opponent percentile alone.
 - REVIEW when genuinely critical facts about the event or matchup cannot be verified.
@@ -591,7 +591,7 @@ MATCHUP AND VERDICT:
     : teamRank <= 64 && opponentRank <= 64 ? 3 : 0;
   result.startingQbAvailable = result.startingQbAvailable === true ? true : result.startingQbAvailable === false ? false : null;
   const quarterbackPenalty = league === 'NFL' && result.startingQbAvailable === false ? 12 : 0;
-  const weatherPenalty = Number(weather?.penaltyPoints) || 0;
+  const weatherPenalty = league === 'NFL' ? (Number(weather?.penaltyPoints) || 0) : 0;
   const expectedMotivationAdjustment = percentileAdjustment - weatherPenalty - quarterbackPenalty;
   result.motivationAdjustmentPoints = expectedMotivationAdjustment;
   result.probabilityYes = Math.max(0, Math.min(1, baseProbabilityYes + expectedMotivationAdjustment / 100));
