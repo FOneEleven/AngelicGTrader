@@ -82,6 +82,31 @@ async function getKalshiMarketsHandler(context, req) {
   }
 
   try {
+    const requestUrl = new URL(req.url || 'https://localhost/api/GetKalshiMarkets');
+    if (requestUrl.searchParams.get('action') === 'resolve') {
+      const tickers = [...new Set((requestUrl.searchParams.get('tickers') || '').split(',').map((value) => value.trim()).filter(Boolean))].slice(0, 50);
+      if (!tickers.length) {
+        context.res = { status: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Supply one or more market tickers.' }) };
+        return;
+      }
+      const markets = await Promise.all(tickers.map(async (ticker) => {
+        if (!/^[A-Z0-9-]{3,128}$/.test(ticker)) return { ticker, error: 'Invalid ticker.' };
+        const response = await fetch(KALSHI_BASE + '/markets/' + encodeURIComponent(ticker), { headers: { Accept: 'application/json' } });
+        if (!response.ok) return { ticker, error: 'Market lookup returned HTTP ' + response.status };
+        const payload = await response.json();
+        const market = payload.market || payload;
+        return {
+          ticker,
+          status: String(market.status || '').toLowerCase(),
+          result: String(market.result || '').toLowerCase(),
+          settlementValue: market.settlement_value_dollars ?? market.settlement_value ?? null,
+          closeTime: market.close_time || '',
+          expirationTime: market.expected_expiration_time || '',
+        };
+      }));
+      context.res = { status: 200, headers: corsHeaders, body: JSON.stringify({ markets, fetchedAt: new Date().toISOString() }) };
+      return;
+    }
     const started = Date.now();
     const raw = [];
 
@@ -141,7 +166,7 @@ app.http('GetKalshiMarkets', {
     legacyLog.error = (...args) => context.error(...args);
 
     const legacyContext = { log: legacyLog, res: null };
-    await getKalshiMarketsHandler(legacyContext, { method: request.method });
+    await getKalshiMarketsHandler(legacyContext, { method: request.method, url: request.url });
     const result = legacyContext.res;
 
     if (!result) {
