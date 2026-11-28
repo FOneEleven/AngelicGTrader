@@ -53,7 +53,7 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
   const [placedRecordIds, setPlacedRecordIds] = useState([]);
   useEffect(() => {
     const root = dataFolder?.handle;
-    if (!root) { setRecords([]); setSeasonProfiles([]); return; }
+    if (!root) { setRecords([]); setSeasonProfiles([]); setPlacedRecordIds([]); setPieceCommitments({}); return; }
     let cancelled = false;
     (async () => {
       const season = dataFolder?.season || 1;
