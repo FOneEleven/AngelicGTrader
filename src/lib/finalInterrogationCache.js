@@ -1,8 +1,8 @@
-// Persistent one-hour cache for completed Final Interrogation responses.
+// Persistent seven-minute cache for eligible Final Interrogation matchup reviews.
 import { META } from './dataFolder';
 
 const FILE = 'final-interrogation-cache.txt';
-export const FINAL_INTERROGATION_TTL_MS = 60 * 60 * 1000;
+export const FINAL_INTERROGATION_TTL_MS = 7 * 60 * 1000;
 
 function fingerprint(value) {
   const text = JSON.stringify(value);
