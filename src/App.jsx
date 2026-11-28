@@ -14,8 +14,7 @@ import AIPredictions from './components/AIPredictions';
 import GameDay from './components/GameDay';
 import PredictionHistory from './components/PredictionHistory';
 import SeasonPieceEntry from './components/SeasonPieceEntry';
-import { readSettings, writeSettings, readTrades, readAllRecords, deleteTrade, listSeasonProfiles, updateSeasonProfile, advanceSeasonWeek, readSeasonTrades, appendTrade, clearDashboardRecords } from './lib/dataModel';
-import { WEEKS } from './lib/dataFolder';
+import { readSettings, writeSettings, readAllRecords, deleteTrade, listSeasonProfiles, updateSeasonProfile, advanceSeasonWeek, readSeasonTrades, appendTrade, clearDashboardRecords } from './lib/dataModel';
 import { readCache, isCacheFresh, appendCacheBatch } from './lib/marketCache';
 import { fetchSportsMarkets } from './lib/kalshi';
 
@@ -56,7 +55,6 @@ function Dashboard({ dataFolder, activityFilter, onActivityFilter, refreshKey, p
     if (!root) { setRecords([]); setSeasonProfiles([]); setPlacedRecordIds([]); setPieceCommitments({}); return; }
     let cancelled = false;
     (async () => {
-      const season = dataFolder?.season || 1;
       const all = await readAllRecords(root);
       const profiles = await listSeasonProfiles(root);
       const pieceEntries = await Promise.all(profiles.map(async (profile) => {
