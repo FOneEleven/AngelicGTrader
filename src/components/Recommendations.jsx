@@ -36,7 +36,7 @@ export default function Recommendations({ dataFolder, paperMode: currentPaperMod
   async function loadPieces() {
     if (!root) return;
     const profiles = await listSeasonProfiles(root);
-    setSeasons(profiles);
+    setSeasons(profiles.filter((profile) => profile.activePlayer !== false && String(profile.status || 'active').toLowerCase() === 'active'));
     const profits = {};
     await Promise.all(profiles.map(async (profile) => {
       const rows = await readSeasonTrades(root, profile);
