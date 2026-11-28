@@ -307,17 +307,22 @@ export default function App() {
             console.warn('Kalshi live fill verification failed:', orderError);
           }
         }
-        const markets = await fetchMarketResolutions(pending.map(({ trade }) => trade.ticker));
-        const marketByTicker = new Map(markets.map((market) => [market.ticker, market]));
+        const scoreGames = pending.map(({ profile, trade }) => {
+          const selected = profile.selectedLines?.find((line) => line.ticker === trade.ticker) || {};
+          const matchup = String(trade.matchup || selected.event || '').split(/\\s+vs\\.?\\s+/i);
+          return { ticker: trade.ticker, league: trade.league || selected.league || String(trade.ticker || '').match(/^KX([A-Z]+)TEAMTOTAL-/i)?.[1] || '', team: trade.team || selected.team || String(trade.market || '').replace(/\\s+over\\s+.*$/i, '').trim(), opponent: trade.opponent || selected.opponent || matchup[1] && matchup[0] && matchup[0].toLowerCase().includes(String(trade.team || selected.team || '').toLowerCase()) ? matchup[1] : matchup[0], line: trade.line ?? selected.line, side: trade.side, gameTime: trade.gameTime || selected.gameTime || null };
+        });
+        const scoreResults = await fetchGameScoreResolutions(scoreGames);
+        const marketByTicker = new Map(scoreResults.map((result) => [result.ticker, result]));
         for (const [profile, trades] of tradesByProfile) {
           let currentProfile = profile;
           let profileTrades = trades;
           const profilePending = pending.filter((entry) => entry.profile.id === profile.id);
           for (const { trade } of profilePending) {
             const market = marketByTicker.get(trade.ticker);
-            const result = String(market?.result || '').toLowerCase();
-            if (!market || !['yes', 'no'].includes(result) || !['settled', 'finalized', 'closed'].includes(String(market.status || '').toLowerCase())) continue;
-            const won = result === String(trade.side || '').toLowerCase();
+            if (!market?.verified || !market.resolved || market.status !== 'FINAL' || typeof market.won !== 'boolean') continue;
+            const result = market.actualYes ? 'yes' : 'no';
+            const won = market.won;
             const priceCents = Number(trade.price) || Number(trade.marketProbability) * 100;
             const payoutMultiple = Number(trade.payoutMultiple) || (priceCents > 0 ? 100 / priceCents : 0);
             const liveFilled = Number(trade.fillCount);
@@ -332,6 +337,16 @@ export default function App() {
               resolutionStatus: 'resolved',
               resolutionResult: result,
               resolutionMarketStatus: market.status,
+              scoreVerified: true,
+              scoreEventId: market.event?.eventId || null,
+              scoreEventName: market.event?.eventName || null,
+              scoreTeam: market.team,
+              scoreOpponent: market.opponent,
+              scoreTeamPoints: market.teamScore,
+              scoreOpponentPoints: market.opponentScore,
+              scoreLine: market.line,
+              scoreSide: market.side,
+              scoreComparison: market.comparison,
               resolvedAt,
               walletReturnConfirmed: won,
               walletReturnedAmount: payout,
@@ -426,7 +441,7 @@ export default function App() {
     const next = [...current, item];
     const previousSelection = profile.selectedLines || [];
     const previousResolution = profile.selectionResolution || {};
-    const selectedLine = { predictionKey: selection.predictionKey || null, ticker: selection.ticker, event: selection.event || selection.matchup || '', team: selection.team || '', league: selection.league || '', line: selection.line ?? null, side: selection.side || '', week, playBoxItemId: item.id, playBoxStatus: 'in-play-box', sourceRecordId: selection.sourceRecordId || null };
+    const selectedLine = { predictionKey: selection.predictionKey || null, ticker: selection.ticker, event: selection.event || selection.matchup || '', team: selection.team || '', opponent: selection.opponent || '', league: selection.league || '', line: selection.line ?? null, side: selection.side || '', gameTime: selection.gameTime || null, week, playBoxItemId: item.id, playBoxStatus: 'in-play-box', sourceRecordId: selection.sourceRecordId || null };
     await updateSeasonProfile(dataFolder.handle, profile.id, { selectedLines: [selectedLine], selectionResolution: { ...previousResolution, status: 'in-play-box', phase: 'queued-for-batch-commit', resolvedAt: new Date().toISOString(), week, selectedGames: 1, message: 'Selection staged in Play Box; no bet has been committed.' } });
     try { await writePlayBox(dataFolder.handle, next); }
     catch (error) {
@@ -541,7 +556,7 @@ export default function App() {
             await appendTrade(dataFolder.handle, item.season, item.week, {
               id: tradeId, timestamp: new Date().toISOString(), matchup: item.matchup || item.event || '', market: item.market || item.team || '', side: item.side,
               price: Number(item.price) || Number(item.marketProbability) * 100, probability: Math.round(Number(item.probability ?? item.modelProbability ?? 0) * 100),
-              stake: Number(item.allocation) || 0, paper: isPaper, status: isPaper ? 'open' : 'submitted', ticker: item.ticker, line: item.line,
+              stake: Number(item.allocation) || 0, paper: isPaper, status: isPaper ? 'open' : 'submitted', ticker: item.ticker, line: item.line, team: item.team || '', opponent: item.opponent || profile.selectedLines?.[0]?.opponent || '', league: item.league || '', gameTime: item.gameTime || profile.selectedLines?.[0]?.gameTime || null,
               marketProbability: item.marketProbability ?? (Number(item.price) / 100), modelProbability: item.modelProbability ?? item.probability ?? null,
               edge: item.edge ?? null, seasonPieceId: profile.id, week: item.week, sourceRecordId: item.sourceRecordId || null,
               payoutMultiple: Number(item.price) > 0 ? 100 / Number(item.price) : null, source: 'play-box', orderGroupId,
@@ -550,7 +565,7 @@ export default function App() {
               fillCount: liveResult?.fill_count ?? null, remainingCount: liveResult?.remaining_count ?? null,
             });
           }
-          const line = { ...(profile.selectedLines?.[0] || {}), ticker: item.ticker, event: item.event || item.matchup || '', team: item.team || '', league: item.league || '', line: item.line, side: item.side, week: item.week, playBoxItemId: item.id, playBoxStatus: 'committed', orderGroupId, placedTradeId: tradeId, orderId: liveResult?.order_id || null, resolutionDetails: sharedResolution };
+          const line = { ...(profile.selectedLines?.[0] || {}), ticker: item.ticker, event: item.event || item.matchup || '', team: item.team || '', opponent: item.opponent || profile.selectedLines?.[0]?.opponent || '', league: item.league || '', line: item.line, side: item.side, gameTime: item.gameTime || profile.selectedLines?.[0]?.gameTime || null, week: item.week, playBoxItemId: item.id, playBoxStatus: 'committed', orderGroupId, placedTradeId: tradeId, orderId: liveResult?.order_id || null, resolutionDetails: sharedResolution };
           await updateSeasonProfile(dataFolder.handle, profile.id, { selectedLines: [line], selectionResolution: { ...(profile.selectionResolution || {}), status: 'committed', phase: isPaper ? 'paper-order-confirmed' : 'kalshi-order-confirmed', resolvedAt: new Date().toISOString(), week: item.week, selectedGames: 1, orderGroupId, orderId: liveResult?.order_id || null, combinedOrderStake: totalStake, message: (isPaper ? 'Paper bet committed.' : 'Kalshi order accepted.') + ' Shared order group: ' + orderGroupId } });
           successfulIds.add(item.id);
         }
